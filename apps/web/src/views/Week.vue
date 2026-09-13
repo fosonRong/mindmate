@@ -87,12 +87,12 @@ onMounted(load)
     <!-- 周汇总 -->
     <section class="card">
       <div class="row" style="margin-bottom: 10px">
-        <div class="card-title" style="font-size: 15px">{{ $t($t('本周进度')) }}</div>
+        <div class="card-title" style="font-size: 15px">{{ $t('本周进度') }}</div>
         <span class="card-sub">{{ from }} ~ {{ to }}</span>
         <div class="spacer"></div>
-        <span v-if="app.stats && app.stats.streakDays > 0" class="streak">{{ $t($t('🔥 连续 {a} 天'), { a: app.stats.streakDays }) }}</span>
+        <span v-if="app.stats && app.stats.streakDays > 0" class="streak">{{ $t('🔥 连续 {a} 天', { a: app.stats.streakDays }) }}</span>
         <button class="icon-btn" :title="$t('上一周')" @click="shiftWeek(-1)">◀</button>
-        <button class="btn btn-sm" @click="anchor = fmtDate(new Date()); load()">{{ $t($t('本周')) }}</button>
+        <button class="btn btn-sm" @click="anchor = fmtDate(new Date()); load()">{{ $t('本周') }}</button>
         <button class="icon-btn" :title="$t('下一周')" @click="shiftWeek(1)">▶</button>
       </div>
       <ProgressPair
@@ -104,7 +104,7 @@ onMounted(load)
         :todo-total="stats?.totalTodos ?? 0"
       />
       <div class="small muted" style="margin-top: 8px">
-        {{ $t($t('有录入 {a}/7 天 · 共 {b} 条记录'), { a: stats?.daysWithRecords ?? 0, b: stats?.nodeCount ?? 0 }) }}
+        {{ $t('有录入 {a}/7 天 · 共 {b} 条记录', { a: stats?.daysWithRecords ?? 0, b: stats?.nodeCount ?? 0 }) }}
       </div>
     </section>
 
@@ -124,7 +124,7 @@ onMounted(load)
 
         <template v-if="statOf(d.date) && statOf(d.date)!.nodeCount > 0">
           <div class="row" style="margin-bottom: 6px">
-            <span class="badge info">{{ $t($t('{a} 条'), { a: statOf(d.date)!.nodeCount }) }}</span>
+            <span class="badge info">{{ $t('{a} 条', { a: statOf(d.date)!.nodeCount }) }}</span>
             <div class="spacer"></div>
             <div class="ring" style="width: 34px; height: 34px">
               <svg width="34" height="34">
@@ -152,14 +152,14 @@ onMounted(load)
             <span class="mono muted">{{ n.createdAt.slice(11, 16) }}</span>
             {{ n.content.slice(0, 22) }}{{ n.content.length > 22 ? '…' : '' }}
           </div>
-          <div v-if="nodesOf(d.date).length > 3" class="small muted">{{ $t($t('＋{a} 更多'), { a: nodesOf(d.date).length - 3 }) }}</div>
+          <div v-if="nodesOf(d.date).length > 3" class="small muted">{{ $t('＋{a} 更多', { a: nodesOf(d.date).length - 3 }) }}</div>
         </template>
 
         <template v-else-if="d.isFuture">
-          <div class="small muted">{{ $t($t('未来')) }}</div>
+          <div class="small muted">{{ $t('未来') }}</div>
         </template>
         <template v-else>
-          <div class="small muted">{{ $t($t('未记录')) }}</div>
+          <div class="small muted">{{ $t('未记录') }}</div>
         </template>
       </div>
     </div>

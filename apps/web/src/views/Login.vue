@@ -53,7 +53,7 @@ async function submit() {
     <div class="login-card">
       <div class="logo-lg">M</div>
       <div class="center">
-        <div style="font-size: 17px; font-weight: 600">{{ $t($t('智伴 Mindmate')) }}</div>
+        <div style="font-size: 17px; font-weight: 600">{{ $t('智伴 Mindmate') }}</div>
         <div class="small muted">
           {{ needsSetup ? $t('首次使用，请设置访问密码') : $t('请输入访问密码') }}
         </div>
@@ -62,7 +62,7 @@ async function submit() {
       <div v-if="error" class="hint-bar warn">{{ error }}</div>
 
       <div class="form-row">
-        <label class="form-label">{{ $t($t('访问密码')) }}</label>
+        <label class="form-label">{{ $t('访问密码') }}</label>
         <input
           v-model="password"
           type="password"
@@ -73,7 +73,7 @@ async function submit() {
       </div>
 
       <div v-if="needsSetup" class="form-row">
-        <label class="form-label">{{ $t($t('确认密码')) }}</label>
+        <label class="form-label">{{ $t('确认密码') }}</label>
         <input v-model="confirm" type="password" class="input" @keydown.enter="submit" />
       </div>
 
@@ -82,7 +82,7 @@ async function submit() {
       </button>
 
       <div class="small muted center">
-        {{ $t($t('局域网/服务器模式下需要密码访问；本地模式无需登录')) }}
+        {{ $t('局域网/服务器模式下需要密码访问；本地模式无需登录') }}
       </div>
     </div>
   </div>

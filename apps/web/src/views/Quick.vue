@@ -98,10 +98,10 @@ const goal = computed(() => app.stats?.dailyGoal ?? 4)
   <div class="quick-window">
     <template v-if="!saved">
       <div class="head">
-        <span>{{ $t($t('⏺ 速记')) }}</span>
+        <span>{{ $t('⏺ 速记') }}</span>
         <span class="mono">{{ new Date().toTimeString().slice(0, 5) }}</span>
         <div class="spacer"></div>
-        <span>{{ $t($t('今日 {a}/{b}'), { a: todayCount, b: goal }) }}</span>
+        <span>{{ $t('今日 {a}/{b}', { a: todayCount, b: goal }) }}</span>
       </div>
 
       <input
@@ -126,18 +126,18 @@ const goal = computed(() => app.stats?.dailyGoal ?? 4)
       </div>
 
       <div class="row" style="margin-top: auto">
-        <span class="small muted">{{ $t($t('Enter 保存 · Esc 关闭')) }}</span>
+        <span class="small muted">{{ $t('Enter 保存 · Esc 关闭') }}</span>
         <div class="spacer"></div>
-        <button class="btn btn-sm" @click="closeWindow">{{ $t($t('关闭')) }}</button>
-        <button class="btn btn-sm btn-primary" @click="save">{{ $t($t('✔ 记录')) }}</button>
+        <button class="btn btn-sm" @click="closeWindow">{{ $t('关闭') }}</button>
+        <button class="btn btn-sm btn-primary" @click="save">{{ $t('✔ 记录') }}</button>
       </div>
     </template>
 
     <template v-else>
       <div class="quick-success">
         <div class="tick">✓</div>
-        <div style="font-size: 13px; font-weight: 500">{{ $t($t('已记录 {a}'), { a: savedAt }) }}</div>
-        <div class="small muted">{{ $t($t('即将自动关闭…')) }}</div>
+        <div style="font-size: 13px; font-weight: 500">{{ $t('已记录 {a}', { a: savedAt }) }}</div>
+        <div class="small muted">{{ $t('即将自动关闭…') }}</div>
       </div>
     </template>
   </div>

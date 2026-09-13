@@ -66,12 +66,12 @@ function tagClass(t: string) {
     <div class="tl-bubble">
       <template v-if="!editing">
         <span class="tl-actions">
-          <button @click="startEdit">{{ $t($t('编辑')) }}</button>
-          <button class="danger" @click="remove">{{ $t($t('删除')) }}</button>
+          <button @click="startEdit">{{ $t('编辑') }}</button>
+          <button class="danger" @click="remove">{{ $t('删除') }}</button>
         </span>
         <div v-if="node.tags.length || node.isBackfill" class="tl-meta">
           <span v-for="t in node.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
-          <span v-if="node.isBackfill" class="small muted">{{ $t($t('补录')) }}</span>
+          <span v-if="node.isBackfill" class="small muted">{{ $t('补录') }}</span>
         </div>
         <div class="tl-content">{{ node.content }}</div>
       </template>
@@ -88,8 +88,8 @@ function tagClass(t: string) {
             {{ t }}
           </button>
           <div class="spacer"></div>
-          <button class="btn btn-sm" @click="editing = false">{{ $t($t('取消')) }}</button>
-          <button class="btn btn-sm btn-primary" @click="save">{{ $t($t('保存')) }}</button>
+          <button class="btn btn-sm" @click="editing = false">{{ $t('取消') }}</button>
+          <button class="btn btn-sm btn-primary" @click="save">{{ $t('保存') }}</button>
         </div>
       </div>
     </div>

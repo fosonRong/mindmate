@@ -25,7 +25,7 @@ const recordPct = () => {
 <template>
   <div class="progress-pair">
     <div class="row">
-      <span class="label muted small">{{ $t($t('记录进度')) }}</span>
+      <span class="label muted small">{{ $t('记录进度') }}</span>
       <div class="progress" :class="cls(recordPct())" style="flex: 1">
         <i :style="{ width: recordPct() + '%' }"></i>
       </div>
@@ -34,7 +34,7 @@ const recordPct = () => {
       </span>
     </div>
     <div class="row">
-      <span class="label muted small">{{ $t($t('待办完成')) }}</span>
+      <span class="label muted small">{{ $t('待办完成') }}</span>
       <div class="progress" :class="cls(pct(todoDone, todoTotal))" style="flex: 1">
         <i :style="{ width: pct(todoDone, todoTotal) + '%' }"></i>
       </div>

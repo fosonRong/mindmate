@@ -75,7 +75,7 @@ defineExpose({ focus })
       >
         {{ t }}
       </button>
-      <span class="hotkey">{{ $t($t('Enter 保存')) }}</span>
+      <span class="hotkey">{{ $t('Enter 保存') }}</span>
     </div>
   </div>
 </template>

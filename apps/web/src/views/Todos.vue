@@ -150,8 +150,8 @@ onMounted(loadAll)
           :placeholder="$t('搜索待办…')"
           @keydown.enter="todos.load()"
         />
-        <button class="btn btn-sm" @click="loadAll">{{ $t($t('刷新')) }}</button>
-        <button class="btn btn-sm btn-primary" @click="newTodo">{{ $t($t('＋ 新建待办')) }}</button>
+        <button class="btn btn-sm" @click="loadAll">{{ $t('刷新') }}</button>
+        <button class="btn btn-sm btn-primary" @click="newTodo">{{ $t('＋ 新建待办') }}</button>
       </div>
       <div class="row" style="margin-top: 10px">
         <div class="progress" :class="progress.percent > 70 ? 'p-high' : progress.percent >= 30 ? 'p-mid' : 'p-low'" style="flex: 1">
@@ -169,15 +169,15 @@ onMounted(loadAll)
         <section v-if="todos.todos.length === 0" class="card">
           <div class="empty">
             <div class="ill">✨</div>
-            <div class="t">{{ $t($t('此刻一身轻')) }}</div>
-            <div class="d">{{ $t($t('没有待办，或添加一件')) }}</div>
-            <button class="btn btn-primary" style="margin-top: 6px" @click="newTodo">{{ $t($t('＋ 添加待办')) }}</button>
+            <div class="t">{{ $t('此刻一身轻') }}</div>
+            <div class="d">{{ $t('没有待办，或添加一件') }}</div>
+            <button class="btn btn-primary" style="margin-top: 6px" @click="newTodo">{{ $t('＋ 添加待办') }}</button>
           </div>
         </section>
 
         <section v-for="g in grouped" :key="g.category" class="card">
           <div class="row" style="margin-bottom: 6px">
-            <div class="card-title" style="font-size: 14px">{{ $t($t('{a}待办'), { a: g.category }) }}</div>
+            <div class="card-title" style="font-size: 14px">{{ $t('{a}待办', { a: g.category }) }}</div>
             <div class="spacer"></div>
             <span class="small muted">{{ $t('{a}/{b}', { a: g.list.filter((t) => t.status === '已完成').length, b: g.list.length }) }}</span>
           </div>
@@ -212,7 +212,7 @@ onMounted(loadAll)
               :value="calAnchor.slice(0, 7)"
               @change="pickMonth"
             />
-            <button class="btn btn-sm" @click="calAnchor = todayStr(); loadAll()">{{ $t($t('本月')) }}</button>
+            <button class="btn btn-sm" @click="calAnchor = todayStr(); loadAll()">{{ $t('本月') }}</button>
             <div class="spacer"></div>
           </div>
           <CalendarMonth
@@ -226,34 +226,34 @@ onMounted(loadAll)
             @select="selectDate"
             @drop-todo="onDropTodo"
           />
-          <div class="small muted" style="margin-top: 8px">{{ $t($t('提示：把左侧待办拖到日历上的某天即可改期')) }}</div>
+          <div class="small muted" style="margin-top: 8px">{{ $t('提示：把左侧待办拖到日历上的某天即可改期') }}</div>
         </section>
 
         <section class="card">
           <div class="card-title" style="font-size: 14px">
-            {{ $t($t('{a} {b} · 具体日程'), { a: todos.selectedDate, b: friendlyDate(todos.selectedDate) }) }}
+            {{ $t('{a} {b} · 具体日程', { a: todos.selectedDate, b: friendlyDate(todos.selectedDate) }) }}
           </div>
-          <div v-if="!todos.schedule?.schedules.length" class="small muted" style="margin-top: 6px">{{ $t($t('当天没有定时日程')) }}</div>
+          <div v-if="!todos.schedule?.schedules.length" class="small muted" style="margin-top: 6px">{{ $t('当天没有定时日程') }}</div>
           <div v-for="s in todos.schedule?.schedules || []" :key="s.id" class="row" style="margin-top: 8px; gap: 10px">
             <span class="mono small muted">{{ s.dueTime }}</span>
             <span style="font-size: 13px" :style="s.status === '已完成' ? 'text-decoration:line-through;color:var(--text-disable)' : ''">
               {{ s.title }}
             </span>
-            <span v-if="s.overdue" class="badge danger">{{ $t($t('逾期')) }}</span>
+            <span v-if="s.overdue" class="badge danger">{{ $t('逾期') }}</span>
             <div class="spacer"></div>
             <button class="btn btn-sm" @click="todos.toggle(s.id)">{{ s.status === '已完成' ? $t('撤销') : $t('完成') }}</button>
-            <button class="btn btn-sm" @click="editTodo(s)">{{ $t($t('改期')) }}</button>
+            <button class="btn btn-sm" @click="editTodo(s)">{{ $t('改期') }}</button>
           </div>
 
           <div class="divider" style="margin: 14px 0"></div>
 
           <div class="card-title" style="font-size: 14px">
-            {{ $t($t('{a} · 待办事项'), { a: todos.selectedDate }) }}
+            {{ $t('{a} · 待办事项', { a: todos.selectedDate }) }}
           </div>
-          <div v-if="!todos.schedule?.todos.length" class="small muted" style="margin-top: 6px">{{ $t($t('当天没有待办')) }}</div>
+          <div v-if="!todos.schedule?.todos.length" class="small muted" style="margin-top: 6px">{{ $t('当天没有待办') }}</div>
           <TodoItem v-for="t in todos.schedule?.todos || []" :key="t.id" :todo="t" />
           <button class="btn" style="width: 100%; justify-content: center; margin-top: 8px" @click="newTodo">
-            {{ $t($t('＋ 添加该日待办')) }}
+            {{ $t('＋ 添加该日待办') }}
           </button>
         </section>
       </div>

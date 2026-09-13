@@ -163,6 +163,8 @@ def _translate_literals(expr: str) -> tuple:
         before = expr[: m.start()]
         if CMP_BEFORE.search(before):
             return m.group(0)  # 比较用的规范值，禁止翻译（否则筛选/判断会失效）
+        if before.rstrip().endswith("$t(") or before.rstrip().endswith("t("):
+            return m.group(0)  # 已包裹，避免 $t($t(…)) 双重翻译（踩过一次）
         changed += 1
         return "$t('%s')" % esc(lit.replace("\'", "'"))
 

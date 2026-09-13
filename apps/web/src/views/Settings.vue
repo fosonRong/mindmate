@@ -460,39 +460,39 @@ onMounted(load)
 <template>
   <div class="set-split">
     <aside class="set-menu">
-      <button :class="{ on: section === 'remind' }" @click="section = 'remind'">{{ $t($t('⏰ 提醒')) }}</button>
-      <button :class="{ on: section === 'push' }" @click="section = 'push'">{{ $t($t('📮 推送渠道')) }}</button>
-      <button :class="{ on: section === 'ai' }" @click="section = 'ai'">{{ $t($t('🤖 AI 模型')) }}</button>
-      <button :class="{ on: section === 'goal' }" @click="section = 'goal'">{{ $t($t('🎯 每日目标')) }}</button>
-      <button :class="{ on: section === 'appearance' }" @click="section = 'appearance'">{{ $t($t('🎨 外观')) }}</button>
-      <button :class="{ on: section === 'data' }" @click="section = 'data'">{{ $t($t('💾 数据与部署')) }}</button>
-      <button :class="{ on: section === 'about' }" @click="section = 'about'">{{ $t($t('ℹ️ 关于')) }}</button>
+      <button :class="{ on: section === 'remind' }" @click="section = 'remind'">{{ $t('⏰ 提醒') }}</button>
+      <button :class="{ on: section === 'push' }" @click="section = 'push'">{{ $t('📮 推送渠道') }}</button>
+      <button :class="{ on: section === 'ai' }" @click="section = 'ai'">{{ $t('🤖 AI 模型') }}</button>
+      <button :class="{ on: section === 'goal' }" @click="section = 'goal'">{{ $t('🎯 每日目标') }}</button>
+      <button :class="{ on: section === 'appearance' }" @click="section = 'appearance'">{{ $t('🎨 外观') }}</button>
+      <button :class="{ on: section === 'data' }" @click="section = 'data'">{{ $t('💾 数据与部署') }}</button>
+      <button :class="{ on: section === 'about' }" @click="section = 'about'">{{ $t('ℹ️ 关于') }}</button>
     </aside>
 
     <div class="col-stack">
       <!-- 提醒 -->
       <template v-if="section === 'remind'">
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('记录提醒')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('记录提醒') }}</div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('启用记录提醒')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('启用记录提醒') }}</span>
             <div class="switch" :class="{ on: remindEnabled }" @click="remindEnabled = !remindEnabled"></div>
           </div>
           <div class="form-row">
-            <label class="form-label">{{ $t($t('提醒频率')) }}</label>
+            <label class="form-label">{{ $t('提醒频率') }}</label>
             <div class="seg">
-              <button :class="{ on: freqMode === 'preset' && freqMinutes === 60 }" @click="freqMode = 'preset'; freqMinutes = 60">{{ $t($t('每小时')) }}</button>
-              <button :class="{ on: freqMode === 'preset' && freqMinutes === 120 }" @click="freqMode = 'preset'; freqMinutes = 120">{{ $t($t('每 2 小时')) }}</button>
-              <button :class="{ on: freqMode === 'preset' && freqMinutes === 240 }" @click="freqMode = 'preset'; freqMinutes = 240">{{ $t($t('每 4 小时')) }}</button>
-              <button :class="{ on: freqMode === 'custom' }" @click="freqMode = 'custom'">{{ $t($t('自定义')) }}</button>
+              <button :class="{ on: freqMode === 'preset' && freqMinutes === 60 }" @click="freqMode = 'preset'; freqMinutes = 60">{{ $t('每小时') }}</button>
+              <button :class="{ on: freqMode === 'preset' && freqMinutes === 120 }" @click="freqMode = 'preset'; freqMinutes = 120">{{ $t('每 2 小时') }}</button>
+              <button :class="{ on: freqMode === 'preset' && freqMinutes === 240 }" @click="freqMode = 'preset'; freqMinutes = 240">{{ $t('每 4 小时') }}</button>
+              <button :class="{ on: freqMode === 'custom' }" @click="freqMode = 'custom'">{{ $t('自定义') }}</button>
             </div>
             <div v-if="freqMode === 'custom'" class="row" style="margin-top: 8px">
               <input v-model.number="customMinutes" type="number" min="5" max="720" class="input" style="width: 120px" />
-              <span class="small muted">{{ $t($t('分钟提醒一次')) }}</span>
+              <span class="small muted">{{ $t('分钟提醒一次') }}</span>
             </div>
           </div>
           <div class="form-row">
-            <label class="form-label">{{ $t($t('生效时段（时段外静默）')) }}</label>
+            <label class="form-label">{{ $t('生效时段（时段外静默）') }}</label>
             <div class="row">
               <input v-model="windowStart" type="time" class="input" style="width: 130px" />
               <span class="muted">—</span>
@@ -500,57 +500,57 @@ onMounted(load)
             </div>
           </div>
           <div class="hint-bar info">
-            {{ $t($t('🧠 智能规则：当日记录达标即静默；有逾期待办会附加提醒；连续多日未记录改为温和关怀')) }}
+            {{ $t('🧠 智能规则：当日记录达标即静默；有逾期待办会附加提醒；连续多日未记录改为温和关怀') }}
           </div>
         </section>
 
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('待办提醒')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('待办提醒') }}</div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('启用待办到期提醒')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('启用待办到期提醒') }}</span>
             <div class="switch" :class="{ on: todoRemindEnabled }" @click="todoRemindEnabled = !todoRemindEnabled"></div>
           </div>
           <div class="form-row">
-            <label class="form-label">{{ $t($t('默认提前量')) }}</label>
+            <label class="form-label">{{ $t('默认提前量') }}</label>
             <div class="select-wrap" style="width: 180px">
               <select v-model.number="todoRemindOffset" class="input">
-                <option :value="0">{{ $t($t('准点提醒')) }}</option>
-                <option :value="5">{{ $t($t('提前 5 分钟')) }}</option>
-                <option :value="15">{{ $t($t('提前 15 分钟')) }}</option>
-                <option :value="30">{{ $t($t('提前 30 分钟')) }}</option>
-                <option :value="60">{{ $t($t('提前 1 小时')) }}</option>
+                <option :value="0">{{ $t('准点提醒') }}</option>
+                <option :value="5">{{ $t('提前 5 分钟') }}</option>
+                <option :value="15">{{ $t('提前 15 分钟') }}</option>
+                <option :value="30">{{ $t('提前 30 分钟') }}</option>
+                <option :value="60">{{ $t('提前 1 小时') }}</option>
               </select>
             </div>
           </div>
         </section>
 
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('智伴主动问候')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('智伴主动问候') }}</div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('晨间简报')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('晨间简报') }}</span>
             <input v-model="briefTime" type="time" class="input" style="width: 120px" />
             <div class="switch" :class="{ on: briefEnabled }" @click="briefEnabled = !briefEnabled"></div>
           </div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('晚安总结')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('晚安总结') }}</span>
             <input v-model="goodnightTime" type="time" class="input" style="width: 120px" />
             <div class="switch" :class="{ on: goodnightEnabled }" @click="goodnightEnabled = !goodnightEnabled"></div>
           </div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('周度智能复盘')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('周度智能复盘') }}</span>
             <div class="switch" :class="{ on: reviewEnabled }" @click="reviewEnabled = !reviewEnabled"></div>
           </div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('提醒提示音')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('提醒提示音') }}</span>
             <div class="switch" :class="{ on: soundEnabled }" @click="soundEnabled = !soundEnabled"></div>
           </div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('浏览器通知权限')) }}</span>
-            <button class="btn btn-sm" @click="requestNotificationPermission(); app.toast('info', '已请求通知权限（若浏览器弹窗请允许）')">{{ $t($t('请求权限')) }}</button>
+            <span style="flex: 1; font-size: 13px">{{ $t('浏览器通知权限') }}</span>
+            <button class="btn btn-sm" @click="requestNotificationPermission(); app.toast('info', '已请求通知权限（若浏览器弹窗请允许）')">{{ $t('请求权限') }}</button>
           </div>
           <div class="row">
             <span style="flex: 1; font-size: 13px">
-              {{ $t($t('开机自启')) }}
+              {{ $t('开机自启') }}
               <span class="small muted">{{ $t('（{a}）', { a: isDesktopApp ? $t('登录后自动启动，保证提醒不中断') : $t('仅桌面端可用') }) }}</span>
             </span>
             <div
@@ -565,11 +565,11 @@ onMounted(load)
 
         <section class="card stack">
           <div class="row">
-            <div class="card-title" style="font-size: 15px">{{ $t($t('勿扰时段')) }}</div>
+            <div class="card-title" style="font-size: 15px">{{ $t('勿扰时段') }}</div>
             <div class="spacer"></div>
-            <button class="btn btn-sm" @click="addDnd">{{ $t($t('＋ 添加')) }}</button>
+            <button class="btn btn-sm" @click="addDnd">{{ $t('＋ 添加') }}</button>
           </div>
-          <div class="small muted">{{ $t($t('勿扰时段内完全静默（优先级最高），可设置一次性（指定日期）或每天重复')) }}</div>
+          <div class="small muted">{{ $t('勿扰时段内完全静默（优先级最高），可设置一次性（指定日期）或每天重复') }}</div>
           <div v-for="(r, i) in dndRules" :key="i" class="row">
             <input v-model="r.start" type="time" class="input" style="width: 120px" />
             <span class="muted">—</span>
@@ -581,27 +581,27 @@ onMounted(load)
 
         <div class="row">
           <div class="spacer"></div>
-          <button class="btn btn-primary" @click="saveRemind">{{ $t($t('保存提醒设置')) }}</button>
+          <button class="btn btn-primary" @click="saveRemind">{{ $t('保存提醒设置') }}</button>
         </div>
       </template>
 
       <!-- 推送渠道（FR-4.10）-->
       <template v-if="section === 'push'">
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('远程推送渠道')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('远程推送渠道') }}</div>
           <div class="small muted">
-            {{ $t($t('除桌面通知与浏览器横幅外，还可通过邮件或 IM 接收提醒 —— 应用未打开、或处于服务器模式时同样有效。 凭据仅保存于本机系统安全存储。')) }}
+            {{ $t('除桌面通知与浏览器横幅外，还可通过邮件或 IM 接收提醒 —— 应用未打开、或处于服务器模式时同样有效。 凭据仅保存于本机系统安全存储。') }}
           </div>
           <div v-for="c in CHANNEL_META" :key="c.id" class="channel-row" :class="{ on: channelOn(c.id) }">
             <div style="font-size: 20px; width: 28px; text-align: center">{{ c.icon }}</div>
             <div class="info">
               <div class="name">
                 {{ c.name }}
-                <span v-if="c.id === 'wecom'" class="badge info">{{ $t($t('推荐')) }}</span>
+                <span v-if="c.id === 'wecom'" class="badge info">{{ $t('推荐') }}</span>
                 <span
                   v-if="(c.id === 'email' && push.hasSmtpPassword) || (c.id === 'telegram' && push.hasTelegramToken)"
                   class="badge ok"
-                >{{ $t($t('已配置凭据')) }}</span>
+                >{{ $t('已配置凭据') }}</span>
               </div>
               <div class="desc">{{ c.desc }}</div>
             </div>
@@ -620,64 +620,64 @@ onMounted(load)
         </section>
 
         <section class="card stack" :class="{ dim: !channelOn('wecom') }">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('企业微信群机器人')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('企业微信群机器人') }}</div>
           <div class="form-row">
-            <label class="form-label">{{ $t($t('Webhook 地址')) }}</label>
+            <label class="form-label">{{ $t('Webhook 地址') }}</label>
             <input
               v-model="push.wecomWebhook"
               class="input mono"
               placeholder="https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=…"
             />
           </div>
-          <div class="small muted">{{ $t($t('群聊 → 右上角 → 群机器人 → 添加机器人 → 复制 Webhook 地址')) }}</div>
+          <div class="small muted">{{ $t('群聊 → 右上角 → 群机器人 → 添加机器人 → 复制 Webhook 地址') }}</div>
         </section>
 
         <section class="card stack" :class="{ dim: !channelOn('email') }">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('邮件（SMTP）')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('邮件（SMTP）') }}</div>
           <div class="row" style="gap: 12px">
             <div class="form-row" style="flex: 2">
-              <label class="form-label">{{ $t($t('SMTP 服务器')) }}</label>
+              <label class="form-label">{{ $t('SMTP 服务器') }}</label>
               <input v-model="push.smtpHost" class="input mono" placeholder="smtp.example.com" />
             </div>
             <div class="form-row" style="flex: 1">
-              <label class="form-label">{{ $t($t('端口')) }}</label>
+              <label class="form-label">{{ $t('端口') }}</label>
               <input v-model.number="push.smtpPort" type="number" class="input" />
             </div>
             <div class="form-row" style="flex: 1">
-              <label class="form-label">{{ $t($t('加密方式')) }}</label>
+              <label class="form-label">{{ $t('加密方式') }}</label>
               <div class="select-wrap" style="width: 100%">
                 <select v-model="push.smtpSecurity" class="input">
                   <option value="starttls">STARTTLS (587)</option>
                   <option value="tls">SSL/TLS (465)</option>
-                  <option value="none">{{ $t($t('无加密')) }}</option>
+                  <option value="none">{{ $t('无加密') }}</option>
                 </select>
               </div>
             </div>
           </div>
           <div class="row" style="gap: 12px">
             <div class="form-row" style="flex: 1">
-              <label class="form-label">{{ $t($t('发件邮箱')) }}</label>
+              <label class="form-label">{{ $t('发件邮箱') }}</label>
               <input v-model="push.emailFrom" class="input" placeholder="me@example.com" />
             </div>
             <div class="form-row" style="flex: 1">
-              <label class="form-label">{{ $t($t('收件邮箱')) }}</label>
+              <label class="form-label">{{ $t('收件邮箱') }}</label>
               <input v-model="push.emailTo" class="input" placeholder="to@example.com" />
             </div>
           </div>
           <div class="row" style="gap: 12px">
             <div class="form-row" style="flex: 1">
-              <label class="form-label">{{ $t($t('SMTP 账号')) }}</label>
+              <label class="form-label">{{ $t('SMTP 账号') }}</label>
               <input v-model="push.smtpUser" class="input" :placeholder="$t('通常与发件邮箱相同')" />
             </div>
             <div class="form-row" style="flex: 1">
               <label class="form-label">
-                {{ $t($t('密码 / 授权码')) }}
+                {{ $t('密码 / 授权码') }}
                 <span class="muted small">{{ $t('（{a}）', { a: push.hasSmtpPassword ? $t('已配置，留空则不修改') : $t('仅存系统安全存储') }) }}</span>
               </label>
               <input v-model="smtpPasswordInput" type="password" class="input" placeholder="••••••••" />
             </div>
           </div>
-          <div class="small muted">{{ $t($t('企业邮箱 / QQ 邮箱等通常需在邮箱设置中开启 SMTP 并使用「授权码」而非登录密码')) }}</div>
+          <div class="small muted">{{ $t('企业邮箱 / QQ 邮箱等通常需在邮箱设置中开启 SMTP 并使用「授权码」而非登录密码') }}</div>
         </section>
 
         <section class="card stack" :class="{ dim: !channelOn('telegram') }">
@@ -695,7 +695,7 @@ onMounted(load)
               <input v-model="telegramTokenInput" type="password" class="input mono" placeholder="123456:ABC-DEF…" />
             </div>
           </div>
-          <div class="small muted">{{ $t($t('在 @BotFather 创建机器人获取 Token；向机器人发消息后用 @userinfobot 获取 Chat ID')) }}</div>
+          <div class="small muted">{{ $t('在 @BotFather 创建机器人获取 Token；向机器人发消息后用 @userinfobot 获取 Chat ID') }}</div>
         </section>
 
         <div class="row">
@@ -709,7 +709,7 @@ onMounted(load)
       <!-- AI 模型 -->
       <template v-if="section === 'ai'">
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('选择模型提供商')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('选择模型提供商') }}</div>
           <div class="preset-grid">
             <div
               v-for="p in presets"
@@ -720,61 +720,61 @@ onMounted(load)
             >
               <div class="name">
                 {{ p.name }}
-                <span v-if="p.freeModel" class="badge free">{{ $t($t('免费')) }}</span>
-                <span v-else-if="p.recommended" class="badge info">{{ $t($t('推荐')) }}</span>
+                <span v-if="p.freeModel" class="badge free">{{ $t('免费') }}</span>
+                <span v-else-if="p.recommended" class="badge info">{{ $t('推荐') }}</span>
               </div>
               <div class="desc">{{ p.note }}</div>
               <div class="tick">✓</div>
             </div>
           </div>
           <div class="small muted">
-            {{ $t($t('智谱 GLM-4-Flash 免费可用；DeepSeek 性价比高。任意 OpenAI 兼容接口均可接入。')) }}
+            {{ $t('智谱 GLM-4-Flash 免费可用；DeepSeek 性价比高。任意 OpenAI 兼容接口均可接入。') }}
           </div>
         </section>
 
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('接口配置')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('接口配置') }}</div>
           <div class="form-row">
             <label class="form-label">
               API Base URL
-              <span class="muted small">{{ $t($t('（可自由填写，保存后不会被切换模型重置）')) }}</span>
-              <span v-if="baseUrlCustomized" class="badge info">{{ $t($t('自定义')) }}</span>
+              <span class="muted small">{{ $t('（可自由填写，保存后不会被切换模型重置）') }}</span>
+              <span v-if="baseUrlCustomized" class="badge info">{{ $t('自定义') }}</span>
             </label>
             <input v-model="aiConfig.baseUrl" class="input mono" :placeholder="$t('https://…/v1 或 …/anthropic')" />
             <div class="row wrap" style="gap: 6px; margin-top: 4px">
-              <button class="btn btn-sm" @click="useDefaultUrl">{{ $t($t('恢复该提供商默认地址')) }}</button>
+              <button class="btn btn-sm" @click="useDefaultUrl">{{ $t('恢复该提供商默认地址') }}</button>
               <button
                 v-if="presets.find((p) => p.id === aiConfig.provider)?.anthropicUrl"
                 class="btn btn-sm"
                 @click="useAnthropicUrl"
               >
-                {{ $t($t('使用 Anthropic 兼容地址')) }}
+                {{ $t('使用 Anthropic 兼容地址') }}
               </button>
             </div>
           </div>
 
           <div class="form-row">
             <label class="form-label">
-              {{ $t($t('接口协议')) }}
-              <span class="muted small">{{ $t($t('（默认自动识别：地址含 /anthropic 时使用 Anthropic 协议）')) }}</span>
+              {{ $t('接口协议') }}
+              <span class="muted small">{{ $t('（默认自动识别：地址含 /anthropic 时使用 Anthropic 协议）') }}</span>
             </label>
             <div class="row">
               <div class="select-wrap" style="width: 240px">
                 <select v-model="aiConfig.protocolMode" class="input">
-                  <option value="auto">{{ $t($t('自动识别（推荐）')) }}</option>
-                  <option value="openai">{{ $t($t('OpenAI 兼容（/chat/completions）')) }}</option>
-                  <option value="anthropic">{{ $t($t('Anthropic 兼容（/v1/messages）')) }}</option>
+                  <option value="auto">{{ $t('自动识别（推荐）') }}</option>
+                  <option value="openai">{{ $t('OpenAI 兼容（/chat/completions）') }}</option>
+                  <option value="anthropic">{{ $t('Anthropic 兼容（/v1/messages）') }}</option>
                 </select>
               </div>
               <span class="badge" :class="aiConfig.detectedProtocol === 'anthropic' ? 'info' : 'ok'">
-                {{ $t($t('将使用 {a}'), { a: aiConfig.detectedProtocol === 'anthropic' ? $t('Anthropic 协议 /v1/messages') : $t('OpenAI 协议 /chat/completions') }) }}
+                {{ $t('将使用 {a}', { a: aiConfig.detectedProtocol === 'anthropic' ? $t('Anthropic 协议 /v1/messages') : $t('OpenAI 协议 /chat/completions') }) }}
               </span>
             </div>
           </div>
           <div class="form-row">
             <label class="form-label">
               API Key
-              <span class="muted small">{{ $t($t('（仅存于本机系统安全存储，界面不回读）')) }}</span>
+              <span class="muted small">{{ $t('（仅存于本机系统安全存储，界面不回读）') }}</span>
             </label>
             <div class="row">
               <input
@@ -784,13 +784,13 @@ onMounted(load)
                 :placeholder="aiConfig.hasKey ? '已配置（留空则不修改）' : '粘贴你的 API Key'"
                 style="flex: 1"
               />
-              <span v-if="aiConfig.hasKey" class="badge ok">{{ $t($t('已配置')) }}</span>
+              <span v-if="aiConfig.hasKey" class="badge ok">{{ $t('已配置') }}</span>
             </div>
           </div>
           <div class="form-row">
             <label class="form-label">
-              {{ $t($t('模型')) }}
-              <span class="muted small">{{ $t($t('（切换模型不会改动 Base URL）')) }}</span>
+              {{ $t('模型') }}
+              <span class="muted small">{{ $t('（切换模型不会改动 Base URL）') }}</span>
             </label>
             <div class="row">
               <div class="select-wrap" style="flex: 1">
@@ -817,16 +817,16 @@ onMounted(load)
           </div>
           <div v-if="showAdvanced" class="stack">
             <div class="form-row">
-              <label class="form-label">{{ $t($t('温度 {a}'), { a: aiConfig.temperature }) }}</label>
+              <label class="form-label">{{ $t('温度 {a}', { a: aiConfig.temperature }) }}</label>
               <input v-model.number="aiConfig.temperature" type="range" min="0" max="1.5" step="0.1" />
             </div>
             <div class="form-row">
-              <label class="form-label">{{ $t($t('最大输出 tokens')) }}</label>
+              <label class="form-label">{{ $t('最大输出 tokens') }}</label>
               <input v-model.number="aiConfig.maxTokens" type="number" class="input" style="width: 160px" />
             </div>
           </div>
           <div class="row">
-            <button class="btn btn-primary" :disabled="savingAi" @click="saveAi">{{ $t($t('保存配置')) }}</button>
+            <button class="btn btn-primary" :disabled="savingAi" @click="saveAi">{{ $t('保存配置') }}</button>
             <button class="btn" :disabled="testing" @click="testConnection">{{ testing ? $t('测试中…') : $t('测试连接') }}</button>
             <span v-if="testResult" class="small" :style="testResult.ok ? 'color:var(--success)' : 'color:var(--danger)'">
               {{ testResult.ok ? '✓ ' : '✗ ' }}{{ testResult.text }}
@@ -835,7 +835,7 @@ onMounted(load)
         </section>
 
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('Prompt 模板（可自定义）')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('Prompt 模板（可自定义）') }}</div>
           <div class="seg wrap">
             <button
               v-for="t in [['daily', '日报'], ['weekly', '周报'], ['monthly', '月报'], ['brief', '晨间简报'], ['goodnight', '晚安总结'], ['review', '复盘'], ['qa', '问答']]"
@@ -848,11 +848,11 @@ onMounted(load)
           </div>
           <textarea v-model="templateDraft" class="textarea" rows="10" style="font-family: ui-monospace, monospace; font-size: 12px"></textarea>
           <div class="row">
-            <span class="small muted">{{ $t($t('可用变量：{a}'), { a: templateVars }) }}</span>
+            <span class="small muted">{{ $t('可用变量：{a}', { a: templateVars }) }}</span>
             <div class="spacer"></div>
             <span class="small muted">{{ templateSaved }}</span>
-            <button class="btn btn-sm" @click="resetTemplate">{{ $t($t('恢复默认')) }}</button>
-            <button class="btn btn-sm btn-primary" @click="saveTemplate">{{ $t($t('保存模板')) }}</button>
+            <button class="btn btn-sm" @click="resetTemplate">{{ $t('恢复默认') }}</button>
+            <button class="btn btn-sm btn-primary" @click="saveTemplate">{{ $t('保存模板') }}</button>
           </div>
         </section>
       </template>
@@ -860,22 +860,22 @@ onMounted(load)
       <!-- 每日目标 -->
       <template v-if="section === 'goal'">
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('每日记录目标')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('每日记录目标') }}</div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('启用每日目标（驱动进度条）')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('启用每日目标（驱动进度条）') }}</span>
             <div class="switch" :class="{ on: goalEnabled }" @click="goalEnabled = !goalEnabled"></div>
           </div>
           <div class="form-row">
-            <label class="form-label">{{ $t($t('每天希望记录多少条（默认 4）')) }}</label>
+            <label class="form-label">{{ $t('每天希望记录多少条（默认 4）') }}</label>
             <div class="row">
               <input v-model.number="dailyGoal" type="number" min="1" max="50" class="input" style="width: 120px" />
-              <span class="small muted">{{ $t($t('条 / 天')) }}</span>
+              <span class="small muted">{{ $t('条 / 天') }}</span>
             </div>
           </div>
-          <div class="hint-bar info">{{ $t($t('记录一条即一个节点，达标后继续记录会显示「超额」')) }}</div>
+          <div class="hint-bar info">{{ $t('记录一条即一个节点，达标后继续记录会显示「超额」') }}</div>
           <div class="row">
             <div class="spacer"></div>
-            <button class="btn btn-primary" @click="saveGoal">{{ $t($t('保存')) }}</button>
+            <button class="btn btn-primary" @click="saveGoal">{{ $t('保存') }}</button>
           </div>
         </section>
       </template>
@@ -883,7 +883,7 @@ onMounted(load)
       <!-- 外观 -->
       <template v-if="section === 'appearance'">
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('主题')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('主题') }}</div>
           <div class="preset-grid">
             <div
               v-for="t in THEMES"
@@ -898,12 +898,12 @@ onMounted(load)
             </div>
           </div>
           <div class="small muted">
-            {{ $t($t('当前解析主题：{a}（跟随系统模式下会随系统设置实时切换）'), { a: app.resolvedTheme === 'dark' ? $t('深色') : $t('浅色') }) }}
+            {{ $t('当前解析主题：{a}（跟随系统模式下会随系统设置实时切换）', { a: app.resolvedTheme === 'dark' ? $t('深色') : $t('浅色') }) }}
           </div>
         </section>
 
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('界面语言')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('界面语言') }}</div>
           <div class="preset-grid">
             <div
               v-for="m in localeOptions"
@@ -918,7 +918,7 @@ onMounted(load)
             </div>
           </div>
           <div class="small muted">
-            {{ $t($t('默认跟随系统语言；AI 报告、晨间简报与提醒文案也会使用该语言生成。')) }}
+            {{ $t('默认跟随系统语言；AI 报告、晨间简报与提醒文案也会使用该语言生成。') }}
           </div>
         </section>
       </template>
@@ -926,41 +926,41 @@ onMounted(load)
       <!-- 数据与部署 -->
       <template v-if="section === 'data'">
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('数据备份与恢复')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('数据备份与恢复') }}</div>
           <div class="row wrap">
-            <button class="btn btn-primary" @click="doExport">{{ $t($t('⬇️ 导出全部数据（JSON）')) }}</button>
-            <span class="small muted">{{ $t($t('包含记录、待办、设置与报告')) }}</span>
+            <button class="btn btn-primary" @click="doExport">{{ $t('⬇️ 导出全部数据（JSON）') }}</button>
+            <span class="small muted">{{ $t('包含记录、待办、设置与报告') }}</span>
           </div>
           <div class="row wrap">
             <button class="btn" :disabled="exportingMd" @click="doExportMarkdown">
               {{ exportingMd ? $t('打包中…') : $t('📦 导出 Markdown 归档（ZIP）') }}
             </button>
             <span class="small muted">
-              {{ $t($t('按周期分文件：daily/ 每日 · weekly/ 每周 · monthly/ 每月 · reports/ 报告')) }}
+              {{ $t('按周期分文件：daily/ 每日 · weekly/ 每周 · monthly/ 每月 · reports/ 报告') }}
             </span>
           </div>
           <div class="form-row">
-            <label class="form-label">{{ $t($t('导入数据（粘贴备份 JSON）')) }}</label>
+            <label class="form-label">{{ $t('导入数据（粘贴备份 JSON）') }}</label>
             <textarea v-model="importText" class="textarea" rows="4" placeholder='{"version":1,"nodes":[...]}'></textarea>
           </div>
           <div class="row">
             <label class="row small" style="gap: 6px">
               <input v-model="wipeOnImport" type="checkbox" />
-              {{ $t($t('导入前清空现有数据')) }}
+              {{ $t('导入前清空现有数据') }}
             </label>
             <div class="spacer"></div>
-            <button class="btn" @click="doImport">{{ $t($t('导入')) }}</button>
+            <button class="btn" @click="doImport">{{ $t('导入') }}</button>
           </div>
         </section>
 
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t($t('部署模式与访问')) }}</div>
+          <div class="card-title" style="font-size: 15px">{{ $t('部署模式与访问') }}</div>
           <div class="small muted">
-            {{ $t($t('当前模式：')) }}<b>{{ app.auth?.mode === 'local' ? $t('本地模式（仅本机）') : app.auth?.mode === 'lan' ? $t('局域网模式') : $t('服务器模式') }}</b>
-            {{ $t($t('—— 修改需重启应用并调整启动参数（--mode lan / --mode server --headless）')) }}
+            {{ $t('当前模式：') }}<b>{{ app.auth?.mode === 'local' ? $t('本地模式（仅本机）') : app.auth?.mode === 'lan' ? $t('局域网模式') : $t('服务器模式') }}</b>
+            {{ $t('—— 修改需重启应用并调整启动参数（--mode lan / --mode server --headless）') }}
           </div>
           <div class="form-row">
-            <label class="form-label">{{ $t($t('访问密码（局域网/服务器模式登录用）')) }}</label>
+            <label class="form-label">{{ $t('访问密码（局域网/服务器模式登录用）') }}</label>
             <div class="row">
               <input v-model="password" type="password" class="input" style="flex: 1; max-width: 260px" :placeholder="$t('至少 6 位')" />
               <button class="btn" :disabled="savingPassword" @click="savePassword">
@@ -969,7 +969,7 @@ onMounted(load)
             </div>
           </div>
           <div class="hint-bar warn">
-            {{ $t($t('⚠️ 浏览器访问本机服务：http://127.0.0.1:17801 ；手机/平板在同一局域网且开启局域网模式时可访问')) }}
+            {{ $t('⚠️ 浏览器访问本机服务：http://127.0.0.1:17801 ；手机/平板在同一局域网且开启局域网模式时可访问') }}
           </div>
         </section>
       </template>
@@ -980,25 +980,25 @@ onMounted(load)
           <div class="row">
             <div class="logo" style="width: 46px; height: 46px; font-size: 20px">M</div>
             <div>
-              <div class="card-title" style="font-size: 16px">{{ $t($t('智伴 Mindmate')) }}</div>
-              <div class="small muted">{{ $t($t('v{a} · AI 工作生活伴侣'), { a: update.currentVersion || '1.0.0' }) }}</div>
+              <div class="card-title" style="font-size: 16px">{{ $t('智伴 Mindmate') }}</div>
+              <div class="small muted">{{ $t('v{a} · AI 工作生活伴侣', { a: update.currentVersion || '1.0.0' }) }}</div>
             </div>
           </div>
           <div class="small" style="color: var(--text-regular); line-height: 1.8">
-            <div>· <b>{{ $t($t('数据本地')) }}</b>{{ $t($t('：全部内容存于本机 SQLite，除你主动生成 AI 内容外不联网')) }}</div>
-            <div>· <b>{{ $t($t('双端一致')) }}</b>{{ $t($t('：桌面端与浏览器端共享同一份数据与 AI 能力')) }}</div>
-            <div>· <b>{{ $t($t('AI 可换')) }}</b>{{ $t($t('：支持 DeepSeek / 智谱 GLM / OpenAI / 通义 / Kimi / 本地 Ollama')) }}</div>
-            <div>· <b>{{ $t($t('提醒克制')) }}</b>{{ $t($t('：达标静默、逾期加压、连续未记才温柔提醒')) }}</div>
+            <div>· <b>{{ $t('数据本地') }}</b>{{ $t('：全部内容存于本机 SQLite，除你主动生成 AI 内容外不联网') }}</div>
+            <div>· <b>{{ $t('双端一致') }}</b>{{ $t('：桌面端与浏览器端共享同一份数据与 AI 能力') }}</div>
+            <div>· <b>{{ $t('AI 可换') }}</b>{{ $t('：支持 DeepSeek / 智谱 GLM / OpenAI / 通义 / Kimi / 本地 Ollama') }}</div>
+            <div>· <b>{{ $t('提醒克制') }}</b>{{ $t('：达标静默、逾期加压、连续未记才温柔提醒') }}</div>
           </div>
           <div class="row">
-            <span class="small muted">{{ $t($t('服务状态：')) }}</span>
+            <span class="small muted">{{ $t('服务状态：') }}</span>
             <span class="badge" :class="app.connected ? 'ok' : 'danger'">{{ app.connected ? $t('运行中') : $t('未连接') }}</span>
           </div>
 
           <!-- 版本与更新 -->
           <div class="divider"></div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t($t('自动检查更新')) }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('自动检查更新') }}</span>
             <div
               class="switch"
               :class="{ on: update.autoCheckEnabled }"
@@ -1007,12 +1007,12 @@ onMounted(load)
             ></div>
           </div>
           <div class="hint-bar" v-if="!isDesktop()">
-            {{ $t($t('浏览器端不支持自动更新，请从下载页获取新版本。')) }}
+            {{ $t('浏览器端不支持自动更新，请从下载页获取新版本。') }}
           </div>
           <div class="row">
             <span class="small muted" style="flex: 1">
               {{ update.lastCheckedAt ? `上次检查：${update.lastCheckedAt}` : $t('尚未检查过新版本') }}
-              <span v-if="update.skippedVersion"> {{ $t($t('· 已跳过 v{a}'), { a: update.skippedVersion }) }}</span>
+              <span v-if="update.skippedVersion"> {{ $t('· 已跳过 v{a}', { a: update.skippedVersion }) }}</span>
             </span>
             <button
               class="btn btn-sm"
@@ -1023,15 +1023,15 @@ onMounted(load)
             </button>
           </div>
           <div v-if="update.available" class="row" style="gap: 8px">
-            <span class="small" style="color: var(--primary)">{{ $t($t('发现新版本 v{a}'), { a: update.available.version }) }}</span>
+            <span class="small" style="color: var(--primary)">{{ $t('发现新版本 v{a}', { a: update.available.version }) }}</span>
             <button class="btn btn-sm btn-primary" :disabled="update.installing" @click="update.install()">
               {{ update.installing ? `更新中 ${update.progress || 0}%` : $t('下载并重启') }}
             </button>
           </div>
-          <div v-else-if="update.upToDate" class="small muted">{{ $t($t('已是最新版本')) }}</div>
+          <div v-else-if="update.upToDate" class="small muted">{{ $t('已是最新版本') }}</div>
           <div v-if="update.error" class="small" style="color: var(--danger)">{{ update.error }}</div>
           <div class="small muted" style="line-height: 1.7">
-            {{ $t($t('更新包由官方私钥签名，客户端验签通过才会安装；更新不会触碰你的数据目录，安装失败也不会影响现有版本。')) }}
+            {{ $t('更新包由官方私钥签名，客户端验签通过才会安装；更新不会触碰你的数据目录，安装失败也不会影响现有版本。') }}
           </div>
         </section>
       </template>

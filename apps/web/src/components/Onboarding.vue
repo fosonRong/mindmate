@@ -93,8 +93,8 @@ loadPresets()
       <div class="row">
         <div class="logo" style="width: 40px; height: 40px; font-size: 18px">M</div>
         <div>
-          <div style="font-size: 16px; font-weight: 600">{{ $t($t('欢迎使用智伴 Mindmate')) }}</div>
-          <div class="small muted">{{ $t($t('花 30 秒完成初始化，之后随时可在设置里修改')) }}</div>
+          <div style="font-size: 16px; font-weight: 600">{{ $t('欢迎使用智伴 Mindmate') }}</div>
+          <div class="small muted">{{ $t('花 30 秒完成初始化，之后随时可在设置里修改') }}</div>
         </div>
       </div>
 
@@ -109,38 +109,38 @@ loadPresets()
 
       <!-- 第 1 步：部署模式 -->
       <template v-if="step === 0">
-        <div class="card-title" style="font-size: 15px">{{ $t($t('① 你的使用方式')) }}</div>
+        <div class="card-title" style="font-size: 15px">{{ $t('① 你的使用方式') }}</div>
         <div class="hint-bar info">
-          {{ $t($t('当前运行于')) }} <b>{{ modeLabel(app.auth?.mode) }}</b>
+          {{ $t('当前运行于') }} <b>{{ modeLabel(app.auth?.mode) }}</b>
           {{ isDesktopApp ? $t('· 桌面端已就绪（托盘常驻、Alt+Z 全局速记、系统通知）') : $t('· 浏览器端已就绪') }}
         </div>
         <div class="small muted">
-          {{ $t($t('数据全部保存在本机（SQLite）。如需在手机/其他电脑上使用，可改为局域网模式或部署到自己的服务器 —— 相关说明见 README 的「部署」章节。')) }}
+          {{ $t('数据全部保存在本机（SQLite）。如需在手机/其他电脑上使用，可改为局域网模式或部署到自己的服务器 —— 相关说明见 README 的「部署」章节。') }}
         </div>
       </template>
 
       <!-- 第 2 步：每日目标 -->
       <template v-if="step === 1">
-        <div class="card-title" style="font-size: 15px">{{ $t($t('② 每天想记录几条？')) }}</div>
+        <div class="card-title" style="font-size: 15px">{{ $t('② 每天想记录几条？') }}</div>
         <div class="row">
-          <span style="flex: 1; font-size: 13px">{{ $t($t('启用每日目标（驱动今日进度条）')) }}</span>
+          <span style="flex: 1; font-size: 13px">{{ $t('启用每日目标（驱动今日进度条）') }}</span>
           <div class="switch" :class="{ on: goalEnabled }" @click="goalEnabled = !goalEnabled"></div>
         </div>
         <div class="form-row">
-          <label class="form-label">{{ $t($t('目标条数（默认 4，可随时修改）')) }}</label>
+          <label class="form-label">{{ $t('目标条数（默认 4，可随时修改）') }}</label>
           <div class="row">
             <input v-model.number="dailyGoal" type="number" min="1" max="50" class="input" style="width: 120px" />
-            <span class="small muted">{{ $t($t('条 / 天')) }}</span>
+            <span class="small muted">{{ $t('条 / 天') }}</span>
           </div>
         </div>
-        <div class="small muted">{{ $t($t('一次录入即一个节点，达标后继续记录会显示「超额」。')) }}</div>
+        <div class="small muted">{{ $t('一次录入即一个节点，达标后继续记录会显示「超额」。') }}</div>
       </template>
 
       <!-- 第 3 步：AI 模型 -->
       <template v-if="step === 2">
-        <div class="card-title" style="font-size: 15px">{{ $t($t('③ 配置 AI 模型（可跳过）')) }}</div>
+        <div class="card-title" style="font-size: 15px">{{ $t('③ 配置 AI 模型（可跳过）') }}</div>
         <div class="small muted">
-          {{ $t($t('配置后，晨间简报、日报/周报/月报、周度复盘与问答将由大模型生成； 未配置时会自动使用本地模板，功能同样可用。')) }}
+          {{ $t('配置后，晨间简报、日报/周报/月报、周度复盘与问答将由大模型生成； 未配置时会自动使用本地模板，功能同样可用。') }}
         </div>
         <div class="preset-grid">
           <div
@@ -152,7 +152,7 @@ loadPresets()
           >
             <div class="name">
               {{ p.name }}
-              <span v-if="p.freeModel" class="badge free">{{ $t($t('免费')) }}</span>
+              <span v-if="p.freeModel" class="badge free">{{ $t('免费') }}</span>
             </div>
             <div class="desc">{{ p.note }}</div>
             <div class="tick">✓</div>
@@ -161,19 +161,19 @@ loadPresets()
         <div v-if="pickedProvider" class="form-row">
           <label class="form-label">
             API Key
-            <span class="small muted">{{ $t($t('（仅存本机系统安全存储，界面不回读）')) }}</span>
+            <span class="small muted">{{ $t('（仅存本机系统安全存储，界面不回读）') }}</span>
           </label>
           <input v-model="apiKey" type="password" class="input" :placeholder="$t('粘贴你的 API Key')" />
         </div>
         <div class="hint-bar warn">
-          {{ $t($t('⚙️ 也可以现在跳过：在「设置 → AI 模型」中随时配置，报告会先用本地模板生成。')) }}
+          {{ $t('⚙️ 也可以现在跳过：在「设置 → AI 模型」中随时配置，报告会先用本地模板生成。') }}
         </div>
       </template>
 
       <div class="modal-actions">
-        <button class="btn" @click="finish(false)">{{ $t($t('跳过引导')) }}</button>
+        <button class="btn" @click="finish(false)">{{ $t('跳过引导') }}</button>
         <div class="spacer"></div>
-        <button v-if="step > 0" class="btn" @click="step--">{{ $t($t('上一步')) }}</button>
+        <button v-if="step > 0" class="btn" @click="step--">{{ $t('上一步') }}</button>
         <button class="btn btn-primary" :disabled="saving" @click="next">
           {{ step === total - 1 ? (pickedProvider ? $t('完成并保存') : $t('完成')) : $t('下一步') }}
         </button>

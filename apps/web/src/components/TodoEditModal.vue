@@ -72,29 +72,29 @@ async function save() {
       <h3>{{ todo ? $t('编辑待办') : $t('新建待办') }}</h3>
 
       <div class="form-row">
-        <label class="form-label">{{ $t($t('标题 *')) }}</label>
+        <label class="form-label">{{ $t('标题 *') }}</label>
         <input v-model="title" class="input" :placeholder="$t('要做什么？')" @keydown.enter="save" />
       </div>
 
       <div class="form-row">
-        <label class="form-label">{{ $t($t('详细描述')) }}</label>
+        <label class="form-label">{{ $t('详细描述') }}</label>
         <textarea v-model="description" class="textarea" rows="2" :placeholder="$t('补充说明（可选）')"></textarea>
       </div>
 
       <div class="row" style="gap: 12px">
         <div class="form-row" style="flex: 1">
-          <label class="form-label">{{ $t($t('截止日期')) }}</label>
+          <label class="form-label">{{ $t('截止日期') }}</label>
           <input v-model="dueDate" type="date" class="input" />
         </div>
         <div class="form-row" style="flex: 1">
-          <label class="form-label">{{ $t($t('时间（填了即归入日程）')) }}</label>
+          <label class="form-label">{{ $t('时间（填了即归入日程）') }}</label>
           <input v-model="dueTime" type="time" class="input" />
         </div>
       </div>
 
       <div class="row" style="gap: 12px">
         <div class="form-row" style="flex: 1">
-          <label class="form-label">{{ $t($t('优先级')) }}</label>
+          <label class="form-label">{{ $t('优先级') }}</label>
           <div class="seg" style="width: 100%">
             <button
               v-for="p in ['高', '中', '低']"
@@ -108,19 +108,19 @@ async function save() {
           </div>
         </div>
         <div v-if="dueTime" class="form-row" style="flex: 1">
-          <label class="form-label">{{ $t($t('提前提醒')) }}</label>
+          <label class="form-label">{{ $t('提前提醒') }}</label>
           <select v-model.number="remindOffset" class="input">
-            <option :value="5">{{ $t($t('5 分钟')) }}</option>
-            <option :value="15">{{ $t($t('15 分钟')) }}</option>
-            <option :value="30">{{ $t($t('30 分钟')) }}</option>
-            <option :value="60">{{ $t($t('1 小时')) }}</option>
-            <option :value="0">{{ $t($t('准点')) }}</option>
+            <option :value="5">{{ $t('5 分钟') }}</option>
+            <option :value="15">{{ $t('15 分钟') }}</option>
+            <option :value="30">{{ $t('30 分钟') }}</option>
+            <option :value="60">{{ $t('1 小时') }}</option>
+            <option :value="0">{{ $t('准点') }}</option>
           </select>
         </div>
       </div>
 
       <div class="form-row">
-        <label class="form-label">{{ $t($t('标签')) }}</label>
+        <label class="form-label">{{ $t('标签') }}</label>
         <div class="row wrap">
           <button
             v-for="t in TAG_OPTIONS"
@@ -135,14 +135,14 @@ async function save() {
       </div>
 
       <div class="row wrap" style="gap: 6px">
-        <span class="small muted">{{ $t($t('快捷日期：')) }}</span>
-        <button class="btn btn-sm" @click="dueDate = todayStr()">{{ $t($t('今天')) }}</button>
-        <button class="btn btn-sm" @click="dueDate = addDays(todayStr(), 1)">{{ $t($t('明天')) }}</button>
-        <button class="btn btn-sm" @click="dueDate = addDays(todayStr(), 7)">{{ $t($t('下周')) }}</button>
+        <span class="small muted">{{ $t('快捷日期：') }}</span>
+        <button class="btn btn-sm" @click="dueDate = todayStr()">{{ $t('今天') }}</button>
+        <button class="btn btn-sm" @click="dueDate = addDays(todayStr(), 1)">{{ $t('明天') }}</button>
+        <button class="btn btn-sm" @click="dueDate = addDays(todayStr(), 7)">{{ $t('下周') }}</button>
       </div>
 
       <div class="modal-actions">
-        <button class="btn" @click="emit('close')">{{ $t($t('取消')) }}</button>
+        <button class="btn" @click="emit('close')">{{ $t('取消') }}</button>
         <button class="btn btn-primary" :disabled="creating" @click="save">
           {{ creating ? $t('保存中…') : $t('保存') }}
         </button>

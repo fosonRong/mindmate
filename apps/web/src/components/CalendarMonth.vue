@@ -118,7 +118,7 @@ function onDrop(e: DragEvent, date: string) {
           · {{ t }}
         </div>
         <div v-if="c.todoTitles.length > (maxTodoTitles ?? 2)" class="sum muted">
-          {{ $t($t('+{a} 项待办'), { a: c.todoTitles.length - (maxTodoTitles ?? 2) }) }}
+          {{ $t('+{a} 项待办', { a: c.todoTitles.length - (maxTodoTitles ?? 2) }) }}
         </div>
         <div v-if="!c.todoTitles.length && c.todoCount" class="todo-dots">
           <span v-for="i in Math.min(c.todoCount, 3)" :key="i"></span>

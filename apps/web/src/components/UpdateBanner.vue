@@ -9,15 +9,15 @@ const update = useUpdateStore()
   <div v-if="update.available" class="update-wrap">
     <div class="update-card">
       <div class="row" style="gap: 8px; align-items: baseline">
-        <b style="font-size: 13px">{{ $t($t('发现新版本 v{a}'), { a: update.available.version }) }}</b>
-        <span class="small muted">{{ $t($t('当前 v{a}'), { a: update.currentVersion }) }}</span>
+        <b style="font-size: 13px">{{ $t('发现新版本 v{a}', { a: update.available.version }) }}</b>
+        <span class="small muted">{{ $t('当前 v{a}', { a: update.currentVersion }) }}</span>
       </div>
       <div v-if="update.available.notes" class="update-notes small muted">{{ update.available.notes }}</div>
 
       <div v-if="update.installing" class="update-progress">
         <div class="bar"><i :style="{ width: (update.progress || 3) + '%' }"></i></div>
         <span class="small muted">
-          {{ $t($t('{a} · 完成后自动重启'), { a: update.progress ? `下载中 ${update.progress}%` : $t('正在下载…') }) }}
+          {{ $t('{a} · 完成后自动重启', { a: update.progress ? `下载中 ${update.progress}%` : $t('正在下载…') }) }}
         </span>
       </div>
 
@@ -25,7 +25,7 @@ const update = useUpdateStore()
         <button class="btn btn-sm btn-primary" :disabled="update.installing" @click="update.install()">
           {{ update.installing ? $t('更新中…') : $t('立即更新') }}
         </button>
-        <button class="btn btn-sm" :disabled="update.installing" @click="update.skip()">{{ $t($t('跳过此版本')) }}</button>
+        <button class="btn btn-sm" :disabled="update.installing" @click="update.skip()">{{ $t('跳过此版本') }}</button>
         <div class="spacer"></div>
         <button class="icon-btn" style="width: 22px; height: 22px" :disabled="update.installing" @click="update.dismiss()">×</button>
       </div>
