@@ -628,3 +628,43 @@ fn 月度小结_月末当天连续跨月累计逻辑正确() {
     assert_eq!(s.days_with_records, 2);
     assert!(s.is_month_end);
 }
+
+// ───────────────────────── Rust 侧本地化（T1.4）─────────────────────────
+
+#[test]
+fn 降级报告_按语言生成标题与章节() {
+    use mindmate_core::ai::fallback_report_lang;
+    use mindmate_core::i18n::Lang;
+    let db = Db::open_memory().unwrap();
+    db.create_node(NewNode {
+        content: "完成登录联调".into(),
+        date: Some("2026-09-13".into()),
+        tags: vec![],
+        todo_id: None,
+    })
+    .unwrap();
+
+    let zh = fallback_report_lang(&db, "daily", "2026-09-13", Lang::Zh).unwrap();
+    assert!(zh.contains("日报") && zh.contains("今日完成") && zh.contains("由本地模板生成"));
+
+    let en = fallback_report_lang(&db, "daily", "2026-09-13", Lang::En).unwrap();
+    assert!(en.contains("Daily report") && en.contains("Done today"), "英文降级报告缺本地化：{en}");
+    assert!(en.contains("local template"), "英文降级报告缺说明：{en}");
+    assert!(!en.contains("今日完成"), "英文模式不应残留中文标题");
+
+    let ja = fallback_report_lang(&db, "weekly", "2026-09-13", Lang::Ja).unwrap();
+    assert!(ja.contains("週報") && ja.contains("概要"));
+
+    let ko = fallback_report_lang(&db, "monthly", "2026-09-13", Lang::Ko).unwrap();
+    assert!(ko.contains("월간 보고서") && ko.contains("개요"));
+}
+
+#[test]
+fn 进度文案_按语言生成() {
+    use mindmate_core::ai::format_progress_lang;
+    use mindmate_core::i18n::Lang;
+    assert!(format_progress_lang(2, 4, true, 5, 1, Lang::Zh).contains("2/4"));
+    let en = format_progress_lang(2, 4, true, 5, 1, Lang::En);
+    assert!(en.contains("2/4") && !en.contains("记录"), "英文进度文案残留中文：{en}");
+    assert!(format_progress_lang(0, 0, false, 0, 0, Lang::Ko).contains("기록"));
+}
