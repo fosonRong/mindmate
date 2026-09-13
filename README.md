@@ -43,6 +43,8 @@ docker compose up -d
 
 > 完整部署指南（三种形态、HTTPS 反代、systemd、升级、备份、故障排查）见 [docs/部署文档.md](docs/部署文档.md)
 >
+> 发布与自动更新（零成本：GitHub Actions + Cloudflare Pages；含发版流程、回滚规则与排障）见 [docs/发布与更新文档.md](docs/发布与更新文档.md)
+>
 > 迭代与商业化（**第一期：免费全功能 + 中英日韩四语 + 免登录 + 零成本发布/自动更新**；第二期：手机号/微信扫码登录、订阅 ¥9.9/月·¥98/年·¥198 终身、一机一码）见 [docs/商业化方案.md](docs/商业化方案.md)
 
 ### 4. 开发模式
@@ -146,12 +148,12 @@ npm --prefix apps/web run dev
 
 | 测试 | 命令 | 结果 |
 | --- | --- | --- |
-| 全部验收（一键） | `python scripts/run_all_tests.py` | **307 项断言全部通过** |
+| 全部验收（一键） | `python scripts/run_all_tests.py` | **322 项断言全部通过** |
 | Rust 单元测试 | `npm run test:rust` | 90 项通过 |
 | 端到端接口验收 | `npm run test:e2e` | 156 项通过 |
 | 提醒系统专项 | `python scripts/reminder_test.py` | 12 项通过 |
 | 推送渠道专项 | `python scripts/push_test.py` | 20 项通过（含真实 Webhook 投递） |
-| 桌面端静态验收 | `npm run test:desktop` | 29 项通过（IPC 授权 / 速记浮窗生命周期） |
+| 桌面端静态验收 | `npm run test:desktop` | 44 项通过（IPC 授权 / 浮窗生命周期 / 更新与发布通道） |
 | 前端构建 | `npm run web:build` | 通过 |
 | Windows 打包 | `npm run desktop:build` | 通过（安装包 3.34MB） |
 
@@ -189,8 +191,8 @@ smartLife/
 │       ├── views/           # 今日 / 周 / 月 / 待办 / 智伴 / 设置 / 速记 / 登录
 │       ├── components/      # 时间线 / 待办项 / 日历 / Markdown / 进度条
 │       └── styles/          # 设计系统（设计令牌与组件样式）
-├── scripts/                 # 验收测试套件 + i18n 工具 + 发版脚本（默认 307 项断言）
-├── docs/                    # 需求文档 / 技术设计 / UI 设计 / 商业化方案 / 部署 / 验收报告
+├── scripts/                 # 验收测试套件 + i18n 工具 + 发版脚本（默认 322 项断言）
+├── docs/                    # 需求 / 技术设计 / UI 设计 / 商业化方案 / 发布更新 / 部署 / 验收报告
 ├── Dockerfile               # 服务器模式镜像
 └── docker-compose.yml       # 一键部署
 ```

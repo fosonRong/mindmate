@@ -126,6 +126,34 @@ check("不再对浮窗 eval 注入脚本（未就绪时抛 WebView2 0x8007139F�
 check("浮窗为无边框 + 置顶 + 不进任务栏",
       "decorations(false)" in main_rs and "always_on_top(true)" in main_rs and "skip_taskbar(true)" in main_rs)
 
+# ── 4. 自动更新与发布通道（防止误删导致"发出去但用户更新不了"）──
+section("4. 自动更新与发布通道")
+conf = json.loads(read("src-tauri", "tauri.conf.json"))
+updater = (conf.get("plugins") or {}).get("updater") or {}
+pubkey = updater.get("pubkey", "")
+check("tauri.conf.json 配置了更新公钥（缺失则客户端拒绝安装更新包）", len(pubkey) > 40 and "REPLACE" not in pubkey)
+check("配置了更新清单地址 endpoints", bool(updater.get("endpoints")), str(updater.get("endpoints"))[:60])
+check("开启 createUpdaterArtifacts（否则构建不出 .sig 签名文件）",
+      (conf.get("bundle") or {}).get("createUpdaterArtifacts") is True)
+cargo = read("src-tauri", "Cargo.toml")
+check("依赖 tauri-plugin-updater", "tauri-plugin-updater" in cargo)
+check("依赖 tauri-plugin-process（更新后重启用）", "tauri-plugin-process" in cargo)
+check("main.rs 注册 updater 与 process 插件",
+      "tauri_plugin_updater::Builder::new().build()" in main_rs and "tauri_plugin_process::init()" in main_rs)
+check("capability 放行 updater / process 权限", "updater:default" in perms and "process:default" in perms)
+gi = read(".gitignore")
+check(".gitignore 排除签名私钥与密钥目录（绝不能入库）",
+      ".tauri/" in gi and "*.key" in gi and "*.pem" in gi)
+wf = read(".github", "workflows", "release.yml")
+check("流水线用 Secrets 中的私钥签名", "TAURI_SIGNING_PRIVATE_KEY" in wf)
+check("流水线部署到 Cloudflare Pages", "pages deploy" in wf and "CLOUDFLARE_API_TOKEN" in wf)
+check("流水线注入 RELEASE_BASE_URL（清单下载地址来源）", "RELEASE_BASE_URL" in wf)
+check("流水线先跑 Rust 单测再出包", "cargo test" in wf)
+check("存在清单生成脚本（latest.json / 校验文件 / 下载页）",
+      os.path.exists(os.path.join(ROOT, "scripts", "make-manifest.mjs")))
+check("存在绿色版打包脚本", os.path.exists(os.path.join(ROOT, "scripts", "make-portable.mjs")))
+check("发布文档已就位", os.path.exists(os.path.join(ROOT, "docs", "发布与更新文档.md")))
+
 print("\n" + "=" * 60)
 print(f"桌面端静态验收：通过 {len(passed)} 项，失败 {len(failed)} 项")
 for f in failed:
