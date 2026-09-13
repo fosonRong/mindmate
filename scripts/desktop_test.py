@@ -160,6 +160,16 @@ m = re.search(r'^version = "([^"]+)"', core_toml, re.M)
 check("core 版本与应用版本一致", bool(m) and m.group(1) == conf.get("version"),
       f"core={m.group(1) if m else '?'} app={conf.get('version')}")
 
+# 底部状态栏与「关于」现在展示真实版本（曾写死 v1.0.0，用户看到的版本与已安装版本不符），
+# 因此四个清单里的版本号必须同步，避免界面显示的版本与应用实际版本再次脱节
+ver_web = json.loads(read("apps", "web", "package.json")).get("version")
+ver_root = json.loads(read("package.json")).get("version")
+tauri_cargo = re.search(r'^version = "([^"]+)"', read("src-tauri", "Cargo.toml"), re.M)
+ver_bin = tauri_cargo.group(1) if tauri_cargo else None
+check("版本号五处同步（core / app / 桌面二进制 / web / 工作区）",
+      conf.get("version") == ver_web == ver_root == ver_bin,
+      f"app={conf.get('version')} web={ver_web} root={ver_root} bin={ver_bin}")
+
 print("\n" + "=" * 60)
 print(f"桌面端静态验收：通过 {len(passed)} 项，失败 {len(failed)} 项")
 for f in failed:

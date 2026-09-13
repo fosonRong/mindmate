@@ -113,9 +113,28 @@ export function applyLocaleMode(mode: LocaleMode, syncToServer = true): void {
   }
 }
 
+/**
+ * 安全翻译：**永不抛异常**。
+ *
+ * vue-i18n 的消息编译器会在词条含非法语法时抛 SyntaxError（例如未转义的 `@` 会被当作
+ * 「链接消息」语法、`|` 被当作复数分隔符、`{` 未闭合）。若这种词条在模板渲染中被取用，
+ * 异常会沿渲染函数冒泡，导致整块界面渲染成空白 —— 用户看到的就是白屏。
+ * 这里统一兜底：解析失败时退回显示 key 本身（中文原文即 key，因此表现为「显示原文」），
+ * 并把问题写进控制台，便于 scripts/i18n_check.mjs 之外的线上排查。
+ */
+export function safeT(key: string, ...args: unknown[]): string {
+  try {
+    const fn = i18n.global.t as unknown as (k: string, ...rest: unknown[]) => string
+    return fn(key, ...args)
+  } catch (e) {
+    console.error('[i18n] 词条解析失败，已回退原文：', key, e)
+    return key
+  }
+}
+
 /** 供组件外（stores / lib / 工具函数）使用的翻译函数 */
 export function t(key: string, named?: Record<string, unknown>): string {
-  return named ? (i18n.global.t as (k: string, n: Record<string, unknown>) => string)(key, named) : i18n.global.t(key)
+  return named ? safeT(key, named) : safeT(key)
 }
 
 /** 首屏预注入：在 Vue 挂载前把语言写到 <html lang>，避免闪烁与朗读器误判 */

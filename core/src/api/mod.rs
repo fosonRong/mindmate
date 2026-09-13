@@ -149,6 +149,9 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/presets", get(ai_presets))
         .route("/api/v1/ai/config", get(ai_config).post(ai_save_config))
         .route("/api/v1/ai/test", post(ai_test))
+        .route("/api/v1/ai/ollama", get(ai_ollama_probe))
+        // 系统集成：用默认浏览器打开外链（仅本地模式）
+        .route("/api/v1/system/open-url", post(system_open_url))
         .route("/api/v1/ai/report", post(ai_report))
         .route("/api/v1/ai/brief", post(ai_brief))
         .route("/api/v1/ai/goodnight", post(ai_goodnight))
@@ -832,6 +835,12 @@ async fn ai_save_config(
     Ok(ApiResp::ok(ai::load_config(&ctx.db)?))
 }
 
+/// 测试连接：无论成功失败都返回 200 + 结构化结论
+///
+/// 为什么不再返回 HTTP 错误：界面的职责不是显示报错，而是告诉用户**下一步该做什么**
+/// （401 去换 Key、404 去补 /v1、429 稍后再试…）。原来的实现把上游状态码塞进一句中文
+/// 报错里，前端只能原样显示，用户看不懂。这里把「类别 + 上游状态码 + 原文」结构化返回，
+/// 由 ai::classify 统一判定（判定逻辑同时被单测覆盖）。
 async fn ai_test(
     State(ctx): State<Arc<AppContext>>,
     headers: HeaderMap,
@@ -840,20 +849,50 @@ async fn ai_test(
     let cfg = ai::load_config(&ctx.db)?;
     let key = crate::secrets::load_api_key()?;
     let started = std::time::Instant::now();
-    let reply = ai::chat_once(
-        &cfg,
-        vec![ChatMsg::user("请只回复两个字：你好")],
-        key,
-    )
-    .await
-    .map_err(|e| ApiError::ai(e.to_string()))?;
-    let latency = started.elapsed().as_millis() as i64;
-    Ok(ApiResp::ok(json!({
-        "ok": true,
-        "latencyMs": latency,
-        "model": cfg.model,
-        "reply": reply.trim().chars().take(40).collect::<String>(),
-    })))
+    let verdict = match ai::chat_once(&cfg, vec![ChatMsg::user("请只回复两个字：你好")], key).await {
+        Ok(reply) => ai::TestVerdict::success(&cfg.model, started.elapsed().as_millis() as i64, &reply),
+        Err(e) => ai::TestVerdict::failure(&e, &cfg.model, started.elapsed().as_millis() as i64),
+    };
+    Ok(ApiResp::ok(
+        serde_json::to_value(verdict).map_err(|e| ApiError::internal(e.to_string()))?,
+    ))
+}
+
+/// 探测本机 Ollama：让用户一键确认「本地模型能不能用」，并列出已装模型
+async fn ai_ollama_probe(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(
+        serde_json::to_value(ai::probe_ollama().await).map_err(|e| ApiError::internal(e.to_string()))?,
+    ))
+}
+
+#[derive(Deserialize)]
+struct OpenUrlReq {
+    url: String,
+}
+
+/// 用系统默认浏览器打开外链（设置页「去申请 Key」用）
+///
+/// 只在本地模式开放：桌面端需要跳出 WebView 打开厂商页面，而局域网/服务器模式
+/// 是别人在远程访问，绝不该能借这台机器调起浏览器进程。
+async fn system_open_url(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<OpenUrlReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    if ctx.cfg.mode != crate::RunMode::Local {
+        return Err(ApiError::bad_request(
+            "仅本地模式支持直接打开链接，请手动复制链接到浏览器",
+        ));
+    }
+    let url = crate::system::validate_external_url(&req.url).map_err(ApiError::bad_request)?;
+    crate::system::open_in_browser(&url)
+        .map_err(|e| ApiError::internal(format!("调起浏览器失败：{e}")))?;
+    Ok(ApiResp::ok(json!({ "opened": true, "url": url })))
 }
 
 #[derive(Deserialize)]

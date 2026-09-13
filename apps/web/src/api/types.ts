@@ -154,6 +154,42 @@ export interface Preset {
   note: string
   recommended: boolean
   freeModel: string | null
+  /** 申请 API Key 的官方入口（Ollama 为下载页），用于「去申请 Key」外链 */
+  keyUrl: string
+  /** 是否需要 API Key（Ollama 本地模型不需要） */
+  requiresKey: boolean
+}
+
+/** 测试连接的失败类别（由后端 ai::classify 判定） */
+export type AiFailKind =
+  | 'not_configured'
+  | 'auth'
+  | 'quota'
+  | 'endpoint'
+  | 'model'
+  | 'rate_limit'
+  | 'upstream'
+  | 'network'
+  | 'parse'
+
+/** 测试连接结论：失败也是正常结果，用 ok 表达，而不是抛错 */
+export interface AiTestResult {
+  ok: boolean
+  kind: AiFailKind | ''
+  upstreamStatus: number | null
+  /** 上游返回的错误原文（便于用户/客服核对） */
+  detail: string
+  model: string
+  latencyMs: number
+  reply: string
+}
+
+/** 本机 Ollama 探测结果 */
+export interface OllamaProbe {
+  running: boolean
+  baseUrl: string
+  models: string[]
+  detail: string
 }
 
 export interface AuthStatus {

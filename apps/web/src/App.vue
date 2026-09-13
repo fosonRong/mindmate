@@ -10,6 +10,7 @@ import Icon from '@/components/Icon.vue'
 import Onboarding from '@/components/Onboarding.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
 import UpdateBanner from '@/components/UpdateBanner.vue'
+import SafeView from '@/components/SafeView.vue'
 import { useUpdateStore } from '@/stores/update'
 import { t } from '@/i18n'
 
@@ -138,7 +139,9 @@ onUnmounted(() => {
       </header>
 
       <main class="page-body">
-        <router-view />
+        <SafeView>
+          <router-view />
+        </SafeView>
       </main>
 
       <footer class="status-bar">
@@ -150,7 +153,7 @@ onUnmounted(() => {
         <span v-if="app.stats">{{ $t('今日 {a} 条 · 待办 {b}/{c}', { a: app.stats.nodeCount, b: app.stats.todayDoneTodos, c: app.stats.todayTodos }) }}</span>
         <div class="spacer"></div>
         <span v-if="app.stats && app.stats.streakDays > 0">{{ $t('🔥 连续记录 {a} 天', { a: app.stats.streakDays }) }}</span>
-        <span>v1.0.0</span>
+        <span v-if="update.currentVersion">v{{ update.currentVersion }}</span>
       </footer>
     </div>
 

@@ -16,6 +16,7 @@ pub mod firstseen;
 pub mod push;
 pub mod reminder;
 pub mod secrets;
+pub mod system;
 
 pub use config::{AppConfig, RunMode};
 pub use db::Db;

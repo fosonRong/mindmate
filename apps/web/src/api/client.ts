@@ -1,8 +1,8 @@
 // API 客户端：统一请求封装 + SSE 事件流（自动重连 + 断线提示）
 import { t } from '@/i18n'
 import type {
-  Achievement, AchievementDef, AiConfig, AppEvent, AuthStatus, ChatMessage, DailyStats,
-  MonthlySummary, Node, PeriodStats, Preset, PushConfig, PushResult, Report,
+  Achievement, AchievementDef, AiConfig, AiTestResult, AppEvent, AuthStatus, ChatMessage, DailyStats,
+  MonthlySummary, Node, OllamaProbe, PeriodStats, Preset, PushConfig, PushResult, Report,
   ScheduleData, Setting, Todo
 } from './types'
 
@@ -111,7 +111,13 @@ export const api = {
     temperature: number; maxTokens: number; apiKey?: string
     protocolMode?: string
   }) => post<AiConfig>('/api/v1/ai/config', data),
-  testAi: () => post<{ ok: boolean; latencyMs: number; model: string; reply: string }>('/api/v1/ai/test'),
+  testAi: () => post<AiTestResult>('/api/v1/ai/test'),
+  /** 探测本机 Ollama（11434），返回是否运行与已装模型 */
+  ollamaProbe: () => get<OllamaProbe>('/api/v1/ai/ollama'),
+
+  // 系统集成
+  /** 用系统默认浏览器打开外链（仅本地模式；桌面端「去申请 Key」用） */
+  openUrl: (url: string) => post<{ opened: boolean; url: string }>('/api/v1/system/open-url', { url }),
 
   // 报告
   reports: (type?: string) => get<Report[]>(`/api/v1/reports${type ? `?type=${type}` : ''}`),

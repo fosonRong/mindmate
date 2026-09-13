@@ -308,3 +308,94 @@ fn 问答范围_无时间词默认最近七天() {
     assert!(sc.single_day.is_none());
     assert_eq!(sc.label, "最近 7 天");
 }
+
+// ── 模型配置引导（T1.6）──
+
+#[test]
+fn 预设_每个都给了领Key入口与是否必需Key() {
+    for p in presets() {
+        assert!(
+            !p.key_url.is_empty(),
+            "预设 {} 缺少 key_url（界面要引导用户去哪里领 Key）",
+            p.id
+        );
+        assert!(
+            p.key_url.starts_with("https://"),
+            "预设 {} 的 key_url 必须是 https：{}",
+            p.id,
+            p.key_url
+        );
+        // 只有本地 Ollama 不需要 Key；其余必须要求填 Key，否则用户会以为不填也能用
+        assert_eq!(
+            p.requires_key,
+            p.id != "ollama",
+            "预设 {} 的 requires_key 判定不对",
+            p.id
+        );
+        // 需要 Key 的必须给官方申请页，而不是下载页
+        assert!(!p.base_url.is_empty() && !p.models.is_empty(), "预设 {} 信息不全", p.id);
+    }
+}
+
+#[test]
+fn 失败分类_按上游状态码给出可操作建议() {
+    let up = |status: u16, body: &str| AiError::Upstream { status, body: body.into() };
+
+    // 401/403 → Key 无效或无权限
+    assert_eq!(classify(&up(401, "unauthorized")).0, FailKind::Auth);
+    assert_eq!(classify(&up(403, "forbidden")).0, FailKind::Auth);
+    // 402 → 余额不足
+    assert_eq!(classify(&up(402, "insufficient balance")).0, FailKind::Quota);
+    // 404 且不提模型 → 地址错（漏了 /v1 等）
+    assert_eq!(classify(&up(404, "not found")).0, FailKind::Endpoint);
+    // 404/400 且提到 model → 模型名不存在
+    assert_eq!(classify(&up(404, "The model gpt-9 does not exist")).0, FailKind::Model);
+    assert_eq!(
+        classify(&up(400, r#"{"error":{"code":"model_not_found"}}"#)).0,
+        FailKind::Model
+    );
+    // 429 → 限流
+    assert_eq!(classify(&up(429, "rate limit")).0, FailKind::RateLimit);
+    // 5xx 与其他 → 厂商侧异常
+    assert_eq!(classify(&up(500, "internal")).0, FailKind::Upstream);
+    assert_eq!(classify(&up(503, "unavailable")).0, FailKind::Upstream);
+    // 网络 / 未配置 / 解析
+    assert_eq!(classify(&AiError::Network("dns".into())).0, FailKind::Network);
+    assert_eq!(classify(&AiError::NotConfigured).0, FailKind::NotConfigured);
+    assert_eq!(classify(&AiError::Parse("html".into())).0, FailKind::Parse);
+}
+
+#[test]
+fn 失败分类_保留上游状态码供界面显示() {
+    let (kind, status) = classify(&AiError::Upstream { status: 401, body: "x".into() });
+    assert_eq!(kind, FailKind::Auth);
+    assert_eq!(status, Some(401));
+    // 非上游错误没有状态码
+    assert_eq!(classify(&AiError::Network("timeout".into())).1, None);
+}
+
+#[test]
+fn 测试结论_成功带延迟失败带可读类别与原文() {
+    let ok = TestVerdict::success("glm-4-flash", 321, "  你好，很高兴见到你  ");
+    assert!(ok.ok);
+    assert_eq!(ok.kind, "");
+    assert_eq!(ok.latency_ms, 321);
+    assert_eq!(ok.model, "glm-4-flash");
+    assert_eq!(ok.reply, "你好，很高兴见到你"); // 已 trim
+
+    let bad = TestVerdict::failure(
+        &AiError::Upstream { status: 401, body: "invalid api key".into() },
+        "glm-4-flash",
+        88,
+    );
+    assert!(!bad.ok);
+    assert_eq!(bad.kind, "auth");
+    assert_eq!(bad.upstream_status, Some(401));
+    assert!(bad.detail.contains("401") && bad.detail.contains("invalid api key"));
+    assert!(bad.reply.is_empty());
+
+    // 未配置也要有明确类别，界面据此提示「还没填 Key」
+    let none = TestVerdict::failure(&AiError::NotConfigured, "glm-4-flash", 1);
+    assert_eq!(none.kind, "not_configured");
+    assert!(none.upstream_status.is_none());
+}

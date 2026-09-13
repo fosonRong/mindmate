@@ -2,6 +2,14 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath, URL } from 'node:url'
 
+const apiProxy = {
+  '/api': {
+    target: 'http://127.0.0.1:17801',
+    changeOrigin: true,
+    ws: false
+  }
+}
+
 // 前端产物由 Rust 核心（axum）托管，桌面端与浏览器端共用同一份构建
 export default defineConfig({
   plugins: [vue()],
@@ -27,12 +35,12 @@ export default defineConfig({
   server: {
     port: 5173,
     // 开发模式：把 /api 代理到本地 Rust 核心
-    proxy: {
-      '/api': {
-        target: 'http://127.0.0.1:17801',
-        changeOrigin: true,
-        ws: false
-      }
-    }
+    proxy: apiProxy
+  },
+  // 预览生产产物（npm run preview）：用于验证「生产模式」下才暴露的问题
+  // —— vue-i18n 开发版对非法词条只告警、生产版会抛错，必须按生产产物验收
+  preview: {
+    port: 4173,
+    proxy: apiProxy
   }
 })

@@ -7,7 +7,7 @@ import { isDesktop } from '@/lib/desktop'
 import { useUpdateStore } from '@/stores/update'
 import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode, t } from '@/i18n'
 import { ref as _ref } from 'vue'
-import type { AiConfig, Preset, PushConfig } from '@/api/types'
+import type { AiConfig, AiFailKind, AiTestResult, OllamaProbe, Preset, PushConfig } from '@/api/types'
 
 const app = useAppStore()
 const update = useUpdateStore()
@@ -41,7 +41,7 @@ const aiConfig = ref<AiConfig>({
 })
 const apiKeyInput = ref('')
 const testing = ref(false)
-const testResult = ref<{ ok: boolean; text: string } | null>(null)
+const testResult = ref<AiTestResult | null>(null)
 const savingAi = ref(false)
 const showAdvanced = ref(false)
 const templates = ref<Record<string, string>>({})
@@ -49,6 +49,45 @@ const editingTemplate = ref<string>('daily')
 const templateVars = '{{date}} {{period}} {{nodes}} {{todos}} {{progress}} {{days}} {{context}}'
 const templateDraft = ref('')
 const templateSaved = ref('')
+
+/** 当前选中的提供商（界面按它决定「要不要填 Key」等分支） */
+const currentPreset = computed(() => presets.value.find((p) => p.id === aiConfig.value.provider))
+
+/** 本机 Ollama 探测结果（本地模型用户的「一键确认能不能用」） */
+const ollama = ref<OllamaProbe | null>(null)
+const ollamaBusy = ref(false)
+
+/** 模型下拉：预设模型 + 本机 Ollama 实际已装的模型（避免用户手打出错） */
+const modelOptions = computed(() => {
+  const base = currentPreset.value?.models || []
+  const local = ollama.value?.running ? ollama.value.models : []
+  return [...new Set([...base, ...local])]
+})
+
+/**
+ * 失败类别 → 可操作建议（中文原文即 key，四语目录提供译文）。
+ *
+ * 「测试连接」的价值不在于报错，而在于告诉用户下一步改什么；
+ * 类别由内核 ai::classify 依据上游状态码判定，这里只负责把它翻译成人话。
+ */
+const AI_HINT: Record<AiFailKind, string> = {
+  not_configured: '还没填 API Key：在上方粘贴后点「保存并测试连接」',
+  auth: 'Key 无效或没有权限：请确认已完整复制、没过期，并在厂商控制台确认已开通该模型',
+  quota: '余额或额度不足：请到厂商控制台充值，或先换用免费模型（智谱 glm-4-flash）',
+  endpoint: '接口地址不对：OpenAI 兼容地址要以 /v1 结尾，不能填网页地址（可在高级设置里恢复默认地址）',
+  model: '模型名不存在：请到厂商控制台核对模型名，或从下方「模型」下拉里选一个',
+  rate_limit: '请求太频繁被限流：等一两分钟再试',
+  upstream: '厂商服务暂时异常：稍后重试；若一直失败，看看厂商状态页公告',
+  network: '网络不通或连接超时：检查本机网络；使用 OpenAI 等境外服务通常需要开代理',
+  parse: '返回内容不是接口响应：多半是 Base URL 填成了网页地址，检查一下'
+}
+
+/** 失败时的排错建议（成功或未测试时为空） */
+const failHint = computed(() => {
+  if (!testResult.value || testResult.value.ok) return ''
+  const k = testResult.value.kind as AiFailKind
+  return t(AI_HINT[k] || AI_HINT.upstream)
+})
 
 // ── 每日目标 ──
 const goalEnabled = ref(true)
@@ -331,6 +370,43 @@ async function saveAi() {
   }
 }
 
+/// 打开厂商的「申请 Key」页面：桌面端交给本机内核调起系统浏览器，浏览器端直接开新标签
+async function openKeyPage() {
+  const url = currentPreset.value?.keyUrl
+  if (!url) return
+  if (isDesktop()) {
+    try {
+      await api.openUrl(url)
+      return
+    } catch (e: any) {
+      app.toast('warning', t('打开链接失败，请手动复制到浏览器：{a}', { a: url }))
+      return
+    }
+  }
+  window.open(url, '_blank', 'noopener')
+}
+
+/// 一键检测本机 Ollama（11434），顺带把模型切到本机已装的那个
+async function probeOllama() {
+  ollamaBusy.value = true
+  try {
+    const r = await api.ollamaProbe()
+    ollama.value = r
+    if (r.running) {
+      if (r.models.length && !r.models.includes(aiConfig.value.model)) {
+        aiConfig.value.model = r.models[0]
+      }
+      app.toast('success', t('已检测到本机 Ollama（{a} 个模型）', { a: r.models.length }))
+    } else {
+      app.toast('warning', t('未检测到本机 Ollama，请确认已安装并启动（默认端口 11434）'))
+    }
+  } catch (e: any) {
+    app.toast('error', e?.message || t('检测失败'))
+  } finally {
+    ollamaBusy.value = false
+  }
+}
+
 async function testConnection() {
   testing.value = true
   testResult.value = null
@@ -348,10 +424,22 @@ async function testConnection() {
     apiKeyInput.value = ''
     app.refreshAiReady()
     const r = await api.testAi()
-    testResult.value = { ok: true, text: t('连接成功 · 延迟 {a}ms · 模型 {b}', { a: r.latencyMs, b: r.model }) }
-    aiConfig.value.hasKey = true
+    testResult.value = r
+    if (r.ok) {
+      aiConfig.value.hasKey = true
+      app.toast('success', t('连接成功'))
+    }
   } catch (e: any) {
-    testResult.value = { ok: false, text: e?.message || '连接失败' }
+    // 连内核请求都没发出去（服务未起、网络异常）：归到网络类，给出同样的排错建议
+    testResult.value = {
+      ok: false,
+      kind: 'network',
+      upstreamStatus: null,
+      detail: e?.message || String(e),
+      model: aiConfig.value.model,
+      latencyMs: 0,
+      reply: ''
+    }
   } finally {
     testing.value = false
   }
@@ -695,7 +783,7 @@ onMounted(load)
               <input v-model="telegramTokenInput" type="password" class="input mono" placeholder="123456:ABC-DEF…" />
             </div>
           </div>
-          <div class="small muted">{{ $t('在 @BotFather 创建机器人获取 Token；向机器人发消息后用 @userinfobot 获取 Chat ID') }}</div>
+          <div class="small muted">{{ $t('在 Telegram 里搜索 BotFather 创建机器人获取 Token；给机器人发消息后用 userinfobot 获取 Chat ID') }}</div>
         </section>
 
         <div class="row">
@@ -706,10 +794,14 @@ onMounted(load)
         </div>
       </template>
 
-      <!-- AI 模型 -->
+      <!-- AI 模型（T1.6：三步引导 —— 选厂商 → 领 Key → 粘贴并测试）-->
       <template v-if="section === 'ai'">
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t('选择模型提供商') }}</div>
+          <div class="row">
+            <div class="card-title" style="font-size: 15px">{{ $t('第一步：选择模型提供商') }}</div>
+            <div class="spacer"></div>
+            <span v-if="aiConfig.hasKey" class="badge ok">{{ $t('已配置') }}</span>
+          </div>
           <div class="preset-grid">
             <div
               v-for="p in presets"
@@ -733,55 +825,61 @@ onMounted(load)
         </section>
 
         <section class="card stack">
-          <div class="card-title" style="font-size: 15px">{{ $t('接口配置') }}</div>
-          <div class="form-row">
-            <label class="form-label">
-              API Base URL
-              <span class="muted small">{{ $t('（可自由填写，保存后不会被切换模型重置）') }}</span>
-              <span v-if="baseUrlCustomized" class="badge info">{{ $t('自定义') }}</span>
-            </label>
-            <input v-model="aiConfig.baseUrl" class="input mono" :placeholder="$t('https://…/v1 或 …/anthropic')" />
-            <div class="row wrap" style="gap: 6px; margin-top: 4px">
-              <button class="btn btn-sm" @click="useDefaultUrl">{{ $t('恢复该提供商默认地址') }}</button>
-              <button
-                v-if="presets.find((p) => p.id === aiConfig.provider)?.anthropicUrl"
-                class="btn btn-sm"
-                @click="useAnthropicUrl"
-              >
-                {{ $t('使用 Anthropic 兼容地址') }}
-              </button>
-            </div>
+          <div class="card-title" style="font-size: 15px">
+            {{ currentPreset?.requiresKey === false ? $t('第二步：安装并运行本地模型') : $t('第二步：获取 API Key') }}
           </div>
 
-          <div class="form-row">
-            <label class="form-label">
-              {{ $t('接口协议') }}
-              <span class="muted small">{{ $t('（默认自动识别：地址含 /anthropic 时使用 Anthropic 协议）') }}</span>
-            </label>
-            <div class="row">
-              <div class="select-wrap" style="width: 240px">
-                <select v-model="aiConfig.protocolMode" class="input">
-                  <option value="auto">{{ $t('自动识别（推荐）') }}</option>
-                  <option value="openai">{{ $t('OpenAI 兼容（/chat/completions）') }}</option>
-                  <option value="anthropic">{{ $t('Anthropic 兼容（/v1/messages）') }}</option>
-                </select>
-              </div>
-              <span class="badge" :class="aiConfig.detectedProtocol === 'anthropic' ? 'info' : 'ok'">
-                {{ $t('将使用 {a}', { a: aiConfig.detectedProtocol === 'anthropic' ? $t('Anthropic 协议 /v1/messages') : $t('OpenAI 协议 /chat/completions') }) }}
-              </span>
+          <!-- 本地模型：不用 Key，先确认服务在跑 -->
+          <template v-if="currentPreset?.requiresKey === false">
+            <div class="small muted">{{ $t('用本地模型不需要 API Key：装好并启动 Ollama 后直接测试即可。') }}</div>
+            <div class="row wrap">
+              <button class="btn" @click="openKeyPage">{{ $t('去下载 Ollama ↗') }}</button>
+              <button class="btn btn-primary" :disabled="ollamaBusy" @click="probeOllama">
+                {{ ollamaBusy ? $t('检测中…') : $t('检测本机 Ollama') }}
+              </button>
             </div>
-          </div>
+            <div
+              v-if="ollama"
+              class="hint-bar"
+              :class="ollama.running ? 'info' : 'warn'"
+            >
+              {{
+                ollama.running
+                  ? $t('已检测到本机 Ollama，可选择模型：{a}', { a: ollama.models.join('、') || $t('尚未拉取模型') })
+                  : $t('未检测到本机 Ollama：请先安装并启动（默认端口 11434）')
+              }}
+            </div>
+          </template>
+
+          <!-- 云端模型：去官方页面领 Key -->
+          <template v-else>
+            <div class="small muted">
+              {{ $t('还没有 Key？点下面的按钮打开厂商官方页面，登录后创建并复制 API Key（只需一次）。') }}
+            </div>
+            <div class="row wrap">
+              <button class="btn btn-primary" @click="openKeyPage">{{ $t('去申请 API Key ↗') }}</button>
+              <span class="small muted mono" style="word-break: break-all">{{ currentPreset?.keyUrl }}</span>
+            </div>
+            <div class="hint-bar info">
+              {{ $t('申请一般需要注册（国内平台多需实名）；复制时注意别漏字符、别带空格。') }}
+            </div>
+          </template>
+        </section>
+
+        <section class="card stack">
+          <div class="card-title" style="font-size: 15px">{{ $t('第三步：填入 Key 并测试连接') }}</div>
           <div class="form-row">
             <label class="form-label">
               API Key
-              <span class="muted small">{{ $t('（仅存于本机系统安全存储，界面不回读）') }}</span>
+              <span v-if="currentPreset?.requiresKey === false" class="muted small">{{ $t('（本地模型不需要）') }}</span>
+              <span v-else class="muted small">{{ $t('（仅存于本机系统安全存储，界面不回读）') }}</span>
             </label>
             <div class="row">
               <input
                 v-model="apiKeyInput"
                 type="password"
                 class="input"
-                :placeholder="aiConfig.hasKey ? '已配置（留空则不修改）' : '粘贴你的 API Key'"
+                :placeholder="aiConfig.hasKey ? $t('已配置（留空则不修改）') : $t('粘贴你的 API Key')"
                 style="flex: 1"
               />
               <span v-if="aiConfig.hasKey" class="badge ok">{{ $t('已配置') }}</span>
@@ -795,14 +893,8 @@ onMounted(load)
             <div class="row">
               <div class="select-wrap" style="flex: 1">
                 <select class="input" :value="aiConfig.model" @change="aiConfig.model = ($event.target as HTMLSelectElement).value">
-                  <option
-                    v-for="m in presets.find((p) => p.id === aiConfig.provider)?.models || []"
-                    :key="m"
-                    :value="m"
-                  >
-                    {{ m }}
-                  </option>
-                  <option v-if="!(presets.find((p) => p.id === aiConfig.provider)?.models || []).includes(aiConfig.model)" :value="aiConfig.model">
+                  <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
+                  <option v-if="!modelOptions.includes(aiConfig.model)" :value="aiConfig.model">
                     {{ aiConfig.model || $t('（自定义）') }}
                   </option>
                 </select>
@@ -810,12 +902,85 @@ onMounted(load)
               <input v-model="aiConfig.model" class="input mono" style="flex: 1" :placeholder="$t('或手动输入模型名')" />
             </div>
           </div>
+          <div class="row wrap">
+            <button class="btn btn-primary" :disabled="savingAi" @click="saveAi">{{ $t('保存配置') }}</button>
+            <button class="btn" :disabled="testing" @click="testConnection">
+              {{ testing ? $t('测试中…') : $t('保存并测试连接') }}
+            </button>
+            <span class="small muted">{{ $t('测试会先按当前配置保存一次，确保测的就是接下来要用的配置。') }}</span>
+          </div>
+
+          <!-- 测试结论：成功给出实测延迟与回复，失败给出「下一步改什么」 -->
+          <div v-if="testResult" class="stack">
+            <div v-if="testResult.ok" class="hint-bar info">
+              <b style="color: var(--success)">
+                ✓ {{ $t('连接成功 · 延迟 {a}ms · 模型 {b}', { a: testResult.latencyMs, b: testResult.model }) }}
+              </b>
+              <div v-if="testResult.reply" class="small muted">{{ $t('模型回复：{a}', { a: testResult.reply }) }}</div>
+            </div>
+            <div v-else class="hint-bar warn stack">
+              <div>
+                <b style="color: var(--danger)">✗ {{ $t('连接失败') }}</b>
+                <span v-if="testResult.upstreamStatus" class="small muted"> · HTTP {{ testResult.upstreamStatus }}</span>
+                <span v-if="testResult.model" class="small muted"> · {{ testResult.model }}</span>
+              </div>
+              <div>{{ failHint }}</div>
+              <div v-if="testResult.detail" class="small muted mono" style="word-break: break-all">
+                {{ $t('厂商原始返回：') }}{{ testResult.detail }}
+              </div>
+            </div>
+          </div>
+
+          <div class="hint-bar info">
+            {{ $t('API Key 只保存于本机系统安全存储（Windows 凭据管理器），界面不回读；AI 请求由本机直连厂商，不经过智伴服务器。') }}
+          </div>
+        </section>
+
+        <section class="card stack">
           <div class="row">
+            <div class="card-title" style="font-size: 15px">{{ $t('高级设置（Base URL / 协议 / 采样参数）') }}</div>
+            <div class="spacer"></div>
             <button class="btn btn-sm" @click="showAdvanced = !showAdvanced">
-              {{ showAdvanced ? $t('收起高级参数 ▴') : $t('高级参数 ▾') }}
+              {{ showAdvanced ? $t('收起 ▴') : $t('展开 ▾') }}
             </button>
           </div>
-          <div v-if="showAdvanced" class="stack">
+          <template v-if="showAdvanced">
+            <div class="form-row">
+              <label class="form-label">
+                API Base URL
+                <span class="muted small">{{ $t('（可自由填写，保存后不会被切换模型重置）') }}</span>
+                <span v-if="baseUrlCustomized" class="badge info">{{ $t('自定义') }}</span>
+              </label>
+              <input v-model="aiConfig.baseUrl" class="input mono" :placeholder="$t('https://…/v1 或 …/anthropic')" />
+              <div class="row wrap" style="gap: 6px; margin-top: 4px">
+                <button class="btn btn-sm" @click="useDefaultUrl">{{ $t('恢复该提供商默认地址') }}</button>
+                <button
+                  v-if="currentPreset?.anthropicUrl"
+                  class="btn btn-sm"
+                  @click="useAnthropicUrl"
+                >
+                  {{ $t('使用 Anthropic 兼容地址') }}
+                </button>
+              </div>
+            </div>
+            <div class="form-row">
+              <label class="form-label">
+                {{ $t('接口协议') }}
+                <span class="muted small">{{ $t('（默认自动识别：地址含 /anthropic 时使用 Anthropic 协议）') }}</span>
+              </label>
+              <div class="row">
+                <div class="select-wrap" style="width: 240px">
+                  <select v-model="aiConfig.protocolMode" class="input">
+                    <option value="auto">{{ $t('自动识别（推荐）') }}</option>
+                    <option value="openai">{{ $t('OpenAI 兼容（/chat/completions）') }}</option>
+                    <option value="anthropic">{{ $t('Anthropic 兼容（/v1/messages）') }}</option>
+                  </select>
+                </div>
+                <span class="badge" :class="aiConfig.detectedProtocol === 'anthropic' ? 'info' : 'ok'">
+                  {{ $t('将使用 {a}', { a: aiConfig.detectedProtocol === 'anthropic' ? $t('Anthropic 协议 /v1/messages') : $t('OpenAI 协议 /chat/completions') }) }}
+                </span>
+              </div>
+            </div>
             <div class="form-row">
               <label class="form-label">{{ $t('温度 {a}', { a: aiConfig.temperature }) }}</label>
               <input v-model.number="aiConfig.temperature" type="range" min="0" max="1.5" step="0.1" />
@@ -824,14 +989,7 @@ onMounted(load)
               <label class="form-label">{{ $t('最大输出 tokens') }}</label>
               <input v-model.number="aiConfig.maxTokens" type="number" class="input" style="width: 160px" />
             </div>
-          </div>
-          <div class="row">
-            <button class="btn btn-primary" :disabled="savingAi" @click="saveAi">{{ $t('保存配置') }}</button>
-            <button class="btn" :disabled="testing" @click="testConnection">{{ testing ? $t('测试中…') : $t('测试连接') }}</button>
-            <span v-if="testResult" class="small" :style="testResult.ok ? 'color:var(--success)' : 'color:var(--danger)'">
-              {{ testResult.ok ? '✓ ' : '✗ ' }}{{ testResult.text }}
-            </span>
-          </div>
+          </template>
         </section>
 
         <section class="card stack">

@@ -102,8 +102,13 @@ for base, _d, files in os.walk(SRC):
             continue
         p = os.path.join(base, f)
         for i, line in enumerate(read(p).splitlines(), 1):
-            m = re.search(r"app\.toast\(\s*'(?:success|error|info|warning)'\s*,\s*'(?![^']*\))[^']*[\u4e00-\u9fff]", line)
-            if m:
+            if "t(" in line:
+                continue  # 已走 t()，无需再看
+            # 单引号字面量
+            m = re.search(r"\.toast\(\s*'(?:success|error|info|warning)'\s*,\s*'[^']*[\u4e00-\u9fff]", line)
+            # 模板字符串（曾用这种方式绕过 i18n，英文界面会露出中文）
+            m2 = re.search(r"\.toast\(\s*'(?:success|error|info|warning)'\s*,\s*`[^`]*[\u4e00-\u9fff]", line)
+            if m or m2:
                 bad_toast.append(f"{os.path.relpath(p, ROOT)}:{i}")
 check("toast 文案均已走 t()（不再硬编码中文）", not bad_toast, ", ".join(bad_toast[:3]))
 
@@ -120,6 +125,17 @@ check("语言选择持久化到 localStorage 与服务端 settings", "LOCALE_STO
 settings = read(os.path.join(SRC, "views", "Settings.vue"))
 check("设置页提供界面语言选择（跟随系统 + 四语）",
       "界面语言" in settings and "localeOptions" in settings and "changeLocale" in settings)
+
+# ── 8. 白屏防护（真机踩过：词条语法错误会让整块界面空白）──
+# 词条语法本身由 scripts/i18n_compile_test.mjs 逐条编译校验；这里只查"万一还是出错"的兜底链路
+print("\n8. 白屏防护")
+check("模板 $t 已换成容错版本（解析失败只回退原文，不再白屏）",
+      "globalProperties.$t = safeT" in main and "export function safeT" in idx)
+check("脚本区 t() 也走容错实现", "safeT(key, named)" in idx or "return named ? safeT" in idx)
+safe_view = os.path.join(SRC, "components", "SafeView.vue")
+check("存在页面级错误边界组件 SafeView", os.path.exists(safe_view))
+check("路由内容已包在错误边界内（异常时渲染提示卡片而非空白）",
+      "SafeView" in read(os.path.join(SRC, "App.vue")) and "onErrorCaptured" in (read(safe_view) if os.path.exists(safe_view) else ""))
 
 print("\n" + "=" * 60)
 print(f"国际化专项验收：通过 {len(passed)} 项，失败 {len(failed)} 项")

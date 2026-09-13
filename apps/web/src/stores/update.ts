@@ -6,6 +6,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { isDesktop } from '@/lib/desktop'
 import { useAppStore } from '@/stores/app'
+import { api } from '@/api/client'
 import { t } from '@/i18n'
 
 interface Available {
@@ -35,17 +36,21 @@ export const useUpdateStore = defineStore('update', () => {
   const canUpdate = computed(() => isDesktop())
   const autoCheckEnabled = computed(() => app.settings.auto_update_check !== '0')
 
-  /** 读取当前程序版本（Tauri app.getVersion） */
+  /** 读取当前程序版本：桌面端取应用自身版本，浏览器端取内核 /healthz（避免写死导致版本号不一致） */
   async function loadVersion() {
-    if (!isDesktop()) {
-      currentVersion.value = '1.0.0'
-      return
+    if (isDesktop()) {
+      try {
+        const { getVersion } = await import('@tauri-apps/api/app')
+        currentVersion.value = await getVersion()
+        return
+      } catch {
+        /* 读取失败则继续尝试内核接口 */
+      }
     }
     try {
-      const { getVersion } = await import('@tauri-apps/api/app')
-      currentVersion.value = await getVersion()
+      currentVersion.value = (await api.healthz()).version || currentVersion.value
     } catch {
-      /* 忽略 */
+      /* 服务未就绪时保持空值，界面显示占位 */
     }
   }
 
@@ -81,7 +86,7 @@ export const useUpdateStore = defineStore('update', () => {
       // 网络问题（例如无法访问静态清单）不应打断使用
       const msg = e?.message || String(e)
       error.value = msg
-      if (manual) app.toast('error', `检查更新失败：${msg}`)
+      if (manual) app.toast('error', t('检查更新失败：{a}', { a: msg }))
     } finally {
       checking.value = false
     }
@@ -109,7 +114,7 @@ export const useUpdateStore = defineStore('update', () => {
     } catch (e: any) {
       const msg = e?.message || String(e)
       error.value = msg
-      app.toast('error', `更新失败：${msg}`)
+      app.toast('error', t('更新失败：{a}', { a: msg }))
     } finally {
       installing.value = false
     }
@@ -122,7 +127,7 @@ export const useUpdateStore = defineStore('update', () => {
     await app.saveSettings({ skipped_version: v })
     available.value = null
     pending = null
-    app.toast('info', `已跳过 v${v}，有新版本时仍会提示`)
+    app.toast('info', t('已跳过 v{a}，有新版本时仍会提示', { a: v }))
   }
 
   function dismiss(): void {

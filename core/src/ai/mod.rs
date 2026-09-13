@@ -22,6 +22,10 @@ pub struct Preset {
     pub note: &'static str,
     pub recommended: bool,
     pub free_model: Option<&'static str>,
+    /// 申请 API Key 的官方入口（本地 Ollama 为下载页）——引导用户「去哪里领 Key」
+    pub key_url: &'static str,
+    /// 是否需要 API Key（Ollama 本地模型不需要，界面据此跳过「填 Key」这一步）
+    pub requires_key: bool,
 }
 
 /// 接口协议（由 Base URL 自动识别，也允许用户显式指定）
@@ -88,6 +92,8 @@ pub fn presets() -> Vec<Preset> {
             note: "免费模型零成本跑通全部 AI 功能；国内直连快（OpenAI 兼容端点）",
             recommended: true,
             free_model: Some("glm-4-flash"),
+            key_url: "https://open.bigmodel.cn/usercenter/apikeys",
+            requires_key: true,
         },
         Preset {
             id: "deepseek",
@@ -98,6 +104,8 @@ pub fn presets() -> Vec<Preset> {
             note: "性价比标杆，长报告质量好（OpenAI 兼容端点）",
             recommended: true,
             free_model: None,
+            key_url: "https://platform.deepseek.com/api_keys",
+            requires_key: true,
         },
         Preset {
             id: "openai",
@@ -108,6 +116,8 @@ pub fn presets() -> Vec<Preset> {
             note: "国际/高质量需求",
             recommended: false,
             free_model: None,
+            key_url: "https://platform.openai.com/api-keys",
+            requires_key: true,
         },
         Preset {
             id: "qwen",
@@ -118,6 +128,8 @@ pub fn presets() -> Vec<Preset> {
             note: "阿里云百炼",
             recommended: false,
             free_model: None,
+            key_url: "https://bailian.console.aliyun.com/",
+            requires_key: true,
         },
         Preset {
             id: "kimi",
@@ -128,6 +140,8 @@ pub fn presets() -> Vec<Preset> {
             note: "长上下文",
             recommended: false,
             free_model: None,
+            key_url: "https://platform.moonshot.cn/console/api-keys",
+            requires_key: true,
         },
         Preset {
             id: "ollama",
@@ -138,6 +152,8 @@ pub fn presets() -> Vec<Preset> {
             note: "完全离线，无需 Key",
             recommended: false,
             free_model: None,
+            key_url: "https://ollama.com/download",
+            requires_key: false,
         },
     ]
 }
@@ -236,6 +252,178 @@ pub enum AiError {
     Network(String),
     #[error("响应解析失败：{0}")]
     Parse(String),
+}
+
+/// 失败原因分类（界面据此给出**针对性**的排错建议，而不是丢一句原始报错）
+///
+/// 判定放在 Rust 侧：状态码与上游报错文本只有这里能同时看到，
+/// 前端拿到的只是一个稳定的类别字符串，便于四语翻译与后续调整。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FailKind {
+    /// 还没填 API Key / 没选模型
+    NotConfigured,
+    /// Key 无效、过期或没有该模型的权限（401 / 403）
+    Auth,
+    /// 余额或套餐额度不足（402）
+    Quota,
+    /// 地址不对：多半是漏了 /v1 或填成了网页地址（404）
+    Endpoint,
+    /// 模型名不存在（400/404 且报错里提到 model）
+    Model,
+    /// 触发限流（429）
+    RateLimit,
+    /// 厂商服务异常（5xx）
+    Upstream,
+    /// 网络不通 / 需要代理 / 超时
+    Network,
+    /// 返回内容不是预期格式（多为地址填错，返回了网页）
+    Parse,
+}
+
+impl FailKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            FailKind::NotConfigured => "not_configured",
+            FailKind::Auth => "auth",
+            FailKind::Quota => "quota",
+            FailKind::Endpoint => "endpoint",
+            FailKind::Model => "model",
+            FailKind::RateLimit => "rate_limit",
+            FailKind::Upstream => "upstream",
+            FailKind::Network => "network",
+            FailKind::Parse => "parse",
+        }
+    }
+}
+
+/// 归类失败原因；`status` 为上游 HTTP 状态码（无则 None）
+pub fn classify(err: &AiError) -> (FailKind, Option<u16>) {
+    match err {
+        AiError::NotConfigured => (FailKind::NotConfigured, None),
+        AiError::Network(_) => (FailKind::Network, None),
+        AiError::Parse(_) => (FailKind::Parse, None),
+        AiError::Upstream { status, body } => {
+            let mentions_model = body.to_ascii_lowercase().contains("model");
+            let kind = match *status {
+                401 | 403 => FailKind::Auth,
+                402 => FailKind::Quota,
+                404 => {
+                    if mentions_model {
+                        FailKind::Model
+                    } else {
+                        FailKind::Endpoint
+                    }
+                }
+                429 => FailKind::RateLimit,
+                400 if mentions_model => FailKind::Model,
+                s if (500..600).contains(&s) => FailKind::Upstream,
+                _ => FailKind::Upstream,
+            };
+            (kind, Some(*status))
+        }
+    }
+}
+
+/// 「测试连接」的诊断结论
+///
+/// 注意：连接测试失败是**预期内的业务结果**（正在测的就是它通不通），
+/// 因此接口以 200 返回该结构，用 ok 字段表达结论，而不是抛 HTTP 错误 ——
+/// 否则前端只能拿到一句人话报错，无法据此给出「401 该去改什么」的建议。
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TestVerdict {
+    pub ok: bool,
+    /// 失败类别（ok=true 时为空串）
+    pub kind: String,
+    /// 上游 HTTP 状态码（有则带上）
+    pub upstream_status: Option<u16>,
+    /// 上游返回的错误片段（已截断，供用户/客服核对原文）
+    pub detail: String,
+    pub model: String,
+    pub latency_ms: i64,
+    /// 成功时上游回复的前几十字，用于肉眼确认「真的通了」
+    pub reply: String,
+}
+
+impl TestVerdict {
+    pub fn success(model: &str, latency_ms: i64, reply: &str) -> Self {
+        Self {
+            ok: true,
+            kind: String::new(),
+            upstream_status: None,
+            detail: String::new(),
+            model: model.to_string(),
+            latency_ms,
+            reply: reply.trim().chars().take(40).collect(),
+        }
+    }
+
+    pub fn failure(err: &AiError, model: &str, latency_ms: i64) -> Self {
+        let (kind, status) = classify(err);
+        Self {
+            ok: false,
+            kind: kind.as_str().to_string(),
+            upstream_status: status,
+            detail: err.to_string(),
+            model: model.to_string(),
+            latency_ms,
+            reply: String::new(),
+        }
+    }
+}
+
+/// 本机 Ollama 探测结果
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OllamaProbe {
+    /// 11434 端口是否有 Ollama 在跑
+    pub running: bool,
+    pub base_url: String,
+    /// 已安装的模型名（供下拉选择，避免用户手打错模型名）
+    pub models: Vec<String>,
+    /// 失败原因（供排查：端口不通 / 超时等）
+    pub detail: String,
+}
+
+/// 探测本机 Ollama（默认 http://127.0.0.1:11434）
+///
+/// 超时压到 1.5s：这是「点一下看看」的交互，宁可快速失败也不要让界面转圈。
+pub async fn probe_ollama() -> OllamaProbe {
+    const BASE: &str = "http://127.0.0.1:11434";
+    let mut probe = OllamaProbe {
+        running: false,
+        base_url: BASE.to_string(),
+        models: Vec::new(),
+        detail: String::new(),
+    };
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_millis(1500))
+        .build()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            probe.detail = e.to_string();
+            return probe;
+        }
+    };
+    match client.get(format!("{BASE}/api/tags")).send().await {
+        Ok(resp) if resp.status().is_success() => {
+            let v: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+            probe.models = v["models"]
+                .as_array()
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|m| m["name"].as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+            probe.running = true;
+        }
+        Ok(resp) => probe.detail = format!("HTTP {}", resp.status().as_u16()),
+        Err(e) => probe.detail = e.to_string(),
+    }
+    probe
 }
 
 /// 智伴问答的本地检索范围

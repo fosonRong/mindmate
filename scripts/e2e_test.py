@@ -407,6 +407,40 @@ check("两家均标记推荐", glm.get("recommended") is True and ds.get("recomm
 r, _ = call("GET", "/ai/config")
 check("读取 AI 配置（不回传 Key）", "hasKey" in (r.get("data") or {}) and "apiKey" not in (r.get("data") or {}))
 
+# ── T1.6 模型配置引导：预设带「去哪领 Key」、测试连接返回结构化结论 ──
+check("每个预设都带申请 Key 入口（keyUrl 为 https）",
+      all((p.get("keyUrl") or "").startswith("https://") for p in presets),
+      f"缺失：{[p['id'] for p in presets if not (p.get('keyUrl') or '').startswith('https://')]}")
+check("只有本地 Ollama 不需要 Key",
+      [p["id"] for p in presets if p.get("requiresKey") is False] == ["ollama"])
+
+# 测试连接：无论通不通都必须 200 + 结构化结论（界面据此给出按状态码的排错建议）
+r, code = call("POST", "/ai/test")
+d = r.get("data") or {}
+check("测试连接返回结构化结论（HTTP 200）", code == 200 and isinstance(d.get("ok"), bool), f"HTTP {code}")
+check("结论含失败类别与模型名", isinstance(d.get("kind"), str) and isinstance(d.get("model"), str),
+      f"kind={d.get('kind')!r} model={d.get('model')!r}")
+check("失败类别在约定集合内",
+      d.get("kind") in ("", "not_configured", "auth", "quota", "endpoint", "model",
+                        "rate_limit", "upstream", "network", "parse"),
+      f"kind={d.get('kind')!r}")
+check("结论含延迟字段（供界面显示实测耗时）", isinstance(d.get("latencyMs"), int))
+
+# 本机 Ollama 探测：未安装也必须给出可读结论，而不是报错
+r, code = call("GET", "/ai/ollama")
+o = r.get("data") or {}
+check("Ollama 探测可用（返回 running/baseUrl/models）",
+      code == 200 and isinstance(o.get("running"), bool)
+      and o.get("baseUrl") == "http://127.0.0.1:11434" and isinstance(o.get("models"), list),
+      f"running={o.get('running')} models={len(o.get('models') or [])}")
+
+# 外链校验：非 http/https 一律拒绝（不允许把任意协议交给系统）
+r, code = call("POST", "/system/open-url", {"url": "file:///C:/Windows/System32/calc.exe"})
+check("拒绝非 http/https 外链（400）", code == 400, f"HTTP {code}")
+r, code = call("POST", "/system/open-url", {"url": "https://example.com/a b"})
+check("拒绝含空白的非法链接（400）", code == 400, f"HTTP {code}")
+
+
 # 保存配置（不填 Key）
 r, _ = call("POST", "/ai/config", {
     "provider": "deepseek", "baseUrl": "https://api.deepseek.com",
@@ -583,6 +617,9 @@ check("成就评估接口可用且幂等",
 
 # ─────────────────────── 10.9 首次启动引导（M7）───────────────────────
 section("10.9 首次启动引导状态持久化（M7）")
+# 先自行归零：这项断言检查的是「未完成引导时的初始态」，
+# 不能依赖环境里残留的值（一次人工点过「跳过引导」就会让它失败）
+call("PUT", "/settings", {"values": {"onboarded": ""}})
 r, _ = call("GET", "/settings")
 before = {x["key"]: x["value"] for x in (r.get("data") or [])}
 check("引导完成标记为空（首次启动会展示引导）", before.get("onboarded") in (None, ""),
