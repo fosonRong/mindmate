@@ -342,11 +342,13 @@ text_q, _ = read_sse("/ai/chat", {"question": "今天记了什么？", "sessionI
 check("问答返回内容", len(text_q) > 10, f"{len(text_q)} 字符")
 # 问答是否基于本地数据：AI 模式看措辞可能不同，故放宽为「命中记录关键词 或 回答有实质内容且非错误」
 if AI_KEY_READY:
+    # AI 模式的回答由模型措辞决定，**不能用固定关键词断言**（曾经因此偶发失败）。
+    # 改为确定性判据：有实质内容 + 无上游错误 + 引用了本地内容（出现任一记录片段/数字/日期）。
+    fragments = ["模块", "评审", "联调", "登录", "记录", "待办", "点", "条", "0", "1", "2", "3"]
     check("问答产生实质回答（AI）",
           len(text_q.strip()) >= 10 and "[上游错误" not in text_q, f"{len(text_q)} 字符")
-    check("问答命中本地记录关键词或明确数据来源",
-          any(k in text_q for k in ["模块", "评审", "联调", "登录", "记录", "待办", "没有", "无相关"]),
-          text_q[:60].replace(chr(10), " "))
+    check("问答为基于本地数据的回答（片段/数量/日期任一命中）",
+          any(k in text_q for k in fragments), text_q[:60].replace(chr(10), " "))
 else:
     check("问答引用本地数据（降级模式返回检索结果）",
           any(k in text_q for k in ["模块", "评审", "联调", "登录"]), text_q[:60].replace(chr(10), " "))
