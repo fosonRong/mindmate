@@ -45,6 +45,11 @@ def esc(s: str) -> str:
     return s.replace("\\", "\\\\").replace("'", "\\'")
 
 
+def unprotect_body(text: str) -> str:
+    """文本节点内容里被保护的 > 还原（插值表达式需要原样 emit）"""
+    return text.replace(GT, ">")
+
+
 def split_exprs(text: str):
     """把 '共 {{ n }} 条' 拆成 key 模板与表达式列表"""
     parts, exprs = [], []
@@ -79,8 +84,94 @@ def template_spans(src: str):
     return spans
 
 
+# 受保护的 `>`（插值表达式/属性值内部），避免被当成标签边界
+GT = "\x01GT\x01"
+
+
+def protect_gt(block: str) -> str:
+    """把 {{ … }} 与 "…" 内部的 > 暂时替换掉（=> / >= 会命中）"""
+    out = []
+    i = 0
+    n = len(block)
+    while i < n:
+        if block.startswith("{{", i):
+            j = block.find("}}", i)
+            if j == -1:
+                out.append(block[i])
+                i += 1
+                continue
+            out.append(block[i:j + 2].replace(">", GT))
+            i = j + 2
+        elif block[i] == '"':
+            j = block.find('"', i + 1)
+            if j == -1:
+                out.append(block[i])
+                i += 1
+                continue
+            out.append(block[i:j + 1].replace(">", GT))
+            i = j + 1
+        else:
+            out.append(block[i])
+            i += 1
+    return "".join(out)
+
+
+def unprotect(s: str) -> str:
+    return s.replace(GT, ">")
+
+
+# 插值内的中文字面量：仅当"不是比较/匹配用的规范值"时才翻译
+CMP_BEFORE = re.compile(r"(===|!==|==|!=|includes\(|indexOf\(|startsWith\(|endsWith\(|match\(|test\(|case\s)\s*$")
+# 比较运算符后紧跟的中文字面量（=== '日程'）—— 数据库规范值，按设计不翻译
+COMPARE_LITERAL = re.compile(r"(===|!==|==|!=)\s*'[^']*[\u4e00-\u9fff][^']*'")
+STR_LIT = re.compile(r"'((?:[^'\\]|\\.)*)'")
+
+
+def rewrite_exprs(block: str, counter: list) -> str:
+    """把 {{ … }} 里的中文字符串字面量包成 $t('…')；跳过比较/匹配上下文。
+
+    例：{{ a ? '保存中…' : '保存' }}          → {{ a ? $t('保存中…') : $t('保存') }}
+        {{ todo.category === '日程' && x }}    → 保持不变（'日程' 是数据库规范值，用于比较）
+    """
+    out, i = [], 0
+    while True:
+        start = block.find("{{", i)
+        if start == -1:
+            out.append(block[i:])
+            break
+        end = block.find("}}", start)
+        if end == -1:
+            out.append(block[i:])
+            break
+        out.append(block[i:start])
+        expr = block[start:end]
+        changed_expr, n = _translate_literals(expr)
+        counter[0] += n
+        out.append(changed_expr)
+        i = end
+    return "".join(out)
+
+
+def _translate_literals(expr: str) -> tuple:
+    changed = 0
+
+    def repl(m):
+        nonlocal changed
+        lit = m.group(1)
+        if not CJK.search(lit):
+            return m.group(0)
+        before = expr[: m.start()]
+        if CMP_BEFORE.search(before):
+            return m.group(0)  # 比较用的规范值，禁止翻译（否则筛选/判断会失效）
+        changed += 1
+        return "$t('%s')" % esc(lit.replace("\'", "'"))
+
+    return STR_LIT.sub(repl, expr), changed
+
+
 def rewrite_template(block: str, counter: list):
     changed = 0
+    block = protect_gt(block)
 
     def repl_node(m):
         nonlocal changed
@@ -95,7 +186,9 @@ def rewrite_template(block: str, counter: list):
         # 关键：折叠换行与连续空白 —— 文本节点可能跨行，直接塞进 $t('…') 会产生
         # 字符串里的裸换行，导致「Unterminated string literal」语法错误（踩过一次）
         body = " ".join(body.split())
-        key, exprs = split_exprs(body)
+        if body.count("{{") != body.count("}}"):
+            return m.group(0)  # 插值不配对，保守跳过
+        key, exprs = split_exprs(unprotect_body(body))
         names = "abcdefghij"
         if exprs:
             params = ", ".join(f"{names[i]}: {e}" for i, e in enumerate(exprs))
@@ -123,8 +216,8 @@ def rewrite_template(block: str, counter: list):
         return ':%s="$t(\'%s\')"' % (m.group(1), esc(m.group(2)))
 
     block = DYN_ATTR.sub(repl_dyn, block)
-    counter[0] += changed
-    return block
+    block = rewrite_exprs(block, counter)
+    return unprotect(block)
 
 
 def rewrite_vue(path: str, apply: bool):
@@ -167,7 +260,11 @@ def collect_keys():
 
 
 def check_leftover():
-    """模板里是否还有未抽取的中文（排除 <script> 内的字符串）"""
+    """模板里是否还有**未抽取**的中文（已用 $t() 包裹的不算）
+
+    注意：抽取后文本节点内容形如 {{ $t('刷新') }}，本身仍含中文，
+    必须排除，否则校验恒为"有残留"，失去意义。
+    """
     bad = []
     for p in vue_files():
         s = io.open(p, encoding="utf-8").read()
@@ -175,8 +272,15 @@ def check_leftover():
             block = s[a:b]
             for m in TEXT_NODE.finditer(block):
                 txt = m.group(1)
-                if CJK.search(txt) and txt.strip():
-                    bad.append((os.path.relpath(p, ROOT).replace("\\", "/"), txt.strip()[:40]))
+                if not txt.strip() or not CJK.search(txt):
+                    continue
+                if "$t(" in txt or " t(" in txt:
+                    continue  # 已抽取
+                # 过滤"比较用的规范值"（如 === '日程' / === '已完成'）：这些是数据库取值，
+                # 按设计**不翻译**，因此不算残留，否则校验会长期报假阳性。
+                if COMPARE_LITERAL.search(txt):
+                    continue
+                bad.append((os.path.relpath(p, ROOT).replace("\\", "/"), txt.strip()[:48]))
             for m in ATTR.finditer(block):
                 if CJK.search(m.group(2)):
                     bad.append((os.path.relpath(p, ROOT).replace("\\", "/"), "%s=%s" % (m.group(1), m.group(2)[:30])))

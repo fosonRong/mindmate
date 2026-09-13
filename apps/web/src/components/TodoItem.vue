@@ -69,13 +69,13 @@ async function suggest() {
         <span :class="{ 'due-late': todo.overdue }">
           {{ todo.category === '日程' && todo.dueTime ? friendlyDate(todo.dueDate) : friendlyDate(todo.dueDate) }}
         </span>
-        <span v-if="todo.status === '已逾期'" class="badge danger">逾期</span>
+        <span v-if="todo.status === '已逾期'" class="badge danger">{{ $t($t('逾期')) }}</span>
         <span v-for="t in todo.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
       </div>
     </div>
     <div v-if="showActions !== false" class="actions">
-      <button v-if="todo.status !== '已完成'" title="智伴排期建议" @click="suggest">✨</button>
-      <button class="danger" @click="remove">删除</button>
+      <button v-if="todo.status !== '已完成'" :title="$t('智伴排期建议')" @click="suggest">✨</button>
+      <button class="danger" @click="remove">{{ $t($t('删除')) }}</button>
     </div>
   </div>
 </template>

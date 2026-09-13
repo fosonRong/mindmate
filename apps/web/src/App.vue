@@ -110,11 +110,11 @@ onUnmounted(() => {
         <Icon :name="n.icon" :size="20" />
       </router-link>
       <div class="nav-spacer"></div>
-      <router-link to="/settings" class="nav-item" title="设置"><Icon name="gear" :size="20" /></router-link>
+      <router-link to="/settings" class="nav-item" :title="$t('设置')"><Icon name="gear" :size="20" /></router-link>
       <button
         v-if="app.stats && app.stats.streakDays > 0"
         class="streak-chip"
-        title="连续记录天数 · 点击查看我的徽章"
+        :title="$t('连续记录天数 · 点击查看我的徽章')"
         style="background: none; border: none; cursor: pointer"
         @click="showAchievements = true"
       >
@@ -129,10 +129,10 @@ onUnmounted(() => {
           <div class="date">{{ dateLabel }}</div>
         </div>
         <div class="spacer"></div>
-        <button class="btn btn-sm" @click="openQuickEntry" title="速记（Alt+Z）">
-          ⚡ 速记 <span class="muted mono" style="font-size: 11px">Alt+Z</span>
+        <button class="btn btn-sm" @click="openQuickEntry" :title="$t('速记（Alt+Z）')">
+          {{ $t($t('⚡ 速记')) }} <span class="muted mono" style="font-size: 11px">Alt+Z</span>
         </button>
-        <router-link to="/settings" class="icon-btn" title="设置"><Icon name="gear" :size="18" /></router-link>
+        <router-link to="/settings" class="icon-btn" :title="$t('设置')"><Icon name="gear" :size="18" /></router-link>
       </header>
 
       <main class="page-body">
@@ -142,12 +142,12 @@ onUnmounted(() => {
       <footer class="status-bar">
         <span>
           <i class="dot" :class="app.connected ? 'on' : 'off'"></i>
-          {{ app.connected ? '已同步' : '连接中…' }}
+          {{ app.connected ? $t('已同步') : $t('连接中…') }}
         </span>
         <span>{{ modeLabel }}</span>
-        <span v-if="app.stats">今日 {{ app.stats.nodeCount }} 条 · 待办 {{ app.stats.todayDoneTodos }}/{{ app.stats.todayTodos }}</span>
+        <span v-if="app.stats">{{ $t($t('今日 {a} 条 · 待办 {b}/{c}'), { a: app.stats.nodeCount, b: app.stats.todayDoneTodos, c: app.stats.todayTodos }) }}</span>
         <div class="spacer"></div>
-        <span v-if="app.stats && app.stats.streakDays > 0">🔥 连续记录 {{ app.stats.streakDays }} 天</span>
+        <span v-if="app.stats && app.stats.streakDays > 0">{{ $t($t('🔥 连续记录 {a} 天'), { a: app.stats.streakDays }) }}</span>
         <span>v1.0.0</span>
       </footer>
     </div>
@@ -174,8 +174,8 @@ onUnmounted(() => {
           <div style="font-size: 13px; font-weight: 600">{{ r.title }}</div>
           <div class="small muted">{{ r.body }}</div>
         </div>
-        <button v-if="r.action === 'quick_entry'" class="btn btn-sm btn-primary" @click="openQuickEntry(); app.dismissReminder(r.id)">速记</button>
-        <button v-else class="btn btn-sm" @click="router.push(r.action === 'open_todos' ? '/todos' : '/'); app.dismissReminder(r.id)">查看</button>
+        <button v-if="r.action === 'quick_entry'" class="btn btn-sm btn-primary" @click="openQuickEntry(); app.dismissReminder(r.id)">{{ $t($t('速记')) }}</button>
+        <button v-else class="btn btn-sm" @click="router.push(r.action === 'open_todos' ? '/todos' : '/'); app.dismissReminder(r.id)">{{ $t($t('查看')) }}</button>
         <button class="icon-btn" style="width: 22px; height: 22px" @click="app.dismissReminder(r.id)">×</button>
       </div>
     </div>

@@ -32,15 +32,15 @@ onMounted(async () => {
   <div class="modal-mask" @click.self="emit('close')">
     <div class="modal" style="max-width: 560px">
       <div class="row">
-        <h3>我的徽章</h3>
-        <span class="card-sub">{{ unlockedCount }} / {{ items.length }} 已解锁</span>
+        <h3>{{ $t($t('我的徽章')) }}</h3>
+        <span class="card-sub">{{ $t($t('{a} / {b} 已解锁'), { a: unlockedCount, b: items.length }) }}</span>
         <div class="spacer"></div>
         <button class="icon-btn" @click="emit('close')">×</button>
       </div>
 
-      <div class="small muted">所有徽章均在本地判定，数据不出本机；激励可关闭，不打扰。</div>
+      <div class="small muted">{{ $t($t('所有徽章均在本地判定，数据不出本机；激励可关闭，不打扰。')) }}</div>
 
-      <div v-if="loading" class="center muted small" style="padding: 20px">加载中…</div>
+      <div v-if="loading" class="center muted small" style="padding: 20px">{{ $t($t('加载中…')) }}</div>
       <div v-else class="achievement-grid">
         <div
           v-for="a in items"
@@ -53,14 +53,14 @@ onMounted(async () => {
           <div style="font-weight: 500; margin-top: 2px">{{ a.name }}</div>
           <div class="small muted">{{ a.description }}</div>
           <div v-if="a.unlocked" class="small" style="color: var(--accent); margin-top: 4px">
-            {{ (a.unlockedAt || '').slice(0, 10) }} 解锁
+            {{ $t($t('{a} 解锁'), { a: (a.unlockedAt || '').slice(0, 10) }) }}
           </div>
           <div v-else class="small" style="color: var(--text-disable); margin-top: 4px">{{ a.condition }}</div>
         </div>
       </div>
 
       <div class="modal-actions">
-        <button class="btn btn-primary" @click="emit('close')">知道了</button>
+        <button class="btn btn-primary" @click="emit('close')">{{ $t($t('知道了')) }}</button>
       </div>
     </div>
   </div>

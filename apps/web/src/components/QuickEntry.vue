@@ -62,7 +62,7 @@ defineExpose({ focus })
       ref="inputEl"
       v-model="content"
       type="text"
-      placeholder="快速记录此刻的工作 / 生活…"
+      :placeholder="$t('快速记录此刻的工作 / 生活…')"
       @keydown.enter.prevent="submit"
     />
     <div class="tags-row" :style="compact ? 'opacity:1' : ''">
@@ -75,7 +75,7 @@ defineExpose({ focus })
       >
         {{ t }}
       </button>
-      <span class="hotkey">Enter 保存</span>
+      <span class="hotkey">{{ $t($t('Enter 保存')) }}</span>
     </div>
   </div>
 </template>

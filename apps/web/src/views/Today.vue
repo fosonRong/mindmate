@@ -146,16 +146,16 @@ async function completeTodo(id: number) {
           </div>
           <div style="flex: 1; min-width: 0">
             <div class="card-title" style="font-size: 15px">
-              晨间简报
-              <span class="card-sub">{{ briefAt ? `${briefAt} 生成` : '尚未生成' }}</span>
+              {{ $t($t('晨间简报')) }}
+              <span class="card-sub">{{ briefAt ? `${briefAt} 生成` : $t('尚未生成') }}</span>
             </div>
             <div v-if="!briefContent && !briefLoading" class="small muted" style="margin-top: 4px">
-              看看今天的安排，让智伴帮你理一理。
+              {{ $t($t('看看今天的安排，让智伴帮你理一理。')) }}
             </div>
           </div>
-          <button v-if="briefLoading" class="btn btn-sm" @click="stopBrief">停止</button>
+          <button v-if="briefLoading" class="btn btn-sm" @click="stopBrief">{{ $t($t('停止')) }}</button>
           <button v-else class="btn btn-sm btn-primary" @click="generateBrief">
-            {{ briefContent ? '重新生成' : '生成简报' }}
+            {{ briefContent ? $t('重新生成') : $t('生成简报') }}
           </button>
           <button v-if="briefContent" class="icon-btn" @click="briefOpen = !briefOpen">
             {{ briefOpen ? '▾' : '▸' }}
@@ -164,12 +164,12 @@ async function completeTodo(id: number) {
         <div v-if="briefOpen && (briefContent || briefLoading)" style="margin-top: 12px">
           <!-- AI 未配置：引导配置；已配置但这份简报是旧模板生成的：引导重新生成 -->
           <div v-if="!briefIsAi && briefContent && !app.aiReady" class="hint-bar warn" style="margin-bottom: 10px">
-            ⚙️ 当前为本地模板拼装，配置 AI 模型可获得更优质的简报
-            <router-link to="/settings" class="link">去配置</router-link>
+            {{ $t($t('⚙️ 当前为本地模板拼装，配置 AI 模型可获得更优质的简报')) }}
+            <router-link to="/settings" class="link">{{ $t($t('去配置')) }}</router-link>
           </div>
           <div v-else-if="!briefIsAi && briefContent && app.aiReady" class="hint-bar info" style="margin-bottom: 10px">
-            ✨ AI 模型已配置 —— 这份简报是此前用本地模板生成的
-            <span class="link" @click="generateBrief">重新生成</span>
+            {{ $t($t('✨ AI 模型已配置 —— 这份简报是此前用本地模板生成的')) }}
+            <span class="link" @click="generateBrief">{{ $t($t('重新生成')) }}</span>
           </div>
           <MarkdownView :content="briefContent" />
           <span v-if="briefLoading" class="stream-cursor"></span>
@@ -179,9 +179,9 @@ async function completeTodo(id: number) {
       <!-- 今日进度 -->
       <section class="card">
         <div class="row" style="margin-bottom: 10px">
-          <div class="card-title" style="font-size: 15px">今日</div>
+          <div class="card-title" style="font-size: 15px">{{ $t($t('今日')) }}</div>
           <div class="spacer"></div>
-          <span v-if="app.stats && app.stats.streakDays > 0" class="streak">🔥 连续记录 {{ app.stats.streakDays }} 天</span>
+          <span v-if="app.stats && app.stats.streakDays > 0" class="streak">{{ $t($t('🔥 连续记录 {a} 天'), { a: app.stats.streakDays }) }}</span>
         </div>
         <ProgressPair
           :node-count="app.stats?.nodeCount ?? nodes.nodes.length"
@@ -199,15 +199,15 @@ async function completeTodo(id: number) {
       <!-- 时间线 -->
       <section class="card">
         <div class="row" style="margin-bottom: 10px">
-          <div class="card-title" style="font-size: 15px">今日记录</div>
-          <span class="card-sub">{{ nodes.nodes.length }} 条</span>
+          <div class="card-title" style="font-size: 15px">{{ $t($t('今日记录')) }}</div>
+          <span class="card-sub">{{ $t($t('{a} 条'), { a: nodes.nodes.length }) }}</span>
           <div class="spacer"></div>
-          <span class="small muted">按时刻排列 · 一次录入即一个节点</span>
+          <span class="small muted">{{ $t($t('按时刻排列 · 一次录入即一个节点')) }}</span>
         </div>
         <div v-if="nodes.nodes.length === 0" class="empty">
           <div class="ill">📝</div>
-          <div class="t">今天还没有记录</div>
-          <div class="d">记下第一笔，10 秒就好</div>
+          <div class="t">{{ $t($t('今天还没有记录')) }}</div>
+          <div class="d">{{ $t($t('记下第一笔，10 秒就好')) }}</div>
         </div>
         <div v-else class="tl">
           <NodeItem
@@ -224,7 +224,7 @@ async function completeTodo(id: number) {
     <div class="col-stack">
       <section class="card">
         <div class="row" style="margin-bottom: 10px">
-          <div class="card-title" style="font-size: 15px">今日待办</div>
+          <div class="card-title" style="font-size: 15px">{{ $t($t('今日待办')) }}</div>
           <div class="spacer"></div>
           <span class="small muted">{{ todoDone }}/{{ todayTodoList.length }}</span>
         </div>
@@ -233,18 +233,18 @@ async function completeTodo(id: number) {
         </div>
         <div v-if="todayTodoList.length === 0" class="empty" style="padding: 24px 0">
           <div class="ill">✨</div>
-          <div class="t">此刻一身轻</div>
-          <div class="d">没有待办，或添加一件</div>
+          <div class="t">{{ $t($t('此刻一身轻')) }}</div>
+          <div class="d">{{ $t($t('没有待办，或添加一件')) }}</div>
         </div>
         <TodoItem v-for="t in todayTodoList" :key="t.id" :todo="t" />
         <button class="btn" style="width: 100%; justify-content: center; margin-top: 8px" @click="showTodoModal = true">
-          ＋ 添加今日待办
+          {{ $t($t('＋ 添加今日待办')) }}
         </button>
       </section>
 
       <!-- 逾期提醒 -->
       <section v-if="todos.overdue.length" class="card">
-        <div class="card-title" style="font-size: 15px; color: var(--danger)">⚠️ 已逾期 {{ todos.overdue.length }}</div>
+        <div class="card-title" style="font-size: 15px; color: var(--danger)">{{ $t($t('⚠️ 已逾期 {a}'), { a: todos.overdue.length }) }}</div>
         <div style="margin-top: 8px">
           <TodoItem v-for="t in todos.overdue.slice(0, 5)" :key="t.id" :todo="t" :show-actions="false" />
         </div>
@@ -253,9 +253,9 @@ async function completeTodo(id: number) {
       <!-- 成就（FR-6.2）：展示友好名称，点击查看全部徽章 -->
       <section class="card">
         <div class="row" style="margin-bottom: 8px">
-          <div class="card-title" style="font-size: 15px">我的徽章</div>
+          <div class="card-title" style="font-size: 15px">{{ $t($t('我的徽章')) }}</div>
           <div class="spacer"></div>
-          <button class="btn btn-sm" @click="showAchievements = true">全部徽章</button>
+          <button class="btn btn-sm" @click="showAchievements = true">{{ $t($t('全部徽章')) }}</button>
         </div>
         <div v-if="unlockedBadges.length" class="row wrap" style="gap: 6px">
           <span v-for="a in unlockedBadges" :key="a.id" class="badge ok" :title="a.description">
@@ -263,8 +263,8 @@ async function completeTodo(id: number) {
           </span>
         </div>
         <div v-else class="small muted">
-          完成首次速记即可解锁第一枚徽章 ✍️ ——
-          <span class="link" @click="showAchievements = true">看看全部徽章</span>
+          {{ $t($t('完成首次速记即可解锁第一枚徽章 ✍️ ——')) }}
+          <span class="link" @click="showAchievements = true">{{ $t($t('看看全部徽章')) }}</span>
         </div>
       </section>
     </div>

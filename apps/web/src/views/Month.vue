@@ -98,11 +98,11 @@ onMounted(load)
   <div class="col-stack">
     <section class="card">
       <div class="row" style="margin-bottom: 10px">
-        <div class="card-title" style="font-size: 15px">月度进度</div>
+        <div class="card-title" style="font-size: 15px">{{ $t($t('月度进度')) }}</div>
         <span class="card-sub">{{ monthTitle(anchor) }}</span>
         <div class="spacer"></div>
-        <span class="small muted">已录 {{ stats?.nodeCount ?? 0 }}/{{ projectGoal }} 条</span>
-        <button class="icon-btn" title="上个月" @click="shiftMonth(-1)">◀</button>
+        <span class="small muted">{{ $t($t('已录 {a}/{b} 条'), { a: stats?.nodeCount ?? 0, b: projectGoal }) }}</span>
+        <button class="icon-btn" :title="$t('上个月')" @click="shiftMonth(-1)">◀</button>
         <input
           type="month"
           class="input"
@@ -110,8 +110,8 @@ onMounted(load)
           :value="anchor.slice(0, 7)"
           @change="pickMonth"
         />
-        <button class="btn btn-sm" @click="anchor = todayStr(); load()">本月</button>
-        <button class="icon-btn" title="下个月" @click="shiftMonth(1)">▶</button>
+        <button class="btn btn-sm" @click="anchor = todayStr(); load()">{{ $t($t('本月')) }}</button>
+        <button class="icon-btn" :title="$t('下个月')" @click="shiftMonth(1)">▶</button>
       </div>
       <ProgressPair
         :node-count="stats?.nodeCount ?? 0"
@@ -122,35 +122,34 @@ onMounted(load)
         :todo-total="stats?.totalTodos ?? 0"
       />
       <div class="small muted" style="margin-top: 8px">
-        有录入 {{ stats?.daysWithRecords ?? 0 }}/{{ stats?.totalDays ?? daysInMonth }} 天 ·
-        格内显示当日记录摘要与待办标题 · 点击任意日期查看或补录
+        {{ $t($t('有录入 {a}/{b} 天 · 格内显示当日记录摘要与待办标题 · 点击任意日期查看或补录'), { a: stats?.daysWithRecords ?? 0, b: stats?.totalDays ?? daysInMonth }) }}
       </div>
     </section>
 
     <!-- 月度小结（FR-6.4）：本月记录 X 天 / 完成待办 Y 件 / 连续最长 Z 天 -->
     <section v-if="summary" class="card" :class="{ 'month-end': summary.isMonthEnd }">
       <div class="row" style="margin-bottom: 10px">
-        <div class="card-title" style="font-size: 15px">本月小结</div>
+        <div class="card-title" style="font-size: 15px">{{ $t($t('本月小结')) }}</div>
         <span class="card-sub">{{ summary.month }}</span>
         <div class="spacer"></div>
-        <span v-if="summary.isMonthEnd" class="badge ok">月初至今已收官</span>
+        <span v-if="summary.isMonthEnd" class="badge ok">{{ $t($t('月初至今已收官')) }}</span>
       </div>
       <div class="summary-grid">
         <div class="summary-item">
-          <div class="num">{{ summary.daysWithRecords }}<span class="unit">/{{ summary.totalDays }} 天</span></div>
-          <div class="lbl">本月记录天数</div>
+          <div class="num">{{ summary.daysWithRecords }}<span class="unit">{{ $t($t('/{a} 天'), { a: summary.totalDays }) }}</span></div>
+          <div class="lbl">{{ $t($t('本月记录天数')) }}</div>
         </div>
         <div class="summary-item">
-          <div class="num">{{ summary.doneTodos }}<span class="unit">/{{ summary.totalTodos }} 件</span></div>
-          <div class="lbl">完成待办</div>
+          <div class="num">{{ summary.doneTodos }}<span class="unit">{{ $t($t('/{a} 件'), { a: summary.totalTodos }) }}</span></div>
+          <div class="lbl">{{ $t($t('完成待办')) }}</div>
         </div>
         <div class="summary-item">
-          <div class="num">{{ summary.longestStreak }}<span class="unit">天</span></div>
-          <div class="lbl">连续最长</div>
+          <div class="num">{{ summary.longestStreak }}<span class="unit">{{ $t($t('天')) }}</span></div>
+          <div class="lbl">{{ $t($t('连续最长')) }}</div>
         </div>
         <div class="summary-item">
-          <div class="num">{{ summary.nodeCount }}<span class="unit">条</span></div>
-          <div class="lbl">记录节点 · 日均 {{ summary.avgPerActiveDay }}</div>
+          <div class="num">{{ summary.nodeCount }}<span class="unit">{{ $t($t('条')) }}</span></div>
+          <div class="lbl">{{ $t($t('记录节点 · 日均 {a}'), { a: summary.avgPerActiveDay }) }}</div>
         </div>
       </div>
     </section>
@@ -175,7 +174,7 @@ onMounted(load)
         <div class="row" style="margin-bottom: 12px">
           <div>
             <div class="card-title" style="font-size: 15px">{{ drawerDate }}</div>
-            <div class="small muted">{{ weekdayLabel(drawerDate) }} · {{ drawerNodes.length }} 条记录</div>
+            <div class="small muted">{{ $t($t('{a} · {b} 条记录'), { a: weekdayLabel(drawerDate), b: drawerNodes.length }) }}</div>
           </div>
           <div class="spacer"></div>
           <button class="icon-btn" @click="closeDrawer">×</button>
@@ -186,8 +185,8 @@ onMounted(load)
         <div style="flex: 1; overflow-y: auto; margin-top: 12px">
           <div v-if="drawerNodes.length === 0" class="empty" style="padding: 30px 0">
             <div class="ill">🕐</div>
-            <div class="t">这一天还没有记录</div>
-            <div class="d">补录的内容会标记为「补录」</div>
+            <div class="t">{{ $t($t('这一天还没有记录')) }}</div>
+            <div class="d">{{ $t($t('补录的内容会标记为「补录」')) }}</div>
           </div>
           <div v-else class="tl">
             <div v-for="(n, i) in drawerNodes" :key="n.id" class="tl-item" :class="{ backfill: n.isBackfill }">
@@ -199,7 +198,7 @@ onMounted(load)
               <div class="tl-bubble">
                 <div class="tl-meta">
                   <span v-for="t in n.tags" :key="t" class="chip work">{{ t }}</span>
-                  <span v-if="n.isBackfill" class="small muted">补录</span>
+                  <span v-if="n.isBackfill" class="small muted">{{ $t($t('补录')) }}</span>
                 </div>
                 <div class="tl-content">{{ n.content }}</div>
               </div>
@@ -207,7 +206,7 @@ onMounted(load)
           </div>
 
           <div v-if="todos.schedule && (todos.schedule.schedules.length || todos.schedule.todos.length)" style="margin-top: 16px">
-            <div class="card-title" style="font-size: 14px; margin-bottom: 8px">该日待办</div>
+            <div class="card-title" style="font-size: 14px; margin-bottom: 8px">{{ $t($t('该日待办')) }}</div>
             <TodoItem v-for="t in todos.schedule.todos" :key="t.id" :todo="t" />
           </div>
         </div>

@@ -207,9 +207,9 @@ onMounted(async () => {
 <template>
   <div class="col-stack">
     <div class="tabs">
-      <button :class="{ on: tab === 'report' }" @click="tab = 'report'">报告</button>
-      <button :class="{ on: tab === 'review' }" @click="tab = 'review'">复盘</button>
-      <button :class="{ on: tab === 'chat' }" @click="tab = 'chat'">问答</button>
+      <button :class="{ on: tab === 'report' }" @click="tab = 'report'">{{ $t($t('报告')) }}</button>
+      <button :class="{ on: tab === 'review' }" @click="tab = 'review'">{{ $t($t('复盘')) }}</button>
+      <button :class="{ on: tab === 'chat' }" @click="tab = 'chat'">{{ $t($t('问答')) }}</button>
     </div>
 
     <!-- 报告 -->
@@ -223,22 +223,22 @@ onMounted(async () => {
         <input v-model="reportDate" type="date" class="input" style="width: 148px; height: 34px" @change="loadSaved" />
         <span class="small muted">{{ friendlyDate(reportDate) }}</span>
         <div class="spacer"></div>
-        <router-link to="/settings" class="btn btn-sm">⚙️ 模型配置</router-link>
-        <button v-if="reportLoading" class="btn btn-sm" @click="stop">停止生成</button>
-        <button v-else class="btn btn-sm btn-primary" @click="generate">✨ 生成报告</button>
+        <router-link to="/settings" class="btn btn-sm">{{ $t($t('⚙️ 模型配置')) }}</router-link>
+        <button v-if="reportLoading" class="btn btn-sm" @click="stop">{{ $t($t('停止生成')) }}</button>
+        <button v-else class="btn btn-sm btn-primary" @click="generate">{{ $t($t('✨ 生成报告')) }}</button>
       </div>
 
       <div v-if="reportDegraded" class="hint-bar warn" style="margin-bottom: 12px">
-        ⚙️ 当前为本地模板拼装，配置 AI 模型可获得更优质的{{ rtypeLabel[rtype] }}
-        <router-link to="/settings" class="link">去配置</router-link>
+        {{ $t($t('⚙️ 当前为本地模板拼装，配置 AI 模型可获得更优质的{a}'), { a: rtypeLabel[rtype] }) }}
+        <router-link to="/settings" class="link">{{ $t($t('去配置')) }}</router-link>
       </div>
 
       <div class="report-box">
         <div v-if="!reportContent && !reportLoading" class="empty">
           <div class="ill">✨</div>
-          <div class="t">报告从这里开始</div>
-          <div class="d">基于你录入的节点与待办完成情况自动生成</div>
-          <button class="btn btn-primary" style="margin-top: 6px" @click="generate">生成{{ rtypeLabel[rtype] }}</button>
+          <div class="t">{{ $t($t('报告从这里开始')) }}</div>
+          <div class="d">{{ $t($t('基于你录入的节点与待办完成情况自动生成')) }}</div>
+          <button class="btn btn-primary" style="margin-top: 6px" @click="generate">{{ $t($t('生成{a}'), { a: rtypeLabel[rtype] }) }}</button>
         </div>
         <template v-else>
           <MarkdownView :content="reportContent" />
@@ -247,20 +247,20 @@ onMounted(async () => {
       </div>
 
       <div v-if="reportContent" class="row wrap" style="margin-top: 12px">
-        <span class="small muted">{{ reportElapsed ? `生成于 ${reportElapsed}` : '' }}</span>
+        <span class="small muted">{{ reportElapsed ? $t('生成于 {a}', { a: reportElapsed }) : '' }}</span>
         <div class="spacer"></div>
-        <button class="btn btn-sm" @click="copyReport">📋 复制 MD</button>
-        <button class="btn btn-sm" @click="exportReport">⬇️ 导出</button>
+        <button class="btn btn-sm" @click="copyReport">{{ $t($t('📋 复制 MD')) }}</button>
+        <button class="btn btn-sm" @click="exportReport">{{ $t($t('⬇️ 导出')) }}</button>
       </div>
 
       <!-- 历史 -->
       <div v-if="history.length" style="margin-top: 16px">
-        <div class="card-title" style="font-size: 14px; margin-bottom: 8px">历史{{ rtypeLabel[rtype] }}</div>
+        <div class="card-title" style="font-size: 14px; margin-bottom: 8px">{{ $t($t('历史{a}'), { a: rtypeLabel[rtype] }) }}</div>
         <div class="stack sm">
           <div v-for="h in history.slice(0, 8)" :key="h.id" class="row" style="gap: 8px; font-size: 13px">
             <span class="mono small muted">{{ h.createdAt.slice(0, 16) }}</span>
             <span class="link" @click="reportContent = h.content; reportDegraded = !h.isAi">{{ h.period }}</span>
-            <span v-if="!h.isAi" class="badge">本地</span>
+            <span v-if="!h.isAi" class="badge">{{ $t($t('本地')) }}</span>
             <div class="spacer"></div>
             <button class="icon-btn" style="width: 24px; height: 24px" @click="api.deleteReport(h.id).then(loadHistory)">×</button>
           </div>
@@ -271,17 +271,17 @@ onMounted(async () => {
     <!-- 复盘 -->
     <section v-if="tab === 'review'" class="card">
       <div class="row" style="margin-bottom: 12px">
-        <div class="card-title" style="font-size: 15px">周度智能复盘</div>
+        <div class="card-title" style="font-size: 15px">{{ $t($t('周度智能复盘')) }}</div>
         <span v-if="reviewAt" class="card-sub">{{ reviewAt }}</span>
         <div class="spacer"></div>
-        <button v-if="reviewLoading" class="btn btn-sm" @click="abortReview?.(); reviewLoading = false">停止</button>
-        <button v-else class="btn btn-sm btn-primary" @click="generateReview">📊 {{ reviewContent ? '重新生成' : '生成本周复盘' }}</button>
+        <button v-if="reviewLoading" class="btn btn-sm" @click="abortReview?.(); reviewLoading = false">{{ $t($t('停止')) }}</button>
+        <button v-else class="btn btn-sm btn-primary" @click="generateReview">{{ $t('📊 {a}', { a: reviewContent ? $t('重新生成') : $t('生成本周复盘') }) }}</button>
       </div>
 
       <div v-if="!reviewContent && !reviewLoading" class="empty">
         <div class="ill">📊</div>
-        <div class="t">还没有复盘</div>
-        <div class="d">智伴会分析本周的记录节奏、完成率与拖延规律</div>
+        <div class="t">{{ $t($t('还没有复盘')) }}</div>
+        <div class="d">{{ $t($t('智伴会分析本周的记录节奏、完成率与拖延规律')) }}</div>
       </div>
 
       <template v-else>
@@ -295,7 +295,7 @@ onMounted(async () => {
           </div>
         </div>
         <details :open="!insights.length">
-          <summary class="small muted pointer">查看完整复盘内容</summary>
+          <summary class="small muted pointer">{{ $t($t('查看完整复盘内容')) }}</summary>
           <div style="margin-top: 10px">
             <MarkdownView :content="reviewContent" />
             <span v-if="reviewLoading" class="stream-cursor"></span>
@@ -307,17 +307,17 @@ onMounted(async () => {
     <!-- 问答 -->
     <section v-if="tab === 'chat'" class="card" style="display: flex; flex-direction: column; height: calc(100vh - 210px)">
       <div class="row" style="margin-bottom: 10px">
-        <div class="card-title" style="font-size: 15px">智伴问答</div>
-        <span class="card-sub">基于你自己的本地数据</span>
+        <div class="card-title" style="font-size: 15px">{{ $t($t('智伴问答')) }}</div>
+        <span class="card-sub">{{ $t($t('基于你自己的本地数据')) }}</span>
         <div class="spacer"></div>
-        <button class="btn btn-sm" @click="clearChat">清空</button>
+        <button class="btn btn-sm" @click="clearChat">{{ $t($t('清空')) }}</button>
       </div>
 
       <div ref="chatScroll" class="chat-scroll">
         <div v-if="messages.length === 0" class="empty">
           <div class="ill">💬</div>
-          <div class="t">问我关于你记录的任何事</div>
-          <div class="d">例如：本周完成了几件待办？</div>
+          <div class="t">{{ $t($t('问我关于你记录的任何事')) }}</div>
+          <div class="d">{{ $t($t('例如：本周完成了几件待办？')) }}</div>
           <div class="row wrap" style="margin-top: 8px; justify-content: center">
             <button v-for="s in SUGGESTIONS" :key="s" class="btn btn-sm" @click="question = s; ask()">{{ s }}</button>
           </div>
@@ -332,12 +332,12 @@ onMounted(async () => {
       </div>
 
       <div class="quick-entry" style="margin-top: 10px">
-        <input v-model="question" type="text" placeholder="问我：这周哪类任务最容易拖延？" @keydown.enter="ask" />
+        <input v-model="question" type="text" :placeholder="$t('问我：这周哪类任务最容易拖延？')" @keydown.enter="ask" />
         <div class="tags-row" style="opacity: 1">
-          <span class="small muted">Enter 发送 · 数据不出本机</span>
+          <span class="small muted">{{ $t($t('Enter 发送 · 数据不出本机')) }}</span>
           <div class="spacer"></div>
           <button class="btn btn-sm btn-primary" :disabled="chatLoading" @click="ask">
-            {{ chatLoading ? '思考中…' : '发送' }}
+            {{ chatLoading ? $t('思考中…') : $t('发送') }}
           </button>
         </div>
       </div>
