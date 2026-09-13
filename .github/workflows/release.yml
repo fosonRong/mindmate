@@ -1,6 +1,6 @@
 name: release
 
-# 零成本发布流水线：打 tag → 构建 + 验收 → 生成更新清单 → 发布到 GitHub Release 与 Cloudflare Pages
+# 零成本发布流水线：打 tag → 多平台构建 → 生成更新清单 → 发布到 GitHub Release 与 Cloudflare Pages
 #
 # 需要配置的 Secrets（仓库 Settings → Secrets and variables → Actions）：
 #   TAURI_SIGNING_PRIVATE_KEY           更新包签名私钥（tauri signer generate 生成，内容为私钥文件全文）
@@ -9,9 +9,17 @@ name: release
 #   CLOUDFLARE_ACCOUNT_ID               Cloudflare 账号 ID
 # 可选变量（Variables）：
 #   PAGES_PROJECT                        Cloudflare Pages 项目名（默认 mindmate）
+#   RELEASE_BASE_URL                    产物下载前缀
 #
-# 说明：Windows 构建产物由 Tauri 生成，通常无法用更旧的版本覆盖安装（updater 只升不降），
-# 因此发布前务必先在本地跑一遍 scripts/run_all_tests.py。
+# 设计要点：
+#   1. 构建与发布分离：矩阵构建各平台产物 → 汇总任务统一生成清单/部署/发 Release。
+#   2. 某平台失败**不阻断**其它平台分发（publish 用 if: always()）：清单里只包含真正产出的平台，
+#      用户不会拿到指向空文件的更新。
+#   3. 更新包签名私钥对所有平台通用；缺签名的平台会让 make-manifest 直接失败（否则用户装不上更新）。
+#   4. macOS 的 .dmg 用 hdiutil 手动生成（Tauri 自带的 dmg 打包依赖 Finder/AppleScript，在 CI 上不可靠），
+#      且失败不阻断 .app.tar.gz（自动更新真正需要的产物）。
+#
+# 说明：安装包通常无法用更旧的版本覆盖安装（updater 只升不降），发布前请先跑 scripts/run_all_tests.py。
 
 on:
   push:
@@ -23,9 +31,40 @@ permissions:
   contents: write      # 创建 Release 需要
 
 jobs:
-  build-and-release:
-    runs-on: windows-latest
-    timeout-minutes: 60
+  build:
+    name: 构建 ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            os: windows-latest
+            rustTargets: x86_64-pc-windows-msvc
+            extraArgs: "--bundles nsis"
+            arch: ""
+            paths: |
+              src-tauri/target/release/bundle/nsis/*.exe
+              src-tauri/target/release/bundle/nsis/*.sig
+              release/portable/*.zip
+          - platform: darwin-aarch64
+            os: macos-latest
+            rustTargets: aarch64-apple-darwin
+            extraArgs: "--target aarch64-apple-darwin --bundles app"
+            arch: aarch64
+            paths: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+          - platform: darwin-x86_64
+            os: macos-latest
+            rustTargets: x86_64-apple-darwin
+            extraArgs: "--target x86_64-apple-darwin --bundles app"
+            arch: x86_64
+            paths: |
+              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz
+              src-tauri/target/x86_64-apple-darwin/release/bundle/macos/*.app.tar.gz.sig
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
 
     steps:
       - name: 检出代码
@@ -38,15 +77,19 @@ jobs:
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustTargets }}
 
       - name: 缓存 Rust 构建产物
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
+          key: ${{ matrix.platform }}
 
       - name: 安装前端依赖
         run: npm install
 
+      # 三个平台都跑一遍核心单测：既是回归，也验证 core 在各平台都能编译
       - name: Rust 单元测试
         run: cargo test --manifest-path core/Cargo.toml
         env:
@@ -56,21 +99,78 @@ jobs:
         run: npm run --workspace apps/web build
 
       - name: 构建桌面端并签名更新包
-        run: |
-          npm run desktop:build -- --config "{\"plugins\":{\"updater\":{\"endpoints\":[\"${{ vars.RELEASE_BASE_URL }}/latest.json\"]}}}"
+        run: npm run desktop:build -- ${{ matrix.extraArgs }} --config "{\"plugins\":{\"updater\":{\"endpoints\":[\"${{ vars.RELEASE_BASE_URL }}/latest.json\"]}}}"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         shell: bash
 
+      # 绿色版只有 Windows 需要（macOS 用户拖 .app 或装 .dmg）
+      - name: 生成 Windows 绿色版
+        if: matrix.platform == 'windows-x86_64'
+        run: node scripts/make-portable.mjs
+
+      # DMG 用 hdiutil 生成：不依赖 Finder/AppleScript，CI 上稳定；失败也不影响更新包
+      - name: 生成 macOS DMG（尽力而为）
+        if: matrix.arch != ''
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -e
+          ROOT="src-tauri/target/${{ matrix.rustTargets }}/release/bundle"
+          APP="$(find "$ROOT/macos" -maxdepth 1 -name '*.app' | head -1)"
+          if [ -z "$APP" ]; then echo "::warning::未找到 .app，跳过 DMG"; exit 0; fi
+          VER="$(node -p "require('./src-tauri/tauri.conf.json').version")"
+          mkdir -p "$ROOT/dmg"
+          hdiutil create -volname "Mindmate $VER" -srcfolder "$APP" -ov -format UDZO \
+            "$ROOT/dmg/Mindmate_${VER}_${{ matrix.arch }}.dmg"
+
+      - name: 上传构建产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}
+          path: ${{ matrix.paths }}
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: 上传 macOS DMG（可选产物）
+        if: matrix.arch != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.platform }}-dmg
+          path: src-tauri/target/${{ matrix.rustTargets }}/release/bundle/dmg/*.dmg
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish:
+    name: 汇总发布
+    needs: build
+    # 关键：某平台构建失败也要继续发布（其余平台照常分发）
+    if: always() && needs.build.result != 'cancelled'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 下载各平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
       - name: 生成更新清单与校验文件
         run: node scripts/make-manifest.mjs
         env:
+          ARTIFACTS_DIR: artifacts
+          CI: "1"
           RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
           RELEASE_NOTES: ${{ github.event.head_commit.message || '新版本发布' }}
-
-      - name: 生成绿色版
-        run: node scripts/make-portable.mjs
 
       - name: 部署到 Cloudflare Pages（安装包 + 更新清单 + 下载页）
         run: |
@@ -88,8 +188,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            src-tauri/target/release/bundle/nsis/*.exe
-            release/portable/*.zip
+            release/site/*.exe
+            release/site/*.zip
+            release/site/*.dmg
+            release/site/*.app.tar.gz
             release/latest.json
             release/SHA256SUMS.txt
           generate_release_notes: true

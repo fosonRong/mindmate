@@ -35,12 +35,38 @@ function main() {
   writeFileSync(path.join(stage, '使用说明.txt'), readme, 'utf8')
 
   const zipName = `Mindmate_${conf.version}_x64_portable.zip`
-  try {
-    // 只打包 exe 与说明（-j 扁平化路径）
-    execFileSync('tar', ['-a', '-c', '-f', path.join(outDir, zipName), '-C', path.join(root, 'src-tauri', 'target', 'release'), 'mindmate.exe', '-C', stage, '使用说明.txt'], { stdio: 'inherit' })
+  const zipPath = path.join(outDir, zipName)
+  const exeDir = path.join(root, 'src-tauri', 'target', 'release')
+  // 用 zip 打包。注意 tar 的实现差异：Git Bash 自带的 GNU tar 会把 `D:\...` 当成远程主机
+  // （报 "Cannot connect to D: resolve failed"），而 Windows 自带的 bsdtar 能正确处理盘符。
+  // 所以先试 tar，失败再回退到 PowerShell 的 Compress-Archive——两条路都失败才算真失败。
+  const attempts = [
+    ['tar', ['-a', '-c', '-f', zipPath, '-C', exeDir, 'mindmate.exe', '-C', stage, '使用说明.txt']],
+    [
+      'powershell',
+      [
+        '-NoProfile',
+        '-Command',
+        `Compress-Archive -Path '${path.join(exeDir, 'mindmate.exe')}','${path.join(stage, '使用说明.txt')}' -DestinationPath '${zipPath}' -Force`
+      ]
+    ]
+  ]
+  let ok = false
+  const errors = []
+  for (const [cmd, args] of attempts) {
+    try {
+      execFileSync(cmd, args, { stdio: 'ignore' })
+      ok = true
+      break
+    } catch (e) {
+      errors.push(`${cmd}: ${e.message.split('\n')[0]}`)
+    }
+  }
+  if (ok) {
     console.log(`✓ release/portable/${zipName}`)
-  } catch (e) {
-    console.warn('⚠️  未能在本机生成 zip（可能缺少 tar/zip 工具）；CI 上使用 windows-latest 时可正常生成。', e.message)
+  } else {
+    console.warn(`⚠️  未能在本机生成绿色版 zip（tar 与 PowerShell 都失败）：${errors.join(' | ')}`)
+    console.warn('   CI 上使用 windows-latest 时可正常生成；本地缺 zip 不影响发布。')
   }
   rmSync(stage, { recursive: true, force: true })
 }
