@@ -1,0 +1,27 @@
+{
+  "name": "mindmate-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "智伴 Mindmate —— AI 工作生活伴侣（Tauri 2 + Rust + Vue 3）",
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run --workspace apps/web dev",
+    "web:dev": "npm run --workspace apps/web dev",
+    "web:build": "npm run --workspace apps/web build",
+    "desktop:dev": "node scripts/tauri-cli.mjs dev",
+    "desktop:build": "node scripts/tauri-cli.mjs build",
+    "typecheck": "npm run --workspace apps/web typecheck",
+    "test:rust": "node scripts/run-cargo.mjs test --manifest-path core/Cargo.toml",
+    "test:e2e": "python scripts/e2e_test.py",
+    "test:reminder": "python scripts/reminder_test.py",
+    "test:push": "python scripts/push_test.py",
+    "test:desktop": "python scripts/desktop_test.py",
+    "test:all": "python scripts/run_all_tests.py",
+    "build:core": "node scripts/run-cargo.mjs build --release --manifest-path src-tauri/Cargo.toml"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

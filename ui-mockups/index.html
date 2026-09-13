@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>智伴 Mindmate — UI 高保真稿 · 页面 P1-P8</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  /* 演示框架：左侧页面清单导航 + 右侧画布 */
+  .demo-shell { display: flex; height: 100vh; }
+  .demo-nav {
+    width: 300px; flex: none; background: #1D2029; color: #EDF0F7;
+    padding: 20px 16px; overflow-y: auto;
+  }
+  .demo-nav h3 { font-size: 13px; color: #8A93A3; margin: 14px 0 8px; font-weight: 500; }
+  .demo-nav a {
+    display: block; padding: 8px 12px; border-radius: 8px; font-size: 13px; color: #A6AEBF; text-decoration: none;
+  }
+  .demo-nav a:hover { background: #262B37; color: #EDF0F7; }
+  .demo-nav a.on { background: #6C5CE7; color: #fff; }
+  .demo-canvas { flex: 1; overflow: auto; background: var(--bg-page); }
+  .artboard { max-width: 1080px; margin: 0 auto; padding: 28px 24px 80px; }
+  .page-tag { font-size: 12px; color: var(--text-weak); margin-bottom: 16px; display: flex; gap: 12px; align-items: center; }
+  .page-tag b { color: var(--text-regular); font-weight: 500; }
+  .gap-y { display: flex; flex-direction: column; gap: 16px; }
+
+  /* 画布内让深色生效 */
+  .demo-canvas { --bg-page: #F6F7FB; }
+  :root[data-theme="dark"] .demo-canvas { --bg-page: #14161D; }
+
+  /* 骨架（画布内的壳） */
+  .mx-shell { border: 1px solid var(--border); border-radius: 20px; overflow: hidden; background: var(--bg-card); }
+  .mx-topbar { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--bg-card); }
+  .mx-topbar h1 { font-size: 20px; font-weight: 600; }
+  .mx-topbar .date { font-size: 12px; color: var(--text-weak); }
+  .mx-topbar .spacer { flex: 1; }
+  .mx-body { display: flex; }
+  .mx-nav { width: 64px; flex: none; border-right: 1px solid var(--border); background: var(--bg-card); display: flex; flex-direction: column; align-items: center; padding-top: 14px; gap: 6px; }
+  .mx-content { flex: 1; padding: 20px; background: var(--bg-page); min-height: 640px; }
+  .mx-grid2 { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+  .mx-grid2 > .side { display: flex; flex-direction: column; gap: 16px; }
+
+  /* 周视图 */
+  .week-top { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+
+  /* 待办中心分栏 */
+  .todos-split { display: grid; grid-template-columns: 330px 1fr; gap: 16px; }
+  .filter-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+
+  /* 智伴 */
+  .com-body { display: grid; grid-template-columns: 1fr 360px; gap: 16px; align-items: start; }
+
+  /* 设置 */
+  .set-split { display: grid; grid-template-columns: 220px 1fr; gap: 24px; align-items: start; }
+  .set-menu { display: flex; flex-direction: column; gap: 4px; }
+  .set-menu button { text-align: left; padding: 10px 12px; border-radius: var(--radius-ctl); font-size: 13px; color: var(--text-regular); }
+  .set-menu button.on { background: var(--primary-weak); color: var(--primary); font-weight: 500; }
+
+  /* 组件展示区（附录） */
+  .comp-demo { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; }
+  .comp-card h3 { font-size: 14px; font-weight: 600; margin-bottom: 12px; }
+  .row-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<div class="demo-shell">
+  <!-- 左侧导航 -->
+  <div class="demo-nav">
+    <h3>核心页面</h3>
+    <a href="#p1" class="on">P1 今日（首页）</a>
+    <a href="#p2">P2 周视图</a>
+    <a href="#p3">P3 月视图</a>
+    <a href="#p4">P4 待办中心</a>
+    <a href="#p5">P5 智伴 AI</a>
+    <a href="#p6">P6 设置</a>
+    <h3>系统能力</h3>
+    <a href="#p7">P7 速记浮窗</a>
+    <a href="#p8">P8 通知</a>
+    <h3>组件规范</h3>
+    <a href="#comp">组件库</a>
+    <h3>说明</h3>
+    <a href="#note">设计说明与对照</a>
+  </div>
+
+  <!-- 画布 -->
+  <div class="demo-canvas">
+    <div class="artboard">
+
+      <!-- ═══════════ P1 今日 ═══════════ -->
+      <section id="p1" class="page-tag"><b>P1 · 今日（默认首页）</b><span>8/4 栅格 · 左侧记录主线程，右侧今日收束</span></section>
+      <div class="mx-shell">
+        <div class="mx-topbar">
+          <h1>今日</h1><span class="date">2026-09-12 · 周六</span><span class="spacer"></span>
+          <span class="chip none">Alt+Z 速记</span>
+          <button class="btn btn-primary btn-sm">＋ 速记</button>
+          <button class="btn btn-sm">⚙</button>
+        </div>
+        <div class="mx-body">
+          <div class="mx-nav">
+            <div class="logo">M</div>
+            <div class="nav-item active" title="今日">🏠</div>
+            <div class="nav-item" title="周">📅</div>
+            <div class="nav-item" title="月">🗓️</div>
+            <div class="nav-item" title="待办">✅</div>
+            <div class="nav-item" title="智伴">✨</div>
+            <div class="nav-sep"></div>
+            <div class="nav-tip">🔥5</div>
+          </div>
+          <div class="mx-content">
+            <div class="mx-grid2">
+              <div class="gap-y">
+                <!-- 晨间简报 -->
+                <div class="card" style="display:flex; gap:14px; align-items:flex-start;">
+                  <div style="width:40px;height:40px;border-radius:50%;background:var(--primary-weak);color:var(--primary);display:grid;place-items:center;font-size:18px;flex:none;">📋</div>
+                  <div style="flex:1; display:flex; flex-direction:column; gap:6px;">
+                    <div class="card-title" style="font-size:14px;">晨间简报 <span class="card-sub">09:00 生成</span></div>
+                    <div style="font-size:13px;color:var(--text-regular);">昨日未完成 · <span style="color:var(--danger);">修复登录bug（逾期）</span></div>
+                    <div style="font-size:13px;color:var(--text-regular);">今日日程 · <b>10:00</b> 需求评审 · <b>14:00</b> 周会</div>
+                    <div style="font-size:13px;color:var(--text-regular);">✨ 建议 · ① 修复bug ② 评审 ③ 写方案</div>
+                  </div>
+                  <button class="btn btn-sm">刷新</button>
+                  <button class="btn btn-sm">×</button>
+                </div>
+                <!-- 今日进度双条 -->
+                <div class="card gap-y" style="gap:10px;">
+                  <div class="card-title">今日 <span class="streak" style="margin-left:auto;">🔥 连续记录 5 天</span></div>
+                  <div class="progress-pair">
+                    <div class="row"><span class="label">记录进度</span><div class="progress p-high" style="flex:1"><i style="width:75%"></i></div><span class="val">3/4 条</span></div>
+                    <div class="row"><span class="label">待办完成</span><div class="progress p-mid" style="flex:1"><i style="width:60%"></i></div><span class="val">3/5</span></div>
+                  </div>
+                </div>
+                <!-- 速记框 -->
+                <div class="quick-entry">
+                  <input type="text" placeholder="快速记录此刻的工作 / 生活…" value="完成登录页改版评审">
+                  <div class="tags-row">
+                    <button class="tag-pick on">工作</button>
+                    <button class="tag-pick">生活</button>
+                    <button class="tag-pick">健康</button>
+                    <button class="tag-pick">学习</button>
+                    <span class="hotkey">Enter</span>
+                  </div>
+                </div>
+                <!-- 时间线 -->
+                <div class="tl">
+                  <div class="tl-item">
+                    <div class="tl-time">10:15</div><div class="tl-dot"></div>
+                    <div class="tl-bubble">
+                      <div class="row"><span class="chip work">工作</span><span class="spacer"></span>
+                        <span class="tl-actions"><button>编辑</button><button>关联待办</button><button class="del">删除</button></span></div>
+                      完成 XX 模块开发，联调通过
+                    </div>
+                  </div>
+                  <div class="tl-item">
+                    <div class="tl-time">11:02</div><div class="tl-dot"></div>
+                    <div class="tl-bubble">
+                      <div class="row"><span class="chip work">工作</span><span class="spacer"></span>
+                        <span class="tl-actions"><button>编辑</button><button class="del">删除</button></span></div>
+                      需求评审通过，排期下周
+                    </div>
+                  </div>
+                  <div class="tl-item">
+                    <div class="tl-time">14:30</div><div class="tl-dot"></div>
+                    <div class="tl-bubble">
+                      <div class="row"><span class="chip study">学习</span><span class="spacer"></span>
+                        <span class="tl-actions"><button>编辑</button><button class="del">删除</button></span></div>
+                      看完架构课第 3 章，记了笔记
+                    </div>
+                  </div>
+                  <div class="tl-item back">
+                    <div class="tl-time">09:40</div><div class="tl-dot"></div>
+                    <div class="tl-bubble">
+                      <div class="row"><span class="chip life">生活</span><span class="tl-back-tag">补录</span><span class="spacer"></span>
+                        <span class="tl-actions"><button>编辑</button><button class="del">删除</button></span></div>
+                      早起晨跑 5km
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <!-- 右侧今日待办 -->
+              <div class="side">
+                <div class="card gap-y">
+                  <div class="card-title">今日待办 <span class="card-sub">3/5</span></div>
+                  <div class="progress p-mid"><i style="width:60%"></i></div>
+                  <div class="todo-item">
+                    <div class="grip">⋮⋮</div><div class="check done">✓</div>
+                    <div class="todo-title done">晨会同步需求</div><div class="todo-info">09:00</div>
+                  </div>
+                  <div class="todo-item">
+                    <div class="grip">⋮⋮</div><div class="check done">✓</div>
+                    <div class="todo-title done">提交 PR 并合入</div><div class="todo-info"><span class="chip work">工作</span></div>
+                  </div>
+                  <div class="todo-item">
+                    <div class="grip">⋮⋮</div><div class="check"></div>
+                    <div class="todo-title">修复登录 bug</div>
+                    <div class="todo-info"><span class="pri-dot pri-h"></span><span class="badge danger">逾期</span></div>
+                  </div>
+                  <div class="todo-item">
+                    <div class="grip">⋮⋮</div><div class="check"></div>
+                    <div class="todo-title">写技术方案</div><div class="todo-info">明天</div>
+                  </div>
+                  <button class="btn" style="justify-content:center;">＋ 添加今日待办</button>
+                </div>
+                <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+                  <div class="card-title">本周里程碑</div>
+                  <div style="font-size:13px;color:var(--text-regular);">· <b>周三</b> 联调接口<br>· <b>周五</b> Q3 OKR 初稿</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ P2 周视图 ═══════════ -->
+      <section id="p2" class="page-tag" style="margin-top:48px;"><b>P2 · 周视图</b><span>周一~周日按日聚合 · 每列=一天</span></section>
+      <div class="mx-shell">
+        <div class="mx-topbar">
+          <h1>周</h1><span class="date">2026-09-07 ~ 09-13</span><span class="spacer"></span>
+          <button class="btn btn-primary btn-sm">＋ 补录</button>
+        </div>
+        <div class="mx-body">
+          <div class="mx-nav">
+            <div class="logo">M</div>
+            <div class="nav-item" title="今日">🏠</div>
+            <div class="nav-item active" title="周">📅</div>
+            <div class="nav-item" title="月">🗓️</div>
+            <div class="nav-item" title="待办">✅</div>
+            <div class="nav-item" title="智伴">✨</div>
+            <div class="nav-sep"></div>
+            <div class="nav-tip">🔥5</div>
+          </div>
+          <div class="mx-content">
+            <div class="week-top">
+              <div class="card" style="flex:1; display:flex; flex-direction:column; gap:8px;">
+                <div class="card-title">本周进度 <span class="streak" style="margin-left:auto;">🔥 连续 5 天</span></div>
+                <div class="progress-pair">
+                  <div class="row"><span class="label">记录进度</span><div class="progress p-mid" style="flex:1"><i style="width:64%"></i></div><span class="val">18/28 条</span></div>
+                  <div class="row"><span class="label">待办完成</span><div class="progress p-mid" style="flex:1"><i style="width:62%"></i></div><span class="val">18/29</span></div>
+                </div>
+                <div class="stats-line">有录入 5/7 天 · 今日 2 条 · 明日计划暂无</div>
+              </div>
+            </div>
+            <div style="display:grid; grid-template-columns:repeat(7,1fr); gap:10px;">
+              <!-- 周一 -->
+              <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+                <div class="row-line" style="justify-content:space-between;"><b style="font-size:14px;">周一</b><span class="mono" style="font-size:12px;color:var(--text-weak);">09-07</span></div>
+                <div class="row-line"><span class="badge info">3 条记录</span><span class="ring" style="width:34px;height:34px;margin-left:auto;">
+                  <svg width="34" height="34"><circle class="track" cx="17" cy="17" r="14" fill="none" stroke-width="4"/><circle class="bar" cx="17" cy="17" r="14" fill="none" stroke-width="4" stroke-dasharray="66 88" stroke-dashoffset="0"/></svg><span class="num" style="font-size:9px;">75%</span></span></div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">10:15</span> 完成模块 A</div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">11:02</span> 评审通过</div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">15:40</span> 修复 bug</div>
+                <button class="btn btn-sm btn-ghost">＋ 2 更多</button>
+              </div>
+              <!-- 周二 -->
+              <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+                <div class="row-line" style="justify-content:space-between;"><b style="font-size:14px;">周二</b><span class="mono" style="font-size:12px;color:var(--text-weak);">09-08</span></div>
+                <div class="row-line"><span class="badge info">4 条记录</span><span class="ring" style="width:34px;height:34px;margin-left:auto;">
+                  <svg width="34" height="34"><circle class="track" cx="17" cy="17" r="14" fill="none" stroke-width="4"/><circle class="bar" cx="17" cy="17" r="14" fill="none" stroke-width="4" stroke-dasharray="88 88" stroke-dashoffset="0"/></svg><span class="num" style="font-size:9px;">100%</span></span></div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">09:20</span> 写技术方案</div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">11:45</span> 组内分享</div>
+                <button class="btn btn-sm btn-ghost">＋ 2 更多</button>
+              </div>
+              <!-- 周三 -->
+              <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+                <div class="row-line" style="justify-content:space-between;"><b style="font-size:14px;">周三</b><span class="mono" style="font-size:12px;color:var(--text-weak);">09-09</span></div>
+                <div class="row-line"><span class="badge info">5 条记录</span><span class="ring" style="width:34px;height:34px;margin-left:auto;">
+                  <svg width="34" height="34"><circle class="track" cx="17" cy="17" r="14" fill="none" stroke-width="4"/><circle class="bar" cx="17" cy="17" r="14" fill="none" stroke-width="4" stroke-dasharray="66 88" stroke-dashoffset="0"/></svg><span class="num" style="font-size:9px;">75%</span></span></div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">09:05</span> 联调接口</div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">10:10</span> 需求澄清会</div>
+                <button class="btn btn-sm btn-ghost">＋ 3 更多</button>
+              </div>
+              <!-- 周四 -->
+              <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+                <div class="row-line" style="justify-content:space-between;"><b style="font-size:14px;">周四</b><span class="mono" style="font-size:12px;color:var(--text-weak);">09-10</span></div>
+                <div class="row-line"><span class="badge info">3 条记录</span><span class="ring" style="width:34px;height:34px;margin-left:auto;">
+                  <svg width="34" height="34"><circle class="track" cx="17" cy="17" r="14" fill="none" stroke-width="4"/><circle class="bar" cx="17" cy="17" r="14" fill="none" stroke-width="4" stroke-dasharray="44 88" stroke-dashoffset="0"/></svg><span class="num" style="font-size:9px;">50%</span></span></div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">10:30</span> 上线前检查</div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">13:02</span> 修复登录 bug</div>
+                <button class="btn btn-sm btn-ghost">＋ 1 更多</button>
+              </div>
+              <!-- 周五 -->
+              <div class="card" style="display:flex; flex-direction:column; gap:8px;">
+                <div class="row-line" style="justify-content:space-between;"><b style="font-size:14px;">周五</b><span class="mono" style="font-size:12px;color:var(--text-weak);">09-11</span></div>
+                <div class="row-line"><span class="badge info">3 条记录</span><span class="ring" style="width:34px;height:34px;margin-left:auto;">
+                  <svg width="34" height="34"><circle class="track" cx="17" cy="17" r="14" fill="none" stroke-width="4"/><circle class="bar" cx="17" cy="17" r="14" fill="none" stroke-width="4" stroke-dasharray="66 88" stroke-dashoffset="0"/></svg><span class="num" style="font-size:9px;">75%</span></span></div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">09:10</span> OKR 初稿</div>
+                <div style="font-size:12px;color:var(--text-regular);"><span class="mono" style="color:var(--text-weak);">14:20</span> 周会</div>
+                <button class="btn btn-sm btn-ghost">＋ 1 更多</button>
+              </div>
+              <!-- 周六（未记录引导） -->
+              <div class="card" style="display:flex; flex-direction:column; gap:8px; opacity:.55; border-style:dashed;">
+                <div class="row-line" style="justify-content:space-between;"><b style="font-size:14px;">周六</b><span class="mono" style="font-size:12px;color:var(--text-weak);">09-12</span></div>
+                <div class="row-line"><span class="badge none">未记录</span></div>
+                <div style="font-size:12px;color:var(--text-weak);">点击补录 →</div>
+              </div>
+              <!-- 周日（未记录引导） -->
+              <div class="card" style="display:flex; flex-direction:column; gap:8px; opacity:.55; border-style:dashed;">
+                <div class="row-line" style="justify-content:space-between;"><b style="font-size:14px;">周日</b><span class="mono" style="font-size:12px;color:var(--text-weak);">09-13</span></div>
+                <div class="row-line"><span class="badge none">未记录</span></div>
+                <div style="font-size:12px;color:var(--text-weak);">点击补录 →</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ P3 月视图 ═══════════ -->
+      <section id="p3" class="page-tag" style="margin-top:48px;"><b>P3 · 月视图</b><span>月历网格 · 每格节点数+摘要 · 点击进当日</span></section>
+      <div class="mx-shell">
+        <div class="mx-topbar">
+          <h1>月</h1><span class="date">2026 年 9 月</span><span class="spacer"></span>
+          <span class="badge info">有录入 24/30 天</span>
+        </div>
+        <div class="mx-body">
+          <div class="mx-nav">
+            <div class="logo">M</div>
+            <div class="nav-item" title="今日">🏠</div>
+            <div class="nav-item" title="周">📅</div>
+            <div class="nav-item active" title="月">🗓️</div>
+            <div class="nav-item" title="待办">✅</div>
+            <div class="nav-item" title="智伴">✨</div>
+            <div class="nav-sep"></div>
+            <div class="nav-tip">🔥5</div>
+          </div>
+          <div class="mx-content">
+            <div class="card" style="display:flex; flex-direction:column; gap:8px; margin-bottom:16px;">
+              <div class="card-title">月度进度 <span class="stats-line" style="margin-left:auto;">已录 198/120 条 <span style="color:var(--accent);">(超额 78)</span></span></div>
+              <div class="progress-pair">
+                <div class="row"><span class="label">记录进度</span><div class="progress p-high" style="flex:1"><i style="width:100%"></i></div><span class="val">198/120 超额</span></div>
+                <div class="row"><span class="label">待办完成</span><div class="progress p-mid" style="flex:1"><i style="width:71%"></i></div><span class="val">32/45</span></div>
+              </div>
+            </div>
+            <div class="cal-head">
+              <div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div><div>日</div>
+            </div>
+            <div class="cal-grid">
+              <div class="cal-cell other"><div class="num">31</div></div>
+              <div class="cal-cell"><div class="num">1<span class="cnt">2</span></div><div class="sum">规划 Q3 目标</div></div>
+              <div class="cal-cell"><div class="num">2<span class="cnt">3</span></div><div class="sum">接口文档评审</div></div>
+              <div class="cal-cell"><div class="num">3<span class="cnt">5</span></div><div class="sum">完成模块 A 开发</div></div>
+              <div class="cal-cell"><div class="num">4<span class="cnt">2</span></div><div class="sum">晨会同步</div></div>
+              <div class="cal-cell"><div class="num">5<span class="cnt">1</span></div><div class="sum">健身房</div></div>
+              <div class="cal-cell"><div class="num">6<span class="cnt">3</span></div><div class="sum">周会 · 复盘</div></div>
+              <div class="cal-cell"><div class="num">7<span class="cnt">4</span></div><div class="sum">写技术方案</div></div>
+              <div class="cal-cell"><div class="num">8<span class="cnt">2</span></div><div class="sum">联调接口</div></div>
+              <div class="cal-cell"><div class="num">9<span class="cnt">5</span></div><div class="sum">需求澄清会</div></div>
+              <div class="cal-cell"><div class="num">10<span class="cnt">3</span></div><div class="sum">上线前检查</div></div>
+              <div class="cal-cell"><div class="num">11<span class="cnt">3</span></div><div class="sum">OKR 初稿</div></div>
+              <div class="cal-cell"><div class="num">12<span class="cnt">2</span></div><div class="sum">修复登录 bug</div></div>
+              <div class="cal-cell today"><div class="num">13<span class="cnt">3</span></div><div class="sum">完成改版评审</div></div>
+              <div class="cal-cell"><div class="num">14<span class="cnt">1</span></div><div class="sum">晨跑</div></div>
+              <div class="cal-cell"><div class="num">15<span class="cnt">2</span></div><div class="sum">架构课笔记</div></div>
+              <div class="cal-cell"><div class="num">16</div><div class="sum" style="color:var(--text-disable);">（今日未录）</div></div>
+              <div class="cal-cell"><div class="num">17</div></div>
+              <div class="cal-cell"><div class="num">18</div></div>
+              <div class="cal-cell"><div class="num">19</div></div>
+              <div class="cal-cell"><div class="num">20</div></div>
+              <div class="cal-cell"><div class="num">21</div></div>
+              <div class="cal-cell"><div class="num">22</div></div>
+              <div class="cal-cell"><div class="num">23</div></div>
+              <div class="cal-cell"><div class="num">24</div></div>
+              <div class="cal-cell"><div class="num">25</div></div>
+              <div class="cal-cell"><div class="num">26</div></div>
+              <div class="cal-cell"><div class="num">27</div></div>
+              <div class="cal-cell"><div class="num">28</div></div>
+              <div class="cal-cell"><div class="num">29</div></div>
+              <div class="cal-cell"><div class="num">30</div></div>
+              <div class="cal-cell other"><div class="num">1</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ P4 待办中心 ═══════════ -->
+      <section id="p4" class="page-tag" style="margin-top:48px;"><b>P4 · 待办中心</b><span>左右分栏 · 左列表分组 · 右日历+当日双栏</span></section>
+      <div class="mx-shell">
+        <div class="mx-topbar">
+          <h1>待办</h1><span class="date">四类自动归类</span><span class="spacer"></span>
+          <button class="btn btn-primary btn-sm">＋ 新建待办</button>
+        </div>
+        <div class="mx-body">
+          <div class="mx-nav">
+            <div class="logo">M</div>
+            <div class="nav-item" title="今日">🏠</div>
+            <div class="nav-item" title="周">📅</div>
+            <div class="nav-item" title="月">🗓️</div>
+            <div class="nav-item active" title="待办">✅</div>
+            <div class="nav-item" title="智伴">✨</div>
+            <div class="nav-sep"></div>
+            <div class="nav-tip">🔥5</div>
+          </div>
+          <div class="mx-content">
+            <div class="todos-split">
+              <!-- 左列表 -->
+              <div class="gap-y">
+                <div class="card gap-y">
+                  <div class="row-line">
+                    <div class="seg"><button class="on">全部</button><button>今日</button><button>本周</button><button>本月</button></div>
+                  </div>
+                  <div class="row-line" style="gap:6px;">
+                    <div class="select-wrap"><select class="input" style="height:32px;width:110px;font-size:12px;"><option>全部状态</option></select></div>
+                    <div class="select-wrap"><select class="input" style="height:32px;width:96px;font-size:12px;"><option>全部优先级</option></select></div>
+                    <div class="select-wrap"><select class="input" style="height:32px;width:96px;font-size:12px;"><option>全部标签</option></select></div>
+                    <input class="input" style="height:32px;flex:1;font-size:12px;" placeholder="搜索…">
+                  </div>
+                  <div class="progress p-mid"><i style="width:60%"></i></div>
+                  <!-- 今日组 -->
+                  <div class="card-sub" style="display:flex;align-items:center;gap:6px;">今日待办 <span style="margin-left:auto;">3/5</span></div>
+                  <div class="todo-item"><div class="grip">⋮⋮</div><div class="check done">✓</div><div class="todo-title done">晨会同步需求</div><div class="todo-info">09:00</div></div>
+                  <div class="todo-item"><div class="grip">⋮⋮</div><div class="check done">✓</div><div class="todo-title done">提交 PR 并合入</div><div class="todo-info"><span class="chip work">工作</span></div></div>
+                  <div class="todo-item"><div class="grip">⋮⋮</div><div class="check"></div><div class="todo-title">修复登录 bug</div><div class="todo-info"><span class="pri-dot pri-h"></span><span class="badge danger">逾期</span></div></div>
+                  <div class="todo-item"><div class="grip">⋮⋮</div><div class="check"></div><div class="todo-title">写技术方案</div><div class="todo-info">明天</div></div>
+                  <!-- 本周组 -->
+                  <div class="card-sub" style="display:flex;align-items:center;gap:6px;margin-top:8px;">本周待办 <span style="margin-left:auto;">5/8</span></div>
+                  <div class="todo-item"><div class="grip">⋮⋮</div><div class="check"></div><div class="todo-title">联调接口</div><div class="todo-info">周三</div></div>
+                  <div class="todo-item"><div class="grip">⋮⋮</div><div class="check"></div><div class="todo-title">写 Q3 OKR 初稿</div><div class="todo-info">周五</div></div>
+                  <!-- 本月组 -->
+                  <div class="card-sub" style="display:flex;align-items:center;gap:6px;margin-top:8px;">本月待办 <span style="margin-left:auto;">4/12</span></div>
+                  <div class="todo-item"><div class="grip">⋮⋮</div><div class="check"></div><div class="todo-title">完成 Q3 OKR</div><div class="todo-info">09-20</div></div>
+                </div>
+              </div>
+              <!-- 右日历+双栏 -->
+              <div class="gap-y">
+                <div class="card" style="display:flex; flex-direction:column; gap:12px;">
+                  <div class="row-line">
+                    <b style="font-size:14px;">2026 年 9 月</b><span class="spacer"></span>
+                    <div class="seg"><button>◀</button><button>月</button><button>周</button><button>▶</button></div>
+                  </div>
+                  <div class="cal-head">
+                    <div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div><div>日</div>
+                  </div>
+                  <div class="cal-grid" style="grid-template-columns:repeat(7,1fr);">
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">1</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">2<span class="cnt">1</span></div><div class="todo-dots"><span></span></div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">3<span class="cnt">2</span></div><div class="todo-dots"><span></span><span></span></div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">4</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">5</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">6</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">7</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">8<span class="cnt">1</span></div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">9</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">10<span class="cnt">1</span></div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">11</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">12</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">13</div></div>
+                    <div class="cal-cell selected" style="min-height:56px;"><div class="num">14<span class="cnt">2</span></div><div class="todo-dots"><span></span><span></span></div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">15</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">16</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">17</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">18</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">19</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">20</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">21</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">22</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">23</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">24</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">25</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">26</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">27</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">28</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">29</div></div>
+                    <div class="cal-cell" style="min-height:56px;"><div class="num">30</div></div>
+                  </div>
+                </div>
+                <div class="card gap-y">
+                  <div class="card-title" style="font-size:14px;">09-14 周一 · 具体日程</div>
+                  <div class="row-line"><span class="mono" style="font-size:12px;color:var(--text-weak);">10:00</span><span style="font-size:13px;">需求评审</span><span class="spacer"></span><button class="btn btn-sm">改期</button><button class="btn btn-sm">完成</button></div>
+                  <div class="row-line"><span class="mono" style="font-size:12px;color:var(--text-weak);">14:00</span><span style="font-size:13px;">周会</span><span class="spacer"></span><button class="btn btn-sm">改期</button><button class="btn btn-sm">完成</button></div>
+                  <div style="border-top:1px solid var(--border); margin:4px 0;"></div>
+                  <div class="card-title" style="font-size:14px;">09-14 周一 · 待办事项</div>
+                  <div class="todo-item"><div class="check done">✓</div><div class="todo-title done">晨会同步需求</div></div>
+                  <div class="todo-item"><div class="check"></div><div class="todo-title">修复登录 bug</div><div class="todo-info"><span class="pri-dot pri-h"></span><span class="badge danger">逾期</span></div></div>
+                  <button class="btn" style="justify-content:center;">＋ 添加该日待办</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ P5 智伴 AI ═══════════ -->
+      <section id="p5" class="page-tag" style="margin-top:48px;"><b>P5 · 智伴 AI</b><span>报告 / 复盘 / 问答 三 Tab</span></section>
+      <div class="mx-shell">
+        <div class="mx-topbar">
+          <h1>智伴</h1><span class="date">AI 驱动的伙伴</span><span class="spacer"></span>
+          <button class="btn btn-sm">⚙ 模型配置</button>
+        </div>
+        <div class="mx-body">
+          <div class="mx-nav">
+            <div class="logo">M</div>
+            <div class="nav-item" title="今日">🏠</div>
+            <div class="nav-item" title="周">📅</div>
+            <div class="nav-item" title="月">🗓️</div>
+            <div class="nav-item" title="待办">✅</div>
+            <div class="nav-item active" title="智伴">✨</div>
+            <div class="nav-sep"></div>
+            <div class="nav-tip">🔥5</div>
+          </div>
+          <div class="mx-content">
+            <div class="tabs">
+              <button class="on">报告</button><button>复盘</button><button>问答</button>
+            </div>
+            <div style="margin-top:16px;" class="com-body">
+              <!-- 报告预览 -->
+              <div class="gap-y">
+                <div class="card gap-y">
+                  <div class="row-line">
+                    <div class="seg"><button class="on">日报</button><button>周报</button><button>月报</button><button>历史</button></div>
+                    <span class="spacer"></span>
+                    <span style="font-size:12px;color:var(--text-weak);">周期 2026-09-12</span>
+                    <button class="btn btn-primary btn-sm">✨ 生成报告</button>
+                  </div>
+                  <div class="infobar info">当前模型：智谱 GLM-4-Flash（免费 · 已连接）　[切换模型]</div>
+                  <div class="md" style="border:1px dashed var(--border); border-radius:12px; padding:18px 20px;">
+                    <div class="meta">智伴生成 · 2026-09-12 19:40 · 用时 6.2s</div>
+                    <h1>2026-09-12 日报</h1>
+                    <h2>今日完成</h2>
+                    <ul>
+                      <li>完成 <b>XX 模块开发</b>，联调通过</li>
+                      <li>需求评审通过，排期下周</li>
+                      <li>完成登录页改版评审</li>
+                    </ul>
+                    <h2>当前进度</h2>
+                    <ul>
+                      <li>记录：3/4 条 · 待办：3/5</li>
+                      <li>「修复登录 bug」逾期 1 天，建议明日优先</li>
+                    </ul>
+                    <h2>明日计划</h2>
+                    <ul><li>修复登录 bug · 写技术方案初稿</li></ul>
+                  </div>
+                  <div class="row-line">
+                    <span class="spacer"></span>
+                    <button class="btn btn-sm">📋 复制 MD</button>
+                    <button class="btn btn-sm">⬇ 导出</button>
+                    <button class="btn btn-sm">✎ 编辑</button>
+                    <button class="btn btn-sm">📁 归档</button>
+                  </div>
+                </div>
+              </div>
+              <!-- 问答 -->
+              <div class="gap-y">
+                <div class="card gap-y" style="min-height:420px;">
+                  <div class="card-title" style="font-size:14px;">智伴问答</div>
+                  <div class="chat-list">
+                    <div class="chat-user">这周完成了几件待办？</div>
+                    <div class="chat-ai">本周共完成 <b style="color:var(--primary);">8 件</b>（完成率 62%），其中周三效率最高（3 件）。<span class="cursor">▍</span>
+                      <div class="chat-cite">数据来源：<a href="#">09-07 联调接口</a> · <a href="#">09-09 需求澄清会</a> · <a href="#">09-10 上线前检查</a></div>
+                    </div>
+                  </div>
+                  <div class="quick-entry" style="margin-top:auto;">
+                    <input type="text" placeholder="问我：本周哪类任务最容易拖延？" value="哪类任务最容易拖延？">
+                    <button class="btn btn-primary btn-sm" style="align-self:flex-end;">发送</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ P6 设置 ═══════════ -->
+      <section id="p6" class="page-tag" style="margin-top:48px;"><b>P6 · 设置</b><span>AI 模型页 · 双预设大卡</span></section>
+      <div class="mx-shell">
+        <div class="mx-topbar">
+          <h1>设置</h1><span class="date"></span><span class="spacer"></span>
+        </div>
+        <div class="mx-body">
+          <div class="mx-nav">
+            <div class="logo">M</div>
+            <div class="nav-item" title="今日">🏠</div>
+            <div class="nav-item" title="周">📅</div>
+            <div class="nav-item" title="月">🗓️</div>
+            <div class="nav-item" title="待办">✅</div>
+            <div class="nav-item" title="智伴">✨</div>
+            <div class="nav-sep"></div>
+            <div class="nav-tip">🔥5</div>
+          </div>
+          <div class="mx-content">
+            <div class="set-split">
+              <div class="set-menu">
+                <button>⏰ 提醒</button>
+                <button class="on">🤖 AI 模型</button>
+                <button>🎯 每日目标</button>
+                <button>🖥️ 部署模式</button>
+                <button>🎨 外观</button>
+                <button>💾 数据</button>
+                <button>ℹ️ 关于</button>
+              </div>
+              <div class="gap-y">
+                <div class="card gap-y">
+                  <div class="card-title" style="font-size:14px;">选择模型提供商</div>
+                  <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    <div class="preset-card on">
+                      <div class="name">智谱 GLM <span class="badge free">免费</span></div>
+                      <div class="desc">glm-4-flash 零成本跑通</div>
+                      <div class="tick">✓</div>
+                    </div>
+                    <div class="preset-card">
+                      <div class="name">DeepSeek</div>
+                      <div class="desc">deepseek-chat 高质量长报告</div>
+                      <div class="tick">✓</div>
+                    </div>
+                  </div>
+                </div>
+                <div class="card gap-y">
+                  <div class="card-title" style="font-size:14px;">接口配置</div>
+                  <div class="form-row">
+                    <label class="form-label">API Base URL</label>
+                    <input class="input mono" value="https://open.bigmodel.cn/api/paas/v4" readonly style="background:var(--bg-hover);color:var(--text-weak);">
+                  </div>
+                  <div class="form-row">
+                    <label class="form-label">API Key <span style="color:var(--text-weak);">（仅存于本机系统安全存储）</span></label>
+                    <div class="row-line"><input class="input" type="password" value="sk-********" style="flex:1;"><button class="btn btn-sm">显示</button></div>
+                  </div>
+                  <div class="form-row">
+                    <label class="form-label">模型</label>
+                    <div class="select-wrap" style="width:100%;"><select class="input"><option>glm-4-flash（免费）</option><option>glm-4-plus</option></select></div>
+                  </div>
+                  <div class="row-line">
+                    <button class="btn btn-primary btn-sm">测试连接</button>
+                    <span style="font-size:12px;color:var(--success);">✓ 连接成功 · 延迟 320ms · 模型 glm-4-flash</span>
+                  </div>
+                  <details style="font-size:13px;color:var(--text-regular);">
+                    <summary style="cursor:pointer;">脱敏规则（发送给 AI 前自动过滤）</summary>
+                    <div style="margin-top:8px; font-size:12px; color:var(--text-weak);">已启用：手机号、身份证、邮箱、网址 → [隐私]</div>
+                  </details>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══════════ P7 速记浮窗 ═══════════ -->
+      <section id="p7" class="page-tag" style="margin-top:48px;"><b>P7 · 速记浮窗（桌面全局热键 Alt+Z）</b><span>独立置顶窗口</span></section>
+      <div style="display:flex; gap:40px; flex-wrap:wrap; align-items:flex-start;">
+        <div style="width:320px; border:1px solid var(--border); border-radius:16px; background:var(--bg-card); box-shadow:var(--shadow-float); padding:14px 16px; display:flex; flex-direction:column; gap:10px;">
+          <div class="row-line" style="justify-content:space-between;">
+            <span style="font-size:12px;color:var(--text-strong);">⏺ 速记</span>
+            <span class="mono" style="font-size:12px;color:var(--text-weak);">09-12 14:32</span>
+            <span class="stats-line">今日 3/4</span>
+          </div>
+          <div class="quick-entry" style="background:var(--bg-hover); padding:8px 12px;">
+            <input type="text" placeholder="记录此刻…" value="联调通过">
+            <div class="tags-row" style="opacity:1;">
+              <button class="tag-pick on">工作</button><button class="tag-pick">生活</button><button class="tag-pick">健康</button><button class="tag-pick">学习</button>
+            </div>
+          </div>
+          <div class="row-line" style="justify-content:flex-end;">
+            <button class="btn btn-sm">Esc 取消</button>
+            <button class="btn btn-primary btn-sm">✔ 记录</button>
+          </div>
+        </div>
+        <div style="width:320px; border:1px solid var(--border); border-radius:16px; background:var(--bg-card); box-shadow:var(--shadow-float); padding:14px 16px; display:flex; flex-direction:column; gap:10px; align-items:center; justify-content:center; min-height:170px;">
+          <div style="width:46px;height:46px;border-radius:50%;background:var(--success);color:#fff;display:grid;place-items:center;font-size:22px;">✓</div>
+          <div style="font-size:13px;font-weight:500;">已记录 14:32</div>
+          <div style="font-size:12px;color:var(--text-weak);">0.5s 后自动关闭</div>
+        </div>
+      </div>
+
+      <!-- ═══════════ P8 通知 ═══════════ -->
+      <section id="p8" class="page-tag" style="margin-top:48px;"><b>P8 · 通知（桌面系统通知 / 浏览器横幅）</b></section>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; max-width:760px;">
+        <div class="notif">
+          <div class="icon">🕘</div>
+          <div style="flex:1;">
+            <div class="title">该记录一下了</div>
+            <div class="body">今日已录 2/4 条，点击速记</div>
+          </div>
+          <button class="btn btn-sm">速记</button>
+        </div>
+        <div class="notif">
+          <div class="icon" style="background:var(--danger-weak);color:var(--danger);">⚠️</div>
+          <div style="flex:1;">
+            <div class="title">有 1 个待办已逾期</div>
+            <div class="body">修复登录 bug · 点击速记</div>
+          </div>
+          <button class="btn btn-sm">速记</button>
+        </div>
+        <div class="notif">
+          <div class="icon" style="background:#EAF7F0;color:#1F9D5E;">💬</div>
+          <div style="flex:1;">
+            <div class="title">这两天没见到你的记录了</div>
+            <div class="body">还好吗？花 30 秒记一笔吧</div>
+          </div>
+          <button class="btn btn-sm">速记</button>
+        </div>
+        <div class="notif">
+          <div class="icon">📌</div>
+          <div style="flex:1;">
+            <div class="title">待办即将到期</div>
+            <div class="body">写技术方案 · 14:00 截止</div>
+          </div>
+          <button class="btn btn-sm">查看</button>
+        </div>
+        <div class="notif">
+          <div class="icon" style="background:#FFF3E8;color:#D97A1E;">☀️</div>
+          <div style="flex:1;">
+            <div class="title">早安，今天的计划已就绪</div>
+            <div class="body">晨间简报已生成 · 3 件今日待办</div>
+          </div>
+          <button class="btn btn-sm">查看</button>
+        </div>
+        <div class="notif">
+          <div class="icon" style="background:#EAF1FE;color:#2F6BE0;">🌙</div>
+          <div style="flex:1;">
+            <div class="title">今天辛苦了</div>
+            <div class="body">晚安总结已生成 · 明日建议 2 条</div>
+          </div>
+          <button class="btn btn-sm">查看</button>
+        </div>
+      </div>
+
+      <!-- ═══════════ 组件库 ═══════════ -->
+      <section id="comp" class="page-tag" style="margin-top:48px;"><b>组件库</b><span>核心组件全状态</span></section>
+      <div class="comp-demo">
+        <div class="card comp-card">
+          <h3>进度条 ProgressBar</h3>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div class="row-line"><span class="stats-line" style="width:100px;">低 30%</span><div class="progress p-low" style="flex:1"><i style="width:30%"></i></div></div>
+            <div class="row-line"><span class="stats-line" style="width:100px;">中 60%</span><div class="progress p-mid" style="flex:1"><i style="width:60%"></i></div></div>
+            <div class="row-line"><span class="stats-line" style="width:100px;">高 85%</span><div class="progress p-high" style="flex:1"><i style="width:85%"></i></div></div>
+            <div class="row-line"><span class="stats-line" style="width:100px;">超额</span><div class="progress p-high" style="flex:1"><i style="width:100%"></i></div><span class="stats-line" style="color:var(--accent);">+2</span></div>
+          </div>
+        </div>
+        <div class="card comp-card">
+          <h3>环形进度 Ring</h3>
+          <div class="row-line">
+            <div class="ring"><svg width="56" height="56"><circle class="track" cx="28" cy="28" r="24" fill="none" stroke-width="5"/><circle class="bar" cx="28" cy="28" r="24" fill="none" stroke-width="5" stroke-dasharray="113 151" stroke-dashoffset="0"/></svg><span class="num">75%</span></div>
+            <div class="ring"><svg width="56" height="56"><circle class="track" cx="28" cy="28" r="24" fill="none" stroke-width="5"/><circle class="bar" cx="28" cy="28" r="24" fill="none" stroke-width="5" stroke-dasharray="151 151" stroke-dashoffset="0" stroke="#2EAD6C"/></svg><span class="num">100%</span></div>
+          </div>
+        </div>
+        <div class="card comp-card">
+          <h3>标签 / 徽标</h3>
+          <div class="row-line"><span class="chip work">工作</span><span class="chip life">生活</span><span class="chip health">健康</span><span class="chip study">学习</span><span class="chip none">默认</span></div>
+          <div class="row-line"><span class="badge danger">逾期</span><span class="badge ok">已完成</span><span class="badge info">3 条记录</span><span class="badge free">免费</span><span class="streak">🔥 连续 5 天</span></div>
+        </div>
+        <div class="card comp-card">
+          <h3>按钮</h3>
+          <div class="row-line"><button class="btn">默认</button><button class="btn btn-primary">主按钮</button><button class="btn btn-ghost">幽灵</button><button class="btn btn-sm">小按钮</button><button class="btn btn-sm btn-danger">危险</button></div>
+        </div>
+        <div class="card comp-card">
+          <h3>开关 / 表单</h3>
+          <div class="row-line"><div class="switch on"></div><div class="switch"></div></div>
+          <div style="height:8px;"></div>
+          <div class="form-row"><label class="form-label">文本</label><input class="input" placeholder="占位…" value="示例内容"></div>
+        </div>
+        <div class="card comp-card">
+          <h3>信息条 infobar</h3>
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <div class="infobar warn">⚙ 当前为本地模板拼装 · <a href="#">配置 AI 模型</a> 可获得更优质报告</div>
+            <div class="infobar info">✨ 当前模型：智谱 GLM-4-Flash</div>
+          </div>
+        </div>
+        <div class="card comp-card">
+          <h3>空状态 Empty</h3>
+          <div class="empty">
+            <div class="ill">📝</div>
+            <div class="t">今天还没有记录</div>
+            <div class="d">记下第一笔，10 秒就好</div>
+            <button class="btn btn-primary">开始记录</button>
+          </div>
+        </div>
+        <div class="card comp-card">
+          <h3>洞察卡 InsightCard</h3>
+          <div style="display:flex; flex-direction:column; gap:10px;">
+            <div class="insight-card"><div class="mark">✦</div><div><div class="main">周三的待办逾期率最高（43%）</div><div class="sub">本周逾期 6 件中 3 件集中在周三</div></div></div>
+          </div>
+        </div>
+        <div class="card comp-card">
+          <h3>聊天气泡</h3>
+          <div class="chat-list">
+            <div class="chat-user">我周三记了什么？</div>
+            <div class="chat-ai">周三共 5 条：联调接口、需求澄清会…<span class="cursor">▍</span></div>
+          </div>
+        </div>
+        <div class="card comp-card">
+          <h3>抽屉 Drawer（日详情）</h3>
+          <p style="font-size:12px;color:var(--text-weak);">右侧滑入 · 宽 380px · 当日时间线+待办+补录按钮（交互演示见页面）</p>
+        </div>
+      </div>
+
+      <!-- ═══════════ 设计说明 ═══════════ -->
+      <section id="note" class="page-tag" style="margin-top:48px;"><b>设计说明与 PRD 对照</b></section>
+      <div class="card" style="max-width:860px;">
+        <div style="display:flex; flex-direction:column; gap:12px; font-size:13px; color:var(--text-regular); line-height:1.8;">
+          <div>1. <b>主题三态</b>：右下角浮标可实时切换浅色 / 深色 / 跟随系统（跟随系统取浏览器当前配色偏好）。所有令牌在深色下按 UI 文档 2.1 映射生效。</div>
+          <div>2. <b>一次录入 = 一个节点</b>：时间线每行即一次提交（含时刻与标签），无模板干预；补录节点空心圆点 + 「补录」角标（P1 第 4 条）。</div>
+          <div>3. <b>双进度条</b>：今日/周/月三视图顶部均为"记录进度 + 待办完成率"并排（P1/P2/P3）。</div>
+          <div>4. <b>待办中心左右分栏</b>：左侧分组列表（今日/本周/本月 + 筛选），右侧日历 + 选中日的【具体日程 / 待办事项】双栏（P4）。</div>
+          <div>5. <b>速记三入口</b>：页面常驻速记框（P1）、全局热键浮窗（P7）、通知直达（P8）。</div>
+          <div>6. <b>AI 报告</b>：流式打字机 + 生成中工具条 + 降级信息条（P5）；报告含已完成待办与当前进度，日报结构符合 PRD FR-5.6。</div>
+          <div>7. <b>设置 AI 双预设</b>：智谱 GLM / DeepSeek 大卡选择 + 测试连接 + 脱敏规则（P6），满足 FR-5.1。</div>
+          <div>8. <b>提醒克制</b>：达标即静默（无打扰）、逾期才加压、关怀文案不带红色警示（P8 三态文案）。</div>
+          <div>9. 本稿为静态高保真：交互（拖拽、流式渲染、抽屉滑入）以标注形式指出，实现阶段按技术设计文档落地。</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- 主题切换浮标 -->
+<div class="theme-switcher">
+  <button onclick="setTheme('system')">跟随系统</button>
+  <button onclick="setTheme('light')">浅色</button>
+  <button onclick="setTheme('dark')">深色</button>
+</div>
+<script>
+  const root = document.documentElement;
+  function apply(theme) {
+    const resolved = theme === 'system'
+      ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : theme;
+    root.setAttribute('data-theme', resolved);
+    document.querySelectorAll('.theme-switcher button').forEach(b => b.classList.toggle('on', b.textContent === (theme === 'system' ? '跟随系统' : theme === 'light' ? '浅色' : '深色')));
+  }
+  function setTheme(t) { current = t; apply(t); }
+  let current = 'light';
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (current === 'system') apply('system'); });
+  apply('light');
+  // 左侧导航滚动监听高亮
+  const links = document.querySelectorAll('.demo-nav a');
+  const secs = [...links].map(a => document.querySelector(a.getAttribute('href')));
+  addEventListener('scroll', () => {
+    let on = 0;
+    secs.forEach((s, i) => { if (s && s.getBoundingClientRect().top < 160) on = i; });
+    links.forEach((a, i) => a.classList.toggle('on', i === on));
+  }, { passive: true });
+</script>
+</body>
+</html>

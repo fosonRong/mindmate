@@ -1,0 +1,36 @@
+[package]
+name = "mindmate"
+version = "1.0.0"
+edition = "2021"
+description = "智伴 Mindmate 桌面端"
+authors = ["Mindmate"]
+default-run = "mindmate"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-autostart = "2"
+tauri-plugin-single-instance = "2"
+mindmate-core = { path = "../core" }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+rust-embed = "8"
+
+[profile.release]
+# 体积优化（技术设计文档 §11.1）
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+incremental = false

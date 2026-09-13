@@ -1,0 +1,1767 @@
+//! HTTP API：REST + SSE + 静态资源托管 + 认证
+//!
+//! 桌面端与浏览器端走完全相同的接口（技术设计文档 §2.2）。
+
+use crate::ai::{self, AiConfig, ChatMsg};
+use crate::db::*;
+use crate::{AppContext, Event};
+use axum::{
+    extract::{Path, Query, State},
+    http::{header, HeaderMap, StatusCode},
+    response::{
+        sse::{Event as SseEvent, KeepAlive, KeepAliveStream, Sse},
+        IntoResponse, Json, Response,
+    },
+    routing::{delete, get, patch, post},
+    Router,
+};
+use chrono::Datelike;
+use futures_util::{Stream, StreamExt};
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::collections::HashMap;
+use std::pin::Pin;
+use std::sync::Arc;
+use tower_http::{
+    compression::CompressionLayer,
+    cors::{Any, CorsLayer},
+    services::ServeDir,
+};
+
+/// 统一响应体
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiResp<T> {
+    pub code: i32,
+    pub message: String,
+    pub data: Option<T>,
+}
+
+impl<T: Serialize> ApiResp<T> {
+    pub fn ok(data: T) -> Json<Self> {
+        Json(Self {
+            code: 0,
+            message: "ok".into(),
+            data: Some(data),
+        })
+    }
+}
+
+pub type ApiResult<T> = Result<Json<ApiResp<T>>, ApiError>;
+
+/// 错误 → HTTP 状态码 + 业务码
+#[derive(Debug)]
+pub struct ApiError {
+    pub status: StatusCode,
+    pub code: i32,
+    pub message: String,
+}
+
+impl ApiError {
+    pub fn new(status: StatusCode, code: i32, message: impl Into<String>) -> Self {
+        Self {
+            status,
+            code,
+            message: message.into(),
+        }
+    }
+    pub fn bad_request(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_REQUEST, 4001, msg)
+    }
+    pub fn not_found(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::NOT_FOUND, 4004, msg)
+    }
+    pub fn unauthorized(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::UNAUTHORIZED, 4002, msg)
+    }
+    pub fn internal(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::INTERNAL_SERVER_ERROR, 5000, msg)
+    }
+    pub fn ai(msg: impl Into<String>) -> Self {
+        Self::new(StatusCode::BAD_GATEWAY, 4102, msg)
+    }
+}
+
+impl From<anyhow::Error> for ApiError {
+    fn from(e: anyhow::Error) -> Self {
+        ApiError::internal(e.to_string())
+    }
+}
+
+impl IntoResponse for ApiError {
+    fn into_response(self) -> Response {
+        let body = Json(json!({
+            "code": self.code,
+            "message": self.message,
+            "data": serde_json::Value::Null,
+        }));
+        (self.status, body).into_response()
+    }
+}
+
+/// 内嵌前端资源解析器：path → (Content-Type, bytes)
+pub type AssetResolver = Arc<dyn Fn(&str) -> Option<(String, Vec<u8>)> + Send + Sync>;
+
+/// 构建全部路由
+pub fn build_router(ctx: Arc<AppContext>) -> Router {
+    build_router_with_assets(ctx, None)
+}
+
+/// 构建路由（可注入内嵌前端资源，桌面端使用；浏览器模式用 web_dir）
+pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolver>) -> Router {
+    let cors = CorsLayer::new()
+        .allow_origin(Any)
+        .allow_methods(Any)
+        .allow_headers(Any);
+
+    let mut app = Router::new()
+        .route("/api/v1/healthz", get(healthz))
+        // 认证
+        .route("/api/v1/auth/status", get(auth_status))
+        .route("/api/v1/auth/login", post(auth_login))
+        .route("/api/v1/auth/set-password", post(auth_set_password))
+        // 节点
+        .route("/api/v1/nodes", post(create_node).get(list_nodes))
+        .route("/api/v1/nodes/range", get(list_nodes_range))
+        .route("/api/v1/nodes/{id}", patch(update_node).delete(delete_node))
+        .route("/api/v1/nodes/search", get(search_nodes))
+        // 统计
+        .route("/api/v1/stats/daily", get(stats_daily))
+        .route("/api/v1/stats/period", get(stats_period))
+        .route("/api/v1/stats/monthly", get(stats_monthly))
+        // 待办
+        .route("/api/v1/todos", post(create_todo).get(list_todos))
+        .route(
+            "/api/v1/todos/{id}",
+            patch(update_todo).delete(delete_todo),
+        )
+        .route("/api/v1/todos/{id}/complete", post(complete_todo))
+        .route("/api/v1/todos/{id}/reopen", post(reopen_todo))
+        .route("/api/v1/todos/schedule", get(schedule_for_date))
+        .route("/api/v1/todos/suggest", post(suggest_schedule))
+        // 设置
+        .route("/api/v1/settings", get(all_settings).put(update_settings))
+        .route("/api/v1/settings/{key}", get(get_setting))
+        // 模板
+        .route("/api/v1/templates", get(all_templates))
+        .route("/api/v1/templates/{type}", get(get_template).put(set_template))
+        // AI
+        .route("/api/v1/ai/presets", get(ai_presets))
+        .route("/api/v1/ai/config", get(ai_config).post(ai_save_config))
+        .route("/api/v1/ai/test", post(ai_test))
+        .route("/api/v1/ai/report", post(ai_report))
+        .route("/api/v1/ai/brief", post(ai_brief))
+        .route("/api/v1/ai/goodnight", post(ai_goodnight))
+        .route("/api/v1/ai/review", post(ai_review))
+        .route("/api/v1/ai/chat", post(ai_chat))
+        .route("/api/v1/ai/replan", post(ai_replan))
+        // 报告
+        .route("/api/v1/reports", get(list_reports))
+        .route("/api/v1/reports/{id}", delete(delete_report))
+        // 聊天
+        .route("/api/v1/chat", get(list_chat).delete(clear_chat))
+        // 成就
+        .route("/api/v1/achievements", get(list_achievements))
+        .route("/api/v1/achievements/check", post(check_achievements_api))
+        // 安装信息 / 首见证据（商业化二期老用户识别用）
+        .route("/api/v1/install", get(install_info))
+        // 数据
+        .route("/api/v1/data/export", get(data_export))
+        .route("/api/v1/data/import", post(data_import))
+        .route("/api/v1/data/export/markdown", get(data_export_markdown))
+        // 推送渠道（FR-4.10）
+        .route("/api/v1/push/config", get(push_config).post(push_save_config))
+        .route("/api/v1/push/test", post(push_test))
+        // 事件流
+        .route("/api/v1/stream/events", get(stream_events))
+        .layer(cors)
+        .layer(CompressionLayer::new())
+        .with_state(ctx.clone());
+
+    // 静态资源（桌面端与浏览器端共用同一份前端产物）
+    if let Some(assets) = assets {
+        // 内嵌资源（打包后单二进制自带前端，无需外部文件）
+        app = app.fallback(move |req: axum::extract::Request| {
+            let assets = assets.clone();
+            async move { serve_embedded(&assets, req.uri().path()) }
+        });
+    } else if let Some(dir) = &ctx.cfg.web_dir {
+        if dir.exists() {
+            app = app.fallback_service(
+                ServeDir::new(dir).not_found_service(ServeDir::new(dir.join("index.html"))),
+            );
+        }
+    }
+    app
+}
+
+/// 从内嵌资源返回文件；未命中时回退 index.html（SPA 路由）
+///
+/// 缓存策略（避免应用升级后 WebView/浏览器混用新旧资源）：
+/// - `index.html`：`no-cache`，每次校验，保证拿到新的资源引用
+/// - `/assets/*`（Vite 内容哈希命名）：`immutable` 长期缓存
+fn serve_embedded(assets: &AssetResolver, path: &str) -> Response {
+    let clean = path.trim_start_matches('/');
+    let key = if clean.is_empty() { "index.html" } else { clean };
+    let is_fallback = assets(key).is_none();
+    let hit = assets(key).or_else(|| assets("index.html"));
+    let served_key = if is_fallback { "index.html" } else { key };
+
+    let cache_control = if served_key.starts_with("assets/") && served_key.contains('-') {
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-cache"
+    };
+
+    match hit {
+        Some((ctype, bytes)) => (
+            StatusCode::OK,
+            [
+                (header::CONTENT_TYPE, ctype),
+                (header::CACHE_CONTROL, cache_control.to_string()),
+            ],
+            bytes,
+        )
+            .into_response(),
+        None => (StatusCode::NOT_FOUND, "not found").into_response(),
+    }
+}
+
+/// 启动服务（返回实际端口）
+pub async fn serve(ctx: Arc<AppContext>, port_override: Option<u16>) -> anyhow::Result<u16> {
+    serve_with_assets(ctx, port_override, None).await
+}
+
+/// 启动服务（可注入内嵌前端资源）
+pub async fn serve_with_assets(
+    ctx: Arc<AppContext>,
+    port_override: Option<u16>,
+    assets: Option<AssetResolver>,
+) -> anyhow::Result<u16> {
+    let mut port = port_override.unwrap_or(ctx.cfg.port);
+    // 端口冲突自动 +1（最多尝试 20 次）
+    let mut listener = None;
+    for _ in 0..20 {
+        let addr = format!("{}:{}", ctx.cfg.bind_addr(), port);
+        match tokio::net::TcpListener::bind(&addr).await {
+            Ok(l) => {
+                listener = Some(l);
+                break;
+            }
+            Err(_) => port += 1,
+        }
+    }
+    let listener = listener.ok_or_else(|| anyhow::anyhow!("无法绑定端口（17801-17820 均被占用）"))?;
+    let actual_port = listener.local_addr()?.port();
+    let app = build_router_with_assets(ctx.clone(), assets);
+    tracing::info!(
+        "智伴服务已启动: http://{}:{} (模式: {})",
+        if ctx.cfg.bind_addr() == "0.0.0.0" { "127.0.0.1" } else { ctx.cfg.bind_addr() },
+        actual_port,
+        ctx.cfg.mode.as_str()
+    );
+    tokio::spawn(async move {
+        if let Err(e) = axum::serve(listener, app).await {
+            tracing::error!("HTTP 服务异常退出: {e}");
+        }
+    });
+    Ok(actual_port)
+}
+
+// ───────────────────────── 认证 ─────────────────────────
+
+#[derive(Deserialize)]
+struct LoginReq {
+    password: String,
+}
+
+fn extract_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .map(|s| s.to_string())
+}
+
+/// 校验：本地模式免登录；局域网/服务器模式需 Bearer token（本地 token 或 JWT）
+fn ensure_auth(ctx: &AppContext, headers: &HeaderMap) -> Result<(), ApiError> {
+    if !ctx.cfg.requires_login() {
+        return Ok(());
+    }
+    let Some(token) = extract_token(headers) else {
+        return Err(ApiError::unauthorized("未登录"));
+    };
+    if token == ctx.local_token {
+        return Ok(());
+    }
+    // 校验 JWT
+    use jsonwebtoken::{decode, DecodingKey, Validation};
+    #[derive(Deserialize)]
+    struct Claims {
+        sub: String,
+        exp: usize,
+    }
+    let v = decode::<Claims>(
+        &token,
+        &DecodingKey::from_secret(ctx.jwt_secret.as_bytes()),
+        &Validation::default(),
+    );
+    match v {
+        Ok(_) => Ok(()),
+        Err(_) => Err(ApiError::unauthorized("登录已过期，请重新登录")),
+    }
+}
+
+async fn auth_status(State(ctx): State<Arc<AppContext>>) -> ApiResult<serde_json::Value> {
+    Ok(ApiResp::ok(json!({
+        "mode": ctx.cfg.mode.as_str(),
+        "requiresLogin": ctx.cfg.requires_login(),
+        "hasPassword": ctx.db.has_owner()?,
+        "lanEnabled": ctx.cfg.lan_enabled,
+    })))
+}
+
+async fn auth_login(
+    State(ctx): State<Arc<AppContext>>,
+    Json(req): Json<LoginReq>,
+) -> ApiResult<serde_json::Value> {
+    let Some(hash) = ctx.db.owner_password_hash("owner")? else {
+        return Err(ApiError::bad_request("尚未设置访问密码"));
+    };
+    if !crate::secrets::verify_password(&req.password, &hash) {
+        return Err(ApiError::new(
+            StatusCode::UNAUTHORIZED,
+            4201,
+            "密码错误",
+        ));
+    }
+    use jsonwebtoken::{encode, EncodingKey, Header};
+    #[derive(Serialize)]
+    struct Claims {
+        sub: String,
+        exp: usize,
+    }
+    let exp = (chrono::Utc::now() + chrono::Duration::days(30)).timestamp() as usize;
+    let token = encode(
+        &Header::default(),
+        &Claims {
+            sub: "owner".into(),
+            exp,
+        },
+        &EncodingKey::from_secret(ctx.jwt_secret.as_bytes()),
+    )
+    .map_err(|e| ApiError::internal(e.to_string()))?;
+    Ok(ApiResp::ok(json!({ "token": token })))
+}
+
+async fn auth_set_password(
+    State(ctx): State<Arc<AppContext>>,
+    Json(req): Json<LoginReq>,
+) -> ApiResult<serde_json::Value> {
+    if req.password.chars().count() < 6 {
+        return Err(ApiError::bad_request("密码至少 6 位"));
+    }
+    let hash = crate::secrets::hash_password(&req.password)?;
+    ctx.db.upsert_owner("owner", &hash)?;
+    Ok(ApiResp::ok(json!({ "ok": true })))
+}
+
+async fn healthz(State(ctx): State<Arc<AppContext>>) -> ApiResult<serde_json::Value> {
+    Ok(ApiResp::ok(json!({
+        "status": "ok",
+        "version": env!("CARGO_PKG_VERSION"),
+        "mode": ctx.cfg.mode.as_str(),
+        "time": crate::reminder::now_string(),
+    })))
+}
+
+// ───────────────────────── 节点 ─────────────────────────
+
+async fn create_node(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(input): Json<NewNode>,
+) -> ApiResult<Node> {
+    ensure_auth(&ctx, &headers)?;
+    if input.content.trim().is_empty() {
+        return Err(ApiError::bad_request("记录内容不能为空"));
+    }
+    let node = ctx.db.create_node(input)?;
+    ctx.bus.publish(Event::new(
+        "node.created",
+        serde_json::to_value(&node).unwrap_or_default(),
+    ));
+    // 成就评估（FR-6.2）：起步/连续/手速/超额/记录满月等
+    crate::achievements::check_all(&ctx.db, &ctx.bus)?;
+    Ok(ApiResp::ok(node))
+}
+
+async fn list_nodes(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Vec<Node>> {
+    ensure_auth(&ctx, &headers)?;
+    let date = q
+        .get("date")
+        .cloned()
+        .unwrap_or_else(crate::db::today_string);
+    Ok(ApiResp::ok(ctx.db.list_nodes_by_date(&date)?))
+}
+
+async fn list_nodes_range(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Vec<Node>> {
+    ensure_auth(&ctx, &headers)?;
+    let from = q.get("from").cloned().unwrap_or_else(crate::db::today_string);
+    let to = q.get("to").cloned().unwrap_or_else(|| from.clone());
+    Ok(ApiResp::ok(ctx.db.list_nodes_range(&from, &to)?))
+}
+
+async fn update_node(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(patch): Json<NodePatch>,
+) -> ApiResult<Node> {
+    ensure_auth(&ctx, &headers)?;
+    let node = ctx
+        .db
+        .update_node(id, patch)?
+        .ok_or_else(|| ApiError::not_found("记录不存在"))?;
+    ctx.bus.publish(Event::new(
+        "node.updated",
+        serde_json::to_value(&node).unwrap_or_default(),
+    ));
+    Ok(ApiResp::ok(node))
+}
+
+async fn delete_node(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let ok = ctx.db.delete_node(id)?;
+    ctx.bus.publish(Event::new("node.deleted", json!({ "id": id })));
+    Ok(ApiResp::ok(json!({ "deleted": ok })))
+}
+
+async fn search_nodes(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Vec<Node>> {
+    ensure_auth(&ctx, &headers)?;
+    let kw = q.get("q").cloned().unwrap_or_default();
+    if kw.trim().is_empty() {
+        return Ok(ApiResp::ok(vec![]));
+    }
+    Ok(ApiResp::ok(ctx.db.search_nodes(&kw, 50)?))
+}
+
+// ───────────────────────── 统计 ─────────────────────────
+
+async fn stats_daily(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<DailyStats> {
+    ensure_auth(&ctx, &headers)?;
+    let date = q
+        .get("date")
+        .cloned()
+        .unwrap_or_else(crate::db::today_string);
+    Ok(ApiResp::ok(ctx.db.daily_stats(&date)?))
+}
+
+async fn stats_period(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<PeriodStats> {
+    ensure_auth(&ctx, &headers)?;
+    let today = crate::db::today_string();
+    let from = q.get("from").cloned().unwrap_or_else(|| today.clone());
+    let to = q.get("to").cloned().unwrap_or(today);
+    Ok(ApiResp::ok(ctx.db.period_stats(&from, &to)?))
+}
+
+/// 月度小结（FR-6.4）
+async fn stats_monthly(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<MonthlySummary> {
+    ensure_auth(&ctx, &headers)?;
+    let date = q
+        .get("date")
+        .cloned()
+        .unwrap_or_else(crate::db::today_string);
+    Ok(ApiResp::ok(ctx.db.monthly_summary(&date)?))
+}
+
+// ───────────────────────── 待办 ─────────────────────────
+
+async fn create_todo(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(input): Json<NewTodo>,
+) -> ApiResult<Todo> {
+    ensure_auth(&ctx, &headers)?;
+    if input.title.trim().is_empty() {
+        return Err(ApiError::bad_request("待办标题不能为空"));
+    }
+    let todo = ctx.db.create_todo(input)?;
+    ctx.bus.publish(Event::new(
+        "todo.created",
+        serde_json::to_value(&todo).unwrap_or_default(),
+    ));
+    Ok(ApiResp::ok(todo))
+}
+
+async fn list_todos(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Vec<Todo>> {
+    ensure_auth(&ctx, &headers)?;
+    ctx.db.refresh_overdue().ok();
+    Ok(ApiResp::ok(ctx.db.list_todos(
+        q.get("category").map(|s| s.as_str()),
+        q.get("status").map(|s| s.as_str()),
+        q.get("priority").map(|s| s.as_str()),
+        q.get("tag").map(|s| s.as_str()),
+        q.get("q").map(|s| s.as_str()),
+    )?))
+}
+
+async fn update_todo(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+    Json(patch): Json<TodoPatch>,
+) -> ApiResult<Todo> {
+    ensure_auth(&ctx, &headers)?;
+    let todo = ctx
+        .db
+        .update_todo(id, patch)?
+        .ok_or_else(|| ApiError::not_found("待办不存在"))?;
+    ctx.bus.publish(Event::new(
+        "todo.updated",
+        serde_json::to_value(&todo).unwrap_or_default(),
+    ));
+    Ok(ApiResp::ok(todo))
+}
+
+async fn delete_todo(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let ok = ctx.db.delete_todo(id)?;
+    ctx.bus.publish(Event::new("todo.deleted", json!({ "id": id })));
+    Ok(ApiResp::ok(json!({ "deleted": ok })))
+}
+
+async fn complete_todo(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Todo> {
+    ensure_auth(&ctx, &headers)?;
+    let todo = ctx
+        .db
+        .complete_todo(id, true)?
+        .ok_or_else(|| ApiError::not_found("待办不存在"))?;
+    ctx.bus.publish(Event::new(
+        "todo.completed",
+        serde_json::to_value(&todo).unwrap_or_default(),
+    ));
+    crate::achievements::check_all(&ctx.db, &ctx.bus)?;
+    Ok(ApiResp::ok(todo))
+}
+
+async fn reopen_todo(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<Todo> {
+    ensure_auth(&ctx, &headers)?;
+    let todo = ctx
+        .db
+        .complete_todo(id, false)?
+        .ok_or_else(|| ApiError::not_found("待办不存在"))?;
+    ctx.bus.publish(Event::new(
+        "todo.updated",
+        serde_json::to_value(&todo).unwrap_or_default(),
+    ));
+    Ok(ApiResp::ok(todo))
+}
+
+async fn schedule_for_date(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let date = q
+        .get("date")
+        .cloned()
+        .unwrap_or_else(crate::db::today_string);
+    let (schedules, todos) = ctx.db.schedule_for_date(&date)?;
+    Ok(ApiResp::ok(json!({
+        "date": date,
+        "schedules": schedules,
+        "todos": todos,
+    })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SuggestReq {
+    todo_id: i64,
+}
+
+/// 智能排期建议（FR-3.8）
+async fn suggest_schedule(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<SuggestReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let Some(todo) = ctx.db.get_todo(req.todo_id)? else {
+        return Err(ApiError::not_found("待办不存在"));
+    };
+    let cfg = ai::load_config(&ctx.db)?;
+    let busy = ctx
+        .db
+        .list_todos(Some("日程"), Some("全部"), None, None, None)?;
+    let busy_text = busy
+        .iter()
+        .take(20)
+        .map(|t| format!("- {} {} {}", t.due_date, t.due_time.clone().unwrap_or_default(), t.title))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if !cfg.has_key && cfg.provider != "ollama" {
+        // 降级：给出规则建议（下一个工作日且非周末）
+        let today = chrono::Local::now().date_naive();
+        let mut next = today + chrono::Duration::days(1);
+        while next.weekday().num_days_from_monday() >= 5 {
+            next += chrono::Duration::days(1);
+        }
+        return Ok(ApiResp::ok(json!({
+            "isAi": false,
+            "suggestion": format!("建议安排在 {}（就近的工作日）上午时段，优先处理逾期待办。", next.format("%Y-%m-%d")),
+        })));
+    }
+
+    let prompt = format!(
+        "用户的待办：{}\n截止：{}{}（优先级 {}{}）\n\n未来已有日程：\n{}\n\n今天是 {}。请用一句话给出排期建议（哪天、哪个时段、为什么），不超过 60 字。",
+        ai::redact(&todo.title),
+        todo.due_date,
+        todo.due_time.clone().map(|t| format!(" {}", t)).unwrap_or_default(),
+        todo.priority,
+        if todo.overdue { "，已逾期" } else { "" },
+        if busy_text.is_empty() { "（无）".into() } else { busy_text },
+        crate::db::today_string()
+    );
+    let key = crate::secrets::load_api_key()?;
+    let text = ai::chat_once(&cfg, vec![ChatMsg::user(prompt)], key)
+        .await
+        .map_err(|e| ApiError::ai(e.to_string()))?;
+    Ok(ApiResp::ok(json!({ "isAi": true, "suggestion": text.trim() })))
+}
+
+// ───────────────────────── 设置 ─────────────────────────
+
+async fn all_settings(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<Vec<Setting>> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(ctx.db.all_settings()?))
+}
+
+async fn get_setting(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(key): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(json!({ "key": key, "value": ctx.db.get_setting(&key)? })))
+}
+
+#[derive(Deserialize)]
+struct SettingsUpdate {
+    values: HashMap<String, String>,
+}
+
+async fn update_settings(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<SettingsUpdate>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    for (k, v) in &req.values {
+        ctx.db.set_setting(k, v)?;
+    }
+    ctx.bus.publish(Event::new(
+        "settings.updated",
+        json!({ "keys": req.values.keys().cloned().collect::<Vec<_>>() }),
+    ));
+    Ok(ApiResp::ok(json!({ "updated": req.values.len() })))
+}
+
+// ───────────────────────── 模板 ─────────────────────────
+
+async fn all_templates(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let stored: HashMap<String, String> = ctx.db.all_templates()?.into_iter().collect();
+    let builtin = json!({
+        "daily": ai::DEFAULT_DAILY,
+        "weekly": ai::DEFAULT_WEEKLY,
+        "monthly": ai::DEFAULT_MONTHLY,
+        "brief": ai::DEFAULT_BRIEF,
+        "goodnight": ai::DEFAULT_GOODNIGHT,
+        "review": ai::DEFAULT_REVIEW,
+        "qa": ai::DEFAULT_QA,
+    });
+    let mut merged = builtin.clone();
+    for (k, v) in stored {
+        merged[k] = json!(v);
+    }
+    Ok(ApiResp::ok(json!({ "templates": merged, "builtin": builtin })))
+}
+
+async fn get_template(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(ttype): Path<String>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let stored = ctx.db.get_template(&ttype)?;
+    let builtin = match ttype.as_str() {
+        "weekly" => ai::DEFAULT_WEEKLY,
+        "monthly" => ai::DEFAULT_MONTHLY,
+        "brief" => ai::DEFAULT_BRIEF,
+        "goodnight" => ai::DEFAULT_GOODNIGHT,
+        "review" => ai::DEFAULT_REVIEW,
+        "qa" => ai::DEFAULT_QA,
+        _ => ai::DEFAULT_DAILY,
+    };
+    Ok(ApiResp::ok(json!({
+        "type": ttype,
+        "content": stored.clone().unwrap_or_else(|| builtin.to_string()),
+        "builtin": builtin,
+        "customized": stored.is_some(),
+    })))
+}
+
+#[derive(Deserialize)]
+struct TemplateBody {
+    content: String,
+}
+
+async fn set_template(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(ttype): Path<String>,
+    Json(body): Json<TemplateBody>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    ctx.db.set_template(&ttype, &body.content)?;
+    Ok(ApiResp::ok(json!({ "ok": true })))
+}
+
+// ───────────────────────── AI ─────────────────────────
+
+async fn ai_presets(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(json!(ai::presets())))
+}
+
+async fn ai_config(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<AiConfig> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(ai::load_config(&ctx.db)?))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiConfigBody {
+    provider: String,
+    base_url: String,
+    model: String,
+    temperature: f32,
+    max_tokens: i64,
+    /// 协议模式：auto（默认）/ openai / anthropic
+    protocol_mode: Option<String>,
+    /// 仅当用户输入新 Key 时传
+    api_key: Option<String>,
+}
+
+async fn ai_save_config(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(body): Json<AiConfigBody>,
+) -> ApiResult<AiConfig> {
+    ensure_auth(&ctx, &headers)?;
+    ai::save_config(
+        &ctx.db,
+        &body.provider,
+        &body.base_url,
+        &body.model,
+        body.temperature,
+        body.max_tokens,
+        body.protocol_mode.as_deref(),
+    )?;
+    if let Some(key) = body.api_key {
+        let key = key.trim();
+        if !key.is_empty() {
+            crate::secrets::save_api_key(key)
+                .map_err(|e| ApiError::internal(format!("保存 API Key 失败：{e}")))?;
+        }
+    }
+    ctx.bus.publish(Event::new("settings.updated", json!({ "keys": ["ai"] })));
+    Ok(ApiResp::ok(ai::load_config(&ctx.db)?))
+}
+
+async fn ai_test(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let cfg = ai::load_config(&ctx.db)?;
+    let key = crate::secrets::load_api_key()?;
+    let started = std::time::Instant::now();
+    let reply = ai::chat_once(
+        &cfg,
+        vec![ChatMsg::user("请只回复两个字：你好")],
+        key,
+    )
+    .await
+    .map_err(|e| ApiError::ai(e.to_string()))?;
+    let latency = started.elapsed().as_millis() as i64;
+    Ok(ApiResp::ok(json!({
+        "ok": true,
+        "latencyMs": latency,
+        "model": cfg.model,
+        "reply": reply.trim().chars().take(40).collect::<String>(),
+    })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReportReq {
+    r#type: String,
+    date: Option<String>,
+}
+
+/// 生成报告（流式 SSE）
+async fn ai_report(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<ReportReq>,
+) -> Result<SseStream, ApiError> {
+    ensure_auth(&ctx, &headers)?;
+    let rtype = req.r#type.clone();
+    let date = req.date.unwrap_or_else(crate::db::today_string);
+    let ctx2 = ctx.clone();
+    let stream = ai_stream_from(ctx2, move |ctx| {
+        let rtype = rtype.clone();
+        let date = date.clone();
+        async move { build_report_messages(&ctx, &rtype, &date).await }
+    })
+    .await?;
+    Ok(stream)
+}
+
+/// 构造报告消息（含 AI 降级判断）
+async fn build_report_messages(
+    ctx: &Arc<AppContext>,
+    rtype: &str,
+    date: &str,
+) -> Result<StreamPlan, String> {
+    let cfg = ai::load_config(&ctx.db).map_err(|e| e.to_string())?;
+    if !cfg.has_key && cfg.provider != "ollama" {
+        // 降级：本地模板拼装（落库由 ai_stream_from 统一处理）
+        let content = ai::fallback_report(&ctx.db, rtype, date).map_err(|e| e.to_string())?;
+        let period = if rtype == "daily" { date.to_string() } else { ai::period_range(rtype, date).2 };
+        return Ok(StreamPlan::degraded(content, Some((rtype.to_string(), period))));
+    }
+
+    let (from, to, label) = ai::period_range(rtype, date);
+    let (tpl_key, vars): (&str, Vec<(&str, String)>) = match rtype {
+        "daily" => {
+            let nodes = ctx.db.list_nodes_by_date(date).map_err(|e| e.to_string())?;
+            let (_, todos) = ctx.db.schedule_for_date(date).map_err(|e| e.to_string())?;
+            let stats = ctx.db.daily_stats(date).map_err(|e| e.to_string())?;
+            (
+                "daily",
+                vec![
+                    ("date", date.to_string()),
+                    ("nodes", ai::format_nodes(&nodes)),
+                    ("todos", ai::format_todos(&todos)),
+                    (
+                        "progress",
+                        ai::format_progress(
+                            stats.node_count,
+                            stats.daily_goal,
+                            stats.goal_enabled,
+                            stats.total_todos,
+                            stats.done_todos,
+                        ),
+                    ),
+                ],
+            )
+        }
+        _ => {
+            let nodes = ctx.db.list_nodes_range(&from, &to).map_err(|e| e.to_string())?;
+            let all = ctx
+                .db
+                .list_todos(Some("全部"), Some("全部"), None, None, None)
+                .map_err(|e| e.to_string())?;
+            let period_todos: Vec<Todo> = all
+                .into_iter()
+                .filter(|t| t.due_date >= from && t.due_date <= to)
+                .collect();
+            let stats = ctx.db.period_stats(&from, &to).map_err(|e| e.to_string())?;
+            (
+                if rtype == "weekly" { "weekly" } else { "monthly" },
+                vec![
+                    ("period", label.clone()),
+                    ("from", from.clone()),
+                    ("to", to.clone()),
+                    ("nodes", ai::format_nodes_by_day(&nodes)),
+                    ("todos", ai::format_todos(&period_todos)),
+                    (
+                        "progress",
+                        format!(
+                            "记录 {} 条，覆盖 {} / {} 天；待办完成 {}/{}",
+                            stats.node_count,
+                            stats.days_with_records,
+                            stats.total_days,
+                            stats.done_todos,
+                            stats.total_todos
+                        ),
+                    ),
+                ],
+            )
+        }
+    };
+
+    let tpl = ctx
+        .db
+        .get_template(tpl_key)
+        .map_err(|e| e.to_string())?
+        .unwrap_or_else(|| match tpl_key {
+            "weekly" => ai::DEFAULT_WEEKLY.to_string(),
+            "monthly" => ai::DEFAULT_MONTHLY.to_string(),
+            _ => ai::DEFAULT_DAILY.to_string(),
+        });
+    let prompt = ai::render_template(&tpl, &vars);
+    let period = if rtype == "daily" { date.to_string() } else { label };
+    Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report(rtype, &period))
+}
+
+/// 统一的 SSE 流类型（装箱以统一分支类型）
+type SseStream = Sse<
+    KeepAliveStream<Pin<Box<dyn Stream<Item = Result<SseEvent, std::convert::Infallible>> + Send>>>,
+>;
+
+fn boxed_sse<S>(s: S) -> SseStream
+where
+    S: Stream<Item = Result<SseEvent, std::convert::Infallible>> + Send + 'static,
+{
+    let pinned: Pin<Box<dyn Stream<Item = Result<SseEvent, std::convert::Infallible>> + Send>> =
+        Box::pin(s);
+    Sse::new(pinned).keep_alive(KeepAlive::default())
+}
+
+/// 流式任务计划：由各 handler 构造，显式声明落库目标与会话
+pub struct StreamPlan {
+    /// 发给模型的消息（为空表示走本地降级，直接输出 content）
+    pub messages: Vec<ChatMsg>,
+    /// 降级模式下直接输出的内容
+    pub content: String,
+    /// 报告落库目标 (类型, 周期)：daily/weekly/monthly/brief/goodnight/review
+    pub save_as: Option<(String, String)>,
+    /// 问答会话：需要把助手回复写入 chat_messages 时提供
+    pub chat_session: Option<String>,
+}
+
+impl StreamPlan {
+    /// 走模型：只有消息，无落库
+    pub fn model(messages: Vec<ChatMsg>) -> Self {
+        Self { messages, content: String::new(), save_as: None, chat_session: None }
+    }
+    /// 本地降级：直接输出内容，并按需落库
+    pub fn degraded(content: String, save_as: Option<(String, String)>) -> Self {
+        Self { messages: vec![], content, save_as, chat_session: None }
+    }
+    pub fn with_report(mut self, rtype: &str, period: &str) -> Self {
+        self.save_as = Some((rtype.to_string(), period.to_string()));
+        self
+    }
+    pub fn with_chat(mut self, session: &str) -> Self {
+        self.chat_session = Some(session.to_string());
+        self
+    }
+}
+
+/// 通用 SSE 流式封装：消息构造 → 上游流式 → 转发 → 落库（统一在此处理持久化，避免路径分叉）
+async fn ai_stream_from<F, Fut>(ctx: Arc<AppContext>, build: F) -> Result<SseStream, ApiError>
+where
+    F: FnOnce(Arc<AppContext>) -> Fut + Send + 'static,
+    Fut: std::future::Future<Output = Result<StreamPlan, String>> + Send,
+{
+    let plan = build(ctx.clone()).await.map_err(ApiError::ai)?;
+
+    // ── 降级路径：内容已由 handler 组装，这里统一落库 + 评估成就 ──
+    if plan.messages.is_empty() {
+        let content = plan.content.clone();
+        if let Some((rtype, period)) = &plan.save_as {
+            if let Err(e) = ctx.db.save_report(rtype, period, &content, false) {
+                tracing::warn!("降级报告落库失败: {e}");
+            }
+        }
+        if let Some(session) = &plan.chat_session {
+            if let Err(e) = ctx.db.append_chat(session, "assistant", &content) {
+                tracing::warn!("降级问答落库失败: {e}");
+            }
+        }
+        let _ = crate::achievements::check_all(&ctx.db, &ctx.bus);
+
+        let chunks: Vec<String> = content
+            .chars()
+            .collect::<Vec<_>>()
+            .chunks(24)
+            .map(|c| c.iter().collect())
+            .collect();
+        let s = futures_util::stream::iter(chunks.into_iter().map(move |c| {
+            Ok(SseEvent::default()
+                .event("delta")
+                .data(json!({ "delta": c, "degraded": true }).to_string()))
+        }));
+        return Ok(boxed_sse(s));
+    }
+
+    // ── 模型路径 ──
+    let cfg = ai::load_config(&ctx.db).map_err(|e| ApiError::internal(e.to_string()))?;
+    let key = crate::secrets::load_api_key().unwrap_or(None);
+    let upstream = ai::chat_stream(&cfg, plan.messages.clone(), key)
+        .await
+        .map_err(|e| ApiError::ai(e.to_string()))?;
+
+    let db = ctx.db.clone();
+    let bus = ctx.bus.clone();
+    let save_as = plan.save_as.clone();
+    let chat_session = plan.chat_session.clone();
+    let s = async_stream::stream! {
+        futures_util::pin_mut!(upstream);
+        let mut acc = String::new();
+        while let Some(item) = upstream.next().await {
+            match item {
+                Ok(delta) => {
+                    acc.push_str(&delta);
+                    yield Ok(SseEvent::default().event("delta").data(json!({"delta": delta}).to_string()));
+                }
+                Err(e) => {
+                    yield Ok(SseEvent::default().event("error").data(json!({"message": e.to_string()}).to_string()));
+                    return;
+                }
+            }
+        }
+        // 落库：报告归档 / 问答助手回复（此前 AI 路径遗漏，导致历史缺失）
+        if !acc.is_empty() {
+            if let Some((rtype, period)) = &save_as {
+                if let Err(e) = db.save_report(rtype, period, &acc, true) {
+                    tracing::warn!("报告落库失败: {e}");
+                }
+                bus.publish(Event::new("report.saved", json!({"type": rtype, "period": period})));
+            }
+            if let Some(session) = &chat_session {
+                if let Err(e) = db.append_chat(session, "assistant", &acc) {
+                    tracing::warn!("问答落库失败: {e}");
+                }
+            }
+            let _ = crate::achievements::check_all(&db, &bus);
+        }
+        yield Ok(SseEvent::default().event("done").data(json!({"ok": true}).to_string()));
+    };
+
+    Ok(boxed_sse(s))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BriefReq {
+    date: Option<String>,
+}
+
+/// 晨间简报（FR-5.5）
+async fn ai_brief(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<BriefReq>,
+) -> Result<SseStream, ApiError> {
+    ensure_auth(&ctx, &headers)?;
+    let date = req.date.unwrap_or_else(crate::db::today_string);
+    let stream = ai_stream_from(ctx.clone(), move |ctx| {
+        let date = date.clone();
+        async move {
+            let cfg = ai::load_config(&ctx.db).map_err(|e| e.to_string())?;
+            let yesterday = (chrono::Local::now().date_naive() - chrono::Duration::days(1))
+                .format("%Y-%m-%d")
+                .to_string();
+            let all = ctx
+                .db
+                .list_todos(Some("全部"), Some("全部"), None, None, None)
+                .map_err(|e| e.to_string())?;
+            // 昨日遗留：截止日在昨天及以前、或已逾期
+            let pending: Vec<Todo> = all
+                .iter()
+                .filter(|t| {
+                    (t.due_date <= yesterday && t.status != "已完成")
+                        || t.status == "已逾期"
+                })
+                .cloned()
+                .collect();
+            let today_todos: Vec<Todo> = all
+                .iter()
+                .filter(|t| t.due_date == date)
+                .cloned()
+                .collect();
+
+            if !cfg.has_key && cfg.provider != "ollama" {
+                // 降级：规则拼装简报（落库由 ai_stream_from 统一处理）
+                let mut md =
+                    format!("# ☀️ 今日简报\n\n> 本地模板生成（未配置 AI 模型）\n\n## 昨日遗留\n\n");
+                if pending.is_empty() {
+                    md.push_str("- 无，干得漂亮 ✨\n");
+                } else {
+                    for t in pending.iter().take(5) {
+                        md.push_str(&format!("- {}（截止 {}）\n", t.title, t.due_date));
+                    }
+                }
+                md.push_str("\n## 今日安排\n\n");
+                if today_todos.is_empty() {
+                    md.push_str("- 暂无待办\n");
+                } else {
+                    for t in &today_todos {
+                        md.push_str(&format!(
+                            "- {}{} {}\n",
+                            t.due_time
+                                .clone()
+                                .map(|x| format!("{x} "))
+                                .unwrap_or_default(),
+                            t.title,
+                            if t.priority == "高" { "（高优先级）" } else { "" }
+                        ));
+                    }
+                }
+                md.push_str("\n## 建议\n\n1. 先处理逾期待办\n2. 再按优先级推进今日重点\n");
+                return Ok(StreamPlan::degraded(
+                    md,
+                    Some(("brief".into(), date.clone())),
+                ));
+            }
+
+            let tpl = ctx
+                .db
+                .get_template("brief")
+                .map_err(|e| e.to_string())?
+                .unwrap_or_else(|| ai::DEFAULT_BRIEF.to_string());
+            let prompt = ai::render_template(
+                &tpl,
+                &[
+                    ("date", date.clone()),
+                    ("todos", ai::format_todos(&pending)),
+                    ("today", ai::format_todos(&today_todos)),
+                ],
+            );
+            Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report("brief", &date))
+        }
+    })
+    .await?;
+    Ok(stream)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GoodnightReq {
+    date: Option<String>,
+}
+
+/// 晚安总结（FR-5.9）
+async fn ai_goodnight(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<GoodnightReq>,
+) -> Result<SseStream, ApiError> {
+    ensure_auth(&ctx, &headers)?;
+    let date = req.date.unwrap_or_else(crate::db::today_string);
+    let stream = ai_stream_from(ctx.clone(), move |ctx| {
+        let date = date.clone();
+        async move {
+            let cfg = ai::load_config(&ctx.db).map_err(|e| e.to_string())?;
+            let nodes = ctx.db.list_nodes_by_date(&date).map_err(|e| e.to_string())?;
+            let (_, todos) = ctx.db.schedule_for_date(&date).map_err(|e| e.to_string())?;
+
+            if !cfg.has_key && cfg.provider != "ollama" {
+                let done: Vec<&Todo> = todos.iter().filter(|t| t.status == "已完成").collect();
+                let undone: Vec<&Todo> = todos.iter().filter(|t| t.status != "已完成").collect();
+                let mut md =
+                    format!("# 🌙 晚安总结\n\n> 本地模板生成（未配置 AI 模型）\n\n## 今天完成了\n\n");
+                if nodes.is_empty() {
+                    md.push_str("- （今日无记录）\n");
+                } else {
+                    for n in nodes.iter().take(8) {
+                        let t = n.created_at.get(11..16).unwrap_or("--:--");
+                        md.push_str(&format!("- {t} {}\n", n.content));
+                    }
+                }
+                md.push_str("\n## 待办情况\n\n");
+                md.push_str(&format!(
+                    "- 已完成 {} 项\n- 未完成 {} 项\n",
+                    done.len(),
+                    undone.len()
+                ));
+                if !undone.is_empty() {
+                    md.push_str("\n## 明日建议\n\n");
+                    for t in undone.iter().take(3) {
+                        md.push_str(&format!("- {}\n", t.title));
+                    }
+                }
+                return Ok(StreamPlan::degraded(
+                    md,
+                    Some(("goodnight".into(), date.clone())),
+                ));
+            }
+
+            let tpl = ctx
+                .db
+                .get_template("goodnight")
+                .map_err(|e| e.to_string())?
+                .unwrap_or_else(|| ai::DEFAULT_GOODNIGHT.to_string());
+            let prompt = ai::render_template(
+                &tpl,
+                &[
+                    ("date", date.clone()),
+                    ("nodes", ai::format_nodes(&nodes)),
+                    ("todos", ai::format_todos(&todos)),
+                ],
+            );
+            Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report("goodnight", &date))
+        }
+    })
+    .await?;
+    Ok(stream)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ReviewReq {
+    date: Option<String>,
+}
+
+/// 周度智能复盘（FR-5.10）
+async fn ai_review(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<ReviewReq>,
+) -> Result<SseStream, ApiError> {
+    ensure_auth(&ctx, &headers)?;
+    let date = req.date.unwrap_or_else(crate::db::today_string);
+    let stream = ai_stream_from(ctx.clone(), move |ctx| {
+        let date = date.clone();
+        async move {
+            let (from, to, label) = ai::period_range("weekly", &date);
+            let stats = ctx.db.period_stats(&from, &to).map_err(|e| e.to_string())?;
+            let nodes = ctx.db.list_nodes_range(&from, &to).map_err(|e| e.to_string())?;
+            let all = ctx
+                .db
+                .list_todos(Some("全部"), Some("全部"), None, None, None)
+                .map_err(|e| e.to_string())?;
+            let week_todos: Vec<Todo> = all
+                .into_iter()
+                .filter(|t| t.due_date >= from && t.due_date <= to)
+                .collect();
+
+            let cfg = ai::load_config(&ctx.db).map_err(|e| e.to_string())?;
+            let days_text = stats
+                .days
+                .iter()
+                .map(|d| {
+                    format!(
+                        "{}: 记录 {} 条, 待办 {}/{}",
+                        d.date, d.node_count, d.done_todos, d.total_todos
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+
+            if !cfg.has_key && cfg.provider != "ollama" {
+                // 降级：本地统计洞察
+                let busiest = stats
+                    .days
+                    .iter()
+                    .max_by_key(|d| d.node_count)
+                    .map(|d| d.date.clone())
+                    .unwrap_or_default();
+                let worst = stats
+                    .days
+                    .iter()
+                    .filter(|d| d.total_todos > 0)
+                    .min_by_key(|d| d.done_todos * 100 / d.total_todos.max(1))
+                    .map(|d| (d.date.clone(), d.total_todos, d.done_todos));
+                let mut md = format!("# 📊 {label} 复盘\n\n> 本地统计生成（未配置 AI 模型）\n\n");
+                md.push_str(&format!(
+                    "- 本周记录 **{}** 条，覆盖 **{}/{}** 天\n- 待办完成 **{}/{}**\n- 记录最多的一天：**{}**\n",
+                    stats.node_count,
+                    stats.days_with_records,
+                    stats.total_days,
+                    stats.done_todos,
+                    stats.total_todos,
+                    busiest
+                ));
+                if let Some((d, total, done)) = worst {
+                    md.push_str(&format!("- 完成率最低：**{d}**（{done}/{total}）\n"));
+                }
+                md.push_str(
+                    "\n## 下周建议\n\n1. 保持每日至少一条记录\n2. 关注完成率偏低的日子，提前拆分任务\n",
+                );
+                return Ok(StreamPlan::degraded(
+                    md,
+                    Some(("review".into(), label.clone())),
+                ));
+            }
+
+            let tpl = ctx
+                .db
+                .get_template("review")
+                .map_err(|e| e.to_string())?
+                .unwrap_or_else(|| ai::DEFAULT_REVIEW.to_string());
+            let prompt = ai::render_template(
+                &tpl,
+                &[
+                    ("period", label.clone()),
+                    ("days", days_text),
+                    ("todos", ai::format_todos(&week_todos)),
+                    (
+                        "progress",
+                        format!(
+                            "记录 {} 条，覆盖 {}/{} 天；待办完成 {}/{}；本周记录节点数 {}",
+                            stats.node_count,
+                            stats.days_with_records,
+                            stats.total_days,
+                            stats.done_todos,
+                            stats.total_todos,
+                            nodes.len()
+                        ),
+                    ),
+                ],
+            );
+            Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report("review", &label))
+        }
+    })
+    .await?;
+    Ok(stream)
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatReq {
+    question: String,
+    session_id: Option<String>,
+}
+
+/// 智伴问答（FR-5.11）：本地检索组装上下文 → 模型回答，助手回复统一落库
+async fn ai_chat(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<ChatReq>,
+) -> Result<SseStream, ApiError> {
+    ensure_auth(&ctx, &headers)?;
+    let session = req.session_id.unwrap_or_else(|| "default".into());
+    let question = req.question.clone();
+    if question.trim().is_empty() {
+        return Err(ApiError::bad_request("问题不能为空"));
+    }
+    ctx.db.append_chat(&session, "user", &question)?;
+
+    let stream = ai_stream_from(ctx.clone(), move |ctx| {
+        let question = question.clone();
+        let session = session.clone();
+        async move {
+            let today = chrono::Local::now().date_naive();
+            let scope = ai::qa_scope(&question, today);
+            let (from, to) = (scope.from.clone(), scope.to.clone());
+            let mut context = String::new();
+
+            // 明确日期 → 单日检索；否则按「本周/本月/昨天/最近 7 天」范围检索
+            if let Some(ref day) = scope.single_day {
+                let day = day.clone();
+                let nodes = ctx.db.list_nodes_by_date(&day).map_err(|e| e.to_string())?;
+                let (_, todos) = ctx.db.schedule_for_date(&day).map_err(|e| e.to_string())?;
+                context.push_str(&format!("## {day} 的记录\n{}\n", ai::format_nodes(&nodes)));
+                context.push_str(&format!("## {day} 的待办\n{}\n", ai::format_todos(&todos)));
+            } else {
+                let nodes = ctx.db.list_nodes_range(&from, &to).map_err(|e| e.to_string())?;
+                context.push_str(&format!(
+                    "## {from} ~ {to} 的记录\n{}\n",
+                    ai::format_nodes_by_day(&nodes)
+                ));
+                let all = ctx
+                    .db
+                    .list_todos(Some("全部"), Some("全部"), None, None, None)
+                    .map_err(|e| e.to_string())?;
+                let range_todos: Vec<Todo> = all
+                    .into_iter()
+                    .filter(|t| t.due_date >= from && t.due_date <= to)
+                    .collect();
+                context.push_str(&format!(
+                    "## {from} ~ {to} 的待办\n{}\n",
+                    ai::format_todos(&range_todos)
+                ));
+            }
+
+            let cfg = ai::load_config(&ctx.db).map_err(|e| e.to_string())?;
+            if !cfg.has_key && cfg.provider != "ollama" {
+                // 降级：直接返回本地检索结果（助手回复由 ai_stream_from 落库）
+                let reply = format!("（未配置 AI 模型，以下是本地检索结果）\n\n{context}");
+                return Ok(StreamPlan::degraded(reply, None).with_chat(&session));
+            }
+
+            let tpl = ctx
+                .db
+                .get_template("qa")
+                .map_err(|e| e.to_string())?
+                .unwrap_or_else(|| ai::DEFAULT_QA.to_string());
+            let prompt = ai::render_template(
+                &tpl,
+                &[("context", context), ("question", question.clone())],
+            );
+            Ok(StreamPlan::model(vec![ChatMsg::user(format!(
+                "{prompt}\n\n# 用户问题\n{question}"
+            ))])
+            .with_chat(&session))
+        }
+    })
+    .await?;
+    Ok(stream)
+}
+
+/// 智能排期（别名，与前端路由对齐）
+async fn ai_replan(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<SuggestReq>,
+) -> ApiResult<serde_json::Value> {
+    suggest_schedule(State(ctx), headers, Json(req)).await
+}
+
+// ───────────────────────── 报告 / 聊天 / 成就 / 数据 ─────────────────────────
+
+/// 安装信息：首见证据（老用户识别埋点）与版本号
+///
+/// 第二期客户端注册/登录时会把这里的证据一并上报，服务端据此判定老用户并赠送 12 个月 Pro。
+/// 一期仅需记录与可查（便于排查与用户申诉）。
+async fn install_info(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let v = crate::firstseen::current(
+        &ctx.db,
+        &ctx.cfg.data_dir,
+        &ctx.jwt_secret,
+        env!("CARGO_PKG_VERSION"),
+    )?;
+    Ok(ApiResp::ok(serde_json::json!({
+        "firstSeenAt": v.at,
+        "firstSeenVersion": v.version,
+        "installId": v.install_id,
+        "source": v.source,
+        "signatureValid": v.signature_valid,
+        "appVersion": env!("CARGO_PKG_VERSION"),
+    })))
+}
+
+async fn list_reports(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Vec<Report>> {
+    ensure_auth(&ctx, &headers)?;
+    let t = q.get("type").map(|s| s.as_str());
+    let limit: i64 = q.get("limit").and_then(|v| v.parse().ok()).unwrap_or(100);
+    Ok(ApiResp::ok(ctx.db.list_reports(t, limit)?))
+}
+
+async fn delete_report(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(json!({ "deleted": ctx.db.delete_report(id)? })))
+}
+
+async fn list_chat(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<Vec<ChatMessage>> {
+    ensure_auth(&ctx, &headers)?;
+    let session = q.get("sessionId").cloned().unwrap_or_else(|| "default".into());
+    Ok(ApiResp::ok(ctx.db.list_chat(&session, 200)?))
+}
+
+async fn clear_chat(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let session = q.get("sessionId").cloned().unwrap_or_else(|| "default".into());
+    ctx.db.clear_chat(&session)?;
+    Ok(ApiResp::ok(json!({ "ok": true })))
+}
+
+/// 成就目录（含解锁状态与友好名称，FR-6.2）
+async fn list_achievements(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<Vec<crate::achievements::AchievementDef>> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(crate::achievements::catalog(&ctx.db)?))
+}
+
+/// 主动触发一次成就评估（前端查看成就时调用，保证展示最新状态）
+async fn check_achievements_api(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<Vec<crate::achievements::AchievementDef>> {
+    ensure_auth(&ctx, &headers)?;
+    crate::achievements::check_all(&ctx.db, &ctx.bus)?;
+    Ok(ApiResp::ok(crate::achievements::catalog(&ctx.db)?))
+}
+
+async fn data_export(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(ctx.db.export_all()?))
+}
+
+#[derive(Deserialize)]
+struct ImportBody {
+    payload: serde_json::Value,
+    #[serde(default)]
+    wipe: bool,
+}
+
+async fn data_import(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(body): Json<ImportBody>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    if body.wipe {
+        ctx.db.wipe()?;
+    }
+    let mut imported = 0;
+    if let Some(nodes) = body.payload["nodes"].as_array() {
+        for n in nodes {
+            let content = n["content"].as_str().unwrap_or("").to_string();
+            if content.is_empty() {
+                continue;
+            }
+            ctx.db.create_node(NewNode {
+                content,
+                date: n["date"].as_str().map(|s| s.to_string()),
+                tags: n["tags"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
+                todo_id: None,
+            })?;
+            imported += 1;
+        }
+    }
+    if let Some(todos) = body.payload["todos"].as_array() {
+        for t in todos {
+            let title = t["title"].as_str().unwrap_or("").to_string();
+            if title.is_empty() {
+                continue;
+            }
+            let todo = ctx.db.create_todo(NewTodo {
+                title,
+                description: t["description"].as_str().unwrap_or("").to_string(),
+                due_date: t["dueDate"].as_str().map(String::from),
+                due_time: t["dueTime"].as_str().map(String::from),
+                priority: t["priority"].as_str().unwrap_or("中").to_string(),
+                tags: t["tags"]
+                    .as_array()
+                    .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                    .unwrap_or_default(),
+                remind_offset_min: None,
+                remind_at: t["remindAt"].as_str().map(String::from),
+            })?;
+            if t["status"].as_str() == Some("已完成") {
+                ctx.db.complete_todo(todo.id, true)?;
+            }
+            imported += 1;
+        }
+    }
+    if let Some(settings) = body.payload["settings"].as_array() {
+        for s in settings {
+            if let (Some(k), Some(v)) = (s["key"].as_str(), s["value"].as_str()) {
+                ctx.db.set_setting(k, v)?;
+            }
+        }
+    }
+    ctx.bus.publish(Event::new("data.imported", json!({ "count": imported })));
+    Ok(ApiResp::ok(json!({ "imported": imported })))
+}
+
+/// 全量数据导出为 Markdown 归档 ZIP（FR-7.6）
+async fn data_export_markdown(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> Result<Response, ApiError> {
+    ensure_auth(&ctx, &headers)?;
+    let bytes = crate::export::generate_archive(&ctx.db)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let filename = format!(
+        "mindmate-archive-{}.zip",
+        chrono::Local::now().format("%Y%m%d")
+    );
+    let disposition = format!("attachment; filename=\"{filename}\"");
+    Ok((
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/zip".to_string()),
+            (header::CONTENT_DISPOSITION, disposition),
+        ],
+        bytes,
+    )
+        .into_response())
+}
+
+// ───────────────────────── 推送渠道（FR-4.10）─────────────────────────
+
+async fn push_config(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<crate::push::PushConfig> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(crate::push::load_config(&ctx.db)))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PushConfigBody {
+    config: crate::push::PushConfig,
+    /// 凭据仅在用户输入新值时提交；空/缺省表示不修改
+    smtp_password: Option<String>,
+    telegram_token: Option<String>,
+}
+
+async fn push_save_config(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(body): Json<PushConfigBody>,
+) -> ApiResult<crate::push::PushConfig> {
+    ensure_auth(&ctx, &headers)?;
+    crate::push::save_config(&ctx.db, &body.config)?;
+    crate::push::save_credentials(
+        body.smtp_password.as_deref(),
+        body.telegram_token.as_deref(),
+    )?;
+    ctx.bus.publish(Event::new(
+        "settings.updated",
+        json!({ "keys": ["push_channels"] }),
+    ));
+    Ok(ApiResp::ok(crate::push::load_config(&ctx.db)))
+}
+
+#[derive(Deserialize)]
+struct PushTestBody {
+    channel: String,
+}
+
+async fn push_test(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(body): Json<PushTestBody>,
+) -> ApiResult<crate::push::PushResult> {
+    ensure_auth(&ctx, &headers)?;
+    let r = crate::push::test_channel(&ctx.db, &body.channel).await;
+    Ok(ApiResp::ok(r))
+}
+
+// ───────────────────────── SSE 事件流 ─────────────────────────
+
+async fn stream_events(
+    State(ctx): State<Arc<AppContext>>,
+    Query(q): Query<HashMap<String, String>>,
+) -> Result<SseStream, ApiError> {
+    // 支持 query 传 token（EventSource 无法自定义 header）
+    if ctx.cfg.requires_login() {
+        let token = q.get("token").cloned().unwrap_or_default();
+        let ok = token == ctx.local_token || {
+            use jsonwebtoken::{decode, DecodingKey, Validation};
+            #[derive(serde::Deserialize)]
+            struct Claims {
+                sub: String,
+                #[allow(dead_code)]
+                exp: usize,
+            }
+            decode::<Claims>(
+                &token,
+                &DecodingKey::from_secret(ctx.jwt_secret.as_bytes()),
+                &Validation::default(),
+            )
+            .is_ok()
+        };
+        if !ok {
+            return Err(ApiError::unauthorized("未登录"));
+        }
+    }
+
+    let mut rx = ctx.bus.subscribe();
+    let stream = async_stream::stream! {
+        // 首帧：连接确认
+        yield Ok(SseEvent::default().event("ready").data(json!({"ok": true}).to_string()));
+        loop {
+            match rx.recv().await {
+                Ok(ev) => {
+                    let kind = ev.kind.clone();
+                    let data = serde_json::to_string(&ev).unwrap_or_default();
+                    yield Ok(SseEvent::default().event(kind).data(data));
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    };
+
+    Ok(boxed_sse(stream))
+}
+

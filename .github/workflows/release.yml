@@ -1,0 +1,88 @@
+name: release
+
+# 零成本发布流水线：打 tag → 构建 + 验收 → 生成更新清单 → 发布到 GitHub Release 与 Cloudflare Pages
+#
+# 需要配置的 Secrets（仓库 Settings → Secrets and variables → Actions）：
+#   TAURI_SIGNING_PRIVATE_KEY           更新包签名私钥（tauri signer generate 生成，内容为私钥文件全文）
+#   TAURI_SIGNING_PRIVATE_KEY_PASSWORD  私钥口令（生成时若留空，则填空字符串）
+#   CLOUDFLARE_API_TOKEN                部署到 Pages 用（权限：Cloudflare Pages: Edit）
+#   CLOUDFLARE_ACCOUNT_ID               Cloudflare 账号 ID
+# 可选变量（Variables）：
+#   PAGES_PROJECT                        Cloudflare Pages 项目名（默认 mindmate）
+#
+# 说明：Windows 构建产物由 Tauri 生成，通常无法用更旧的版本覆盖安装（updater 只升不降），
+# 因此发布前务必先在本地跑一遍 scripts/run_all_tests.py。
+
+on:
+  push:
+    tags:
+      - "v*"          # 例：git tag v1.1.0 && git push origin v1.1.0
+  workflow_dispatch:   # 也支持手动触发（用于演练）
+
+permissions:
+  contents: write      # 创建 Release 需要
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 缓存 Rust 构建产物
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: 安装前端依赖
+        run: npm install
+
+      - name: Rust 单元测试
+        run: cargo test --manifest-path core/Cargo.toml
+        env:
+          RUST_BACKTRACE: 1
+
+      - name: 前端生产构建
+        run: npm run --workspace apps/web build
+
+      - name: 构建桌面端并签名更新包
+        run: npm run desktop:build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+      - name: 生成更新清单与校验文件
+        run: node scripts/make-manifest.mjs
+        env:
+          RELEASE_BASE_URL: https://${{ vars.PAGES_PROJECT || 'mindmate' }}.pages.dev
+          RELEASE_NOTES: ${{ github.event.head_commit.message || '新版本发布' }}
+
+      - name: 生成绿色版
+        run: node scripts/make-portable.mjs
+
+      - name: 发布到 GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            release/portable/*.zip
+            release/latest.json
+            release/SHA256SUMS.txt
+          generate_release_notes: true
+
+      - name: 部署到 Cloudflare Pages（安装包 + 更新清单 + 下载页）
+        run: |
+          npx --yes wrangler@3 pages deploy release/site --project-name=${{ vars.PAGES_PROJECT || 'mindmate' }} --branch=main
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

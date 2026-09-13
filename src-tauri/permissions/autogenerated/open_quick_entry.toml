@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-open-quick-entry"
+description = "Enables the open_quick_entry command without any pre-configured scope."
+commands.allow = ["open_quick_entry"]
+
+[[permission]]
+identifier = "deny-open-quick-entry"
+description = "Denies the open_quick_entry command without any pre-configured scope."
+commands.deny = ["open_quick_entry"]

@@ -1,0 +1,45 @@
+# 智伴 Mindmate —— 一键部署（服务器模式 / B-S 架构）
+#
+# 用法：
+#   1) docker compose up -d
+#   2) 浏览器访问 http://<服务器IP>:17801（首次打开会要求设置访问密码）
+#   3) 数据存放于 ./data 卷，升级镜像不丢数据
+#
+# 生产建议：在 Caddy / Nginx 反代后启用 HTTPS，并关闭代理缓冲以保证 SSE 流式输出。
+
+services:
+  mindmate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: mindmate:1.0.0
+    container_name: mindmate
+    restart: unless-stopped
+    ports:
+      - "17801:17801"
+    volumes:
+      - ./data:/data
+    environment:
+      MINDMATE_MODE: server
+      MINDMATE_PORT: "17801"
+      MINDMATE_DATA_DIR: /data
+      MINDMATE_LOG: info
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:17801/api/v1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # 可选：反向代理 + 自动 HTTPS（取消注释并改域名即可）
+  # caddy:
+  #   image: caddy:2-alpine
+  #   restart: unless-stopped
+  #   ports: ["80:80", "443:443"]
+  #   volumes:
+  #     - ./Caddyfile:/etc/caddy/Caddyfile
+  #     - caddy_data:/data
+  #   depends_on: [mindmate]
+  #
+  # volumes:
+  #   caddy_data:

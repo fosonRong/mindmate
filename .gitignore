@@ -1,0 +1,45 @@
+# 依赖与构建产物
+node_modules/
+apps/web/dist/
+src-tauri/target/
+target/
+core/target/
+apps/web/node_modules/
+
+# 运行时数据与本地环境
+data/
+*.db
+*.db-wal
+*.db-shm
+*.db.bak.*
+.first_seen
+.env
+.env.local
+*.local
+
+# 签名与密钥（**绝不入库**：更新签名私钥、代码签名证书、任何 token）
+*.key
+*.pem
+*.pfx
+*.p12
+*.mobileprovision
+secrets/
+.tauri/
+
+# 编辑器与系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.log
+logs/
+
+# Python
+__pycache__/
+*.pyc
+
+# 发布产物（由 CI 生成，不入库）
+latest.json
+canary.json
+SHA256SUMS.txt
+release/

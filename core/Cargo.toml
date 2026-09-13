@@ -1,0 +1,38 @@
+[package]
+name = "mindmate-core"
+version = "1.0.0"
+edition = "2021"
+description = "智伴 Mindmate 核心：数据层 + REST/SSE 服务 + AI 接入 + 提醒调度"
+
+[dependencies]
+axum = { version = "0.8", features = ["macros"] }
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "fs", "compression-gzip", "trace"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+thiserror = "2"
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+futures-util = "0.3"
+async-stream = "0.3"
+regex = "1"
+cron = "0.15"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+jsonwebtoken = "9"
+argon2 = "0.5"
+password-hash = { version = "0.5", features = ["rand_core"] }
+rand = "0.8"
+dirs = "5"
+keyring = { version = "3", default-features = false, features = ["windows-native", "apple-native"] }
+urlencoding = "2"
+lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1-rustls-tls", "builder", "hostname"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+tokio-test = "0.4"
+
+[lib]
+name = "mindmate_core"
+path = "src/lib.rs"

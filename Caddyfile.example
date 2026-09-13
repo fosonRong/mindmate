@@ -1,0 +1,19 @@
+# 智伴 Mindmate 反向代理示例（Caddy 自动 HTTPS）
+# 关键：flush_interval -1 关闭缓冲，保证 SSE（报告流式输出）逐字到达浏览器
+
+mindmate.example.com {
+    encode zstd gzip
+    reverse_proxy mindmate:17801 {
+        flush_interval -1
+        header_up X-Real-IP {remote_host}
+    }
+    header {
+        Strict-Transport-Security "max-age=31536000;"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "no-referrer"
+    }
+    log {
+        output file /data/access.log
+    }
+}
