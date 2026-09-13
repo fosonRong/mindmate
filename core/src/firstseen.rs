@@ -63,10 +63,16 @@ fn sign(value: &FirstSeen, secret: &str) -> Result<String> {
 }
 
 fn verify(token: &str, secret: &str) -> Option<Claim> {
+    // 注意：jsonwebtoken 默认要求 exp/审计声明，而这里的载荷是"数据"而非会话令牌，
+    // 不含 exp —— 必须显式关闭这些校验，否则验签永远失败（曾因此让 signatureValid 恒为 false）。
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.required_spec_claims.clear();
+    validation.validate_exp = false;
+    validation.validate_aud = false;
     decode::<Claim>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::new(Algorithm::HS256),
+        &validation,
     )
     .ok()
     .map(|d| d.claims)
@@ -228,6 +234,22 @@ mod tests {
     }
 
     const SECRET: &str = "test-secret";
+
+    #[test]
+    fn 埋点_签名可自校验通过() {
+        // 回归：验证必须是"能通过"的 —— 之前因 jsonwebtoken 默认要求 exp 声明，
+        // 验签恒失败，导致接口里 signatureValid 永远是 false（真机实测才发现）。
+        let dir = tmp_dir("verify-ok");
+        let db = Db::open_memory().unwrap();
+        let v = ensure(&db, &dir, SECRET, "1.0.0").unwrap();
+        let (file_value, ok) = read_file(&dir, SECRET).unwrap();
+        assert!(ok, "自己写下的证据必须能通过验签");
+        assert_eq!(file_value.at, v.at);
+        assert_eq!(file_value.install_id, v.install_id);
+        // 换一个密钥（模拟被别的安装的文件）应验不过
+        assert!(read_file(&dir, "other-secret").map(|(_, ok)| ok).unwrap_or(false) == false);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn 埋点_首次运行写入证据且幂等() {
