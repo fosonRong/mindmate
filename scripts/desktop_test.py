@@ -154,6 +154,12 @@ check("存在清单生成脚本（latest.json / 校验文件 / 下载页）",
 check("存在绿色版打包脚本", os.path.exists(os.path.join(ROOT, "scripts", "make-portable.mjs")))
 check("发布文档已就位", os.path.exists(os.path.join(ROOT, "docs", "发布与更新文档.md")))
 
+# 版本号一致性：core 与应用同时发布，版本号必须相同（否则 /install 诊断信息会误导）
+core_toml = read("core", "Cargo.toml")
+m = re.search(r'^version = "([^"]+)"', core_toml, re.M)
+check("core 版本与应用版本一致", bool(m) and m.group(1) == conf.get("version"),
+      f"core={m.group(1) if m else '?'} app={conf.get('version')}")
+
 print("\n" + "=" * 60)
 print(f"桌面端静态验收：通过 {len(passed)} 项，失败 {len(failed)} 项")
 for f in failed:
