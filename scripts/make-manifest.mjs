@@ -76,15 +76,20 @@ function main() {
     version,
     notes,
     pub_date: new Date().toISOString(),
-    platforms: {
-      'windows-x86_64': {
+    platforms: {      'windows-x86_64': {
         signature: signature || '',
         url: `${baseUrl || 'https://REPLACE_ME.pages.dev'}/${setupExe}`
       }
     }
   }
-  writeFileSync(path.join(outDir, 'latest.json'), JSON.stringify(manifest, null, 2))
-  writeFileSync(path.join(siteDir, 'latest.json'), JSON.stringify(manifest, null, 2))
+  const manifestJson = JSON.stringify(manifest, null, 2)
+  writeFileSync(path.join(outDir, 'latest.json'), manifestJson)
+  writeFileSync(path.join(siteDir, 'latest.json'), manifestJson)
+  // 规范位置：/release/latest.json
+  // 原因：Pages 生产别名对已存在的路径可能长期持有旧对象（旧清单导致客户端永远收不到更新）。
+  // 换到全新路径 + no-store 头，二者结合可确保清单始终最新。
+  mkdirSync(path.join(siteDir, 'release'), { recursive: true })
+  writeFileSync(path.join(siteDir, 'release', 'latest.json'), manifestJson)
 
   // ── 校验文件 + 收集站点产物 ──
   const sums = []
@@ -138,6 +143,31 @@ function main() {
 </body>
 </html>`
   writeFileSync(path.join(siteDir, 'index.html'), html)
+
+  // ── Cloudflare Pages 缓存策略（关键）──
+  // 坑：生产别名（*.pages.dev）会缓存静态文件，`latest.json` 若被缓存，客户端会一直看到旧版本 ——
+  // 表现为"发了新版本但用户永远收不到更新"。因此清单与校验文件必须 no-store，
+  // 而带版本号的安装包可以长期缓存（文件名变了，天然不受影响）。
+  const headers = `# 由 scripts/make-manifest.mjs 生成
+/latest.json
+  Cache-Control: no-store
+
+/release/latest.json
+  Cache-Control: no-store
+
+/SHA256SUMS.txt
+  Cache-Control: no-store
+
+/index.html
+  Cache-Control: no-cache
+
+/*.exe
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.zip
+  Cache-Control: public, max-age=31536000, immutable
+`
+  writeFileSync(path.join(siteDir, '_headers'), headers)
 
   console.log(`✓ 版本 ${version}`)
   console.log(`✓ release/latest.json（签名${signature ? '已' : '未'}包含）`)

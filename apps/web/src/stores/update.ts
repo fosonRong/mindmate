@@ -60,7 +60,8 @@ export const useUpdateStore = defineStore('update', () => {
     upToDate.value = false
     try {
       const { check: tauriCheck } = await import('@tauri-apps/plugin-updater')
-      const update = await tauriCheck()
+      // 带上 no-cache：尽最大可能让 CDN 回源，避免读到旧的更新清单
+      const update = await tauriCheck({ headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' } })
       lastCheckedAt.value = new Date().toTimeString().slice(0, 5)
       if (!update) {
         upToDate.value = true
