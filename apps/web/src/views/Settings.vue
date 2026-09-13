@@ -5,6 +5,8 @@ import { api, downloadFile } from '@/api/client'
 import { useAppStore, requestNotificationPermission, type ThemeMode } from '@/stores/app'
 import { isDesktop } from '@/lib/desktop'
 import { useUpdateStore } from '@/stores/update'
+import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode } from '@/i18n'
+import { ref as _ref } from 'vue'
 import type { AiConfig, Preset, PushConfig } from '@/api/types'
 
 const app = useAppStore()
@@ -54,6 +56,16 @@ const dailyGoal = ref(4)
 
 // ── 外观 ──
 const themeMode = computed(() => app.themeMode)
+
+// 界面语言：跟随系统 / 简体中文 / English / 日本語 / 한국어
+const localeMode = _ref<LocaleMode>(loadLocaleMode())
+const localeOptions: LocaleMode[] = ['system', ...SUPPORTED_LOCALES]
+const effectiveLocale = computed(() => resolveLocale(localeMode.value))
+function changeLocale(mode: LocaleMode) {
+  localeMode.value = mode
+  applyLocaleMode(mode) // 立即生效 + 本地持久化 + 同步给后端（提醒/报告按此语言生成）
+  app.toast('success', mode === 'system' ? '界面语言：跟随系统' : `界面语言：${LOCALE_LABELS[mode]}`)
+}
 
 // ── 推送渠道（FR-4.10）──
 const push = ref<PushConfig>({
@@ -888,6 +900,26 @@ onMounted(load)
           </div>
           <div class="small muted">
             当前解析主题：{{ app.resolvedTheme === 'dark' ? '深色' : '浅色' }}（跟随系统模式下会随系统设置实时切换）
+          </div>
+        </section>
+
+        <section class="card stack">
+          <div class="card-title" style="font-size: 15px">界面语言</div>
+          <div class="preset-grid">
+            <div
+              v-for="m in localeOptions"
+              :key="m"
+              class="preset-card"
+              :class="{ on: localeMode === m }"
+              @click="changeLocale(m)"
+            >
+              <div class="name">{{ LOCALE_LABELS[m] }}</div>
+              <div class="desc">{{ m === 'system' ? `当前：${LOCALE_LABELS[effectiveLocale]}` : m }}</div>
+              <div class="tick">✓</div>
+            </div>
+          </div>
+          <div class="small muted">
+            默认跟随系统语言；AI 报告、晨间简报与提醒文案也会使用该语言生成。
           </div>
         </section>
       </template>

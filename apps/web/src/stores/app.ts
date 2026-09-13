@@ -1,6 +1,7 @@
 // 应用级状态：设置、主题三态、连接状态、提醒、Toast
 import { defineStore } from 'pinia'
 import { api, subscribeEvents } from '@/api/client'
+import { LOCALE_STORAGE_KEY, applyLocaleMode, loadLocaleMode } from '@/i18n'
 import type { AchievementDef, AppEvent, AuthStatus, DailyStats, Setting } from '@/api/types'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
@@ -61,8 +62,16 @@ export const useAppStore = defineStore('app', {
       } catch {
         this.loggedIn = true
       }
+      // 界面语言：本机未显式选择过时，采用服务端保存的 ui_locale（已选择则用本机选择）
+      if (localStorage.getItem(LOCALE_STORAGE_KEY)) {
+        applyLocaleMode(loadLocaleMode(), false)
+      }
+
       if (this.loggedIn) {
         await Promise.all([this.loadSettings(), this.loadAchievements().catch(() => {})])
+        if (!localStorage.getItem(LOCALE_STORAGE_KEY) && this.settings.ui_locale) {
+          applyLocaleMode(this.settings.ui_locale as never, false)
+        }
         await this.refreshStats()
         this.startEvents()
       }

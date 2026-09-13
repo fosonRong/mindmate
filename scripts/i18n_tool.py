@@ -92,6 +92,9 @@ def rewrite_template(block: str, counter: list):
         body = raw.strip()
         if body.startswith("{{") and body.endswith("}}") and body.count("{{") == 1:
             return m.group(0)  # 纯表达式，不动
+        # 关键：折叠换行与连续空白 —— 文本节点可能跨行，直接塞进 $t('…') 会产生
+        # 字符串里的裸换行，导致「Unterminated string literal」语法错误（踩过一次）
+        body = " ".join(body.split())
         key, exprs = split_exprs(body)
         names = "abcdefghij"
         if exprs:
