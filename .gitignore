@@ -1,5 +1,11 @@
 # 依赖与构建产物
 node_modules/
+
+# 不提交 package-lock.json：本仓库同时构建 Windows 与 macOS，而在单一平台生成的 lock 会把
+# 其它平台的可选原生依赖（rollup/esbuild 的 darwin-*/win32-* 二进制）剔除，
+# 换平台构建就会报 "Cannot find module @rollup/rollup-darwin-arm64"（npm issue #4828）。
+# CI 改为按当前平台解析依赖（见 .github/workflows/release.yml）。
+package-lock.json
 apps/web/dist/
 src-tauri/target/
 target/

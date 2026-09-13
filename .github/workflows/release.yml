@@ -87,7 +87,14 @@ jobs:
           key: ${{ matrix.platform }}
 
       - name: 安装前端依赖
-        run: npm install
+        run: |
+          # 本仓库不提交 package-lock.json（见 .gitignore 说明）：lock 在单一平台生成时会剔除
+          # 其它平台的可选原生依赖（rollup/esbuild 的 darwin-*/win32-* 二进制），
+          # 在 macOS 上会直接报 "Cannot find module @rollup/rollup-darwin-arm64"（npm issue #4828）。
+          # 这里按当前平台重新解析；本地若存在 lock 文件也一并清掉，保证 CI 三个平台口径一致。
+          rm -f package-lock.json apps/web/package-lock.json
+          npm install
+        shell: bash
 
       # 三个平台都跑一遍核心单测：既是回归，也验证 core 在各平台都能编译
       - name: Rust 单元测试
