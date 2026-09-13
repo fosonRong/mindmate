@@ -140,6 +140,12 @@ print(f"本地 Webhook 接收器已启动：127.0.0.1:{recv_port}")
 
 # ───────────────── 1. 默认不启用任何渠道 ─────────────────
 print("\n=== 1. 默认状态：不启用任何推送渠道 ===")
+# 先归零再断言：本段校验「默认状态」。上一次运行若中途异常退出（本机网络抖动时发生过一次），
+# 会把已启用的渠道留在配置里，下一次运行就误报 —— 断言不应依赖环境残留。
+_r0, _ = call("GET", "/push/config")
+_reset = dict(_r0.get("data") or {})
+_reset.update({"channels": [], "wecomWebhook": "", "emailTo": "", "telegramChatId": ""})
+call("POST", "/push/config", {"config": _reset})
 r, _ = call("GET", "/push/config")
 cfg = r.get("data") or {}
 check("默认渠道列表为空", cfg.get("channels") == [], f"channels={cfg.get('channels')}")

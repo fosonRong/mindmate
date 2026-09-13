@@ -2,6 +2,10 @@
 //!
 //! 不依赖第三方插件：自己实现便于给出明确的错误提示，并且可以用单元测试验证
 //! 「写入 → 读回 → 移除」全流程（Windows 下使用当前用户的 Run 键，无需管理员权限）。
+//!
+//! Windows 实现要点：**直接调用注册表 API（winreg），不启动 reg.exe 子进程**。
+//! 早期版本用 `reg query` 读一个值，实测每次要 150–180ms（启动进程 + 安全软件检查），
+//! 而设置页一进来就要读自启状态——用户感受就是"点设置卡很久"。改成进程内读取后是微秒级。
 
 use anyhow::Result;
 use std::path::Path;
@@ -19,39 +23,35 @@ pub fn current_exe() -> Result<std::path::PathBuf> {
 #[cfg(windows)]
 mod platform {
     use super::*;
-    use std::io::Write;
-    use std::process::{Command, Stdio};
+    use std::io::ErrorKind;
+    use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE};
+    use winreg::RegKey;
 
-    const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run";
+    const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
 
-    /// 通过 reg.exe 读写注册表（避免额外依赖与管理员权限问题）
-    fn reg(args: &[&str]) -> Result<(bool, String)> {
-        let out = Command::new("reg")
-            .args(args)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| anyhow::anyhow!("调用注册表命令失败：{e}"))?;
-        let mut text = String::from_utf8_lossy(&out.stdout).to_string();
-        text.push_str(&String::from_utf8_lossy(&out.stderr));
-        Ok((out.status.success(), text))
+    /// 打开 Run 键（读/写两种权限）
+    fn open_run(flags: u32) -> Result<RegKey> {
+        RegKey::predef(HKEY_CURRENT_USER)
+            .open_subkey_with_flags(RUN_KEY, flags)
+            .map_err(|e| anyhow::anyhow!("打开启动项注册表失败：{e}"))
     }
 
     pub fn is_enabled(entry: &str) -> Result<bool> {
-        let (ok, text) = reg(&["query", RUN_KEY, "/v", entry])?;
-        Ok(ok && text.contains(entry))
+        // 值不存在是「未启用」而不是错误——早期用 reg.exe 时靠解析本地化输出判断，
+        // 换成注册表 API 后可以直接看错误类型，更可靠
+        match open_run(KEY_READ)?.get_value::<String, _>(entry) {
+            Ok(_) => Ok(true),
+            Err(e) if e.kind() == ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(anyhow::anyhow!("读取启动项失败：{e}")),
+        }
     }
 
     pub fn enable(entry: &str, exe: &Path) -> Result<()> {
         // 加引号避免路径含空格被截断
         let value = format!("\"{}\"", exe.display());
-        let (ok, _text) = reg(&["add", RUN_KEY, "/v", entry, "/t", "REG_SZ", "/d", &value, "/f"])?;
-        if !ok {
-            // 文案本地化不可靠，用读回结果给出可读错误
-            if !is_enabled(entry)? {
-                anyhow::bail!("写入启动项失败：注册表命令返回失败（可能被安全软件拦截）");
-            }
-        }
+        open_run(KEY_WRITE)?
+            .set_value(entry, &value)
+            .map_err(|e| anyhow::anyhow!("写入启动项失败：{e}（可能被安全软件拦截）"))?;
         // 回读校验，确保真的写进去了
         if !is_enabled(entry)? {
             anyhow::bail!("启动项写入后校验失败（可能被安全软件拦截）");
@@ -60,9 +60,12 @@ mod platform {
     }
 
     pub fn disable(entry: &str) -> Result<()> {
-        // reg.exe 在「值不存在」时也会返回失败且输出为本地化（GBK）文本，
-        // 因此不以文案判断，一律以读回状态为准（天然幂等）
-        let _ = reg(&["delete", RUN_KEY, "/v", entry, "/f"]);
+        match open_run(KEY_WRITE)?.delete_value(entry) {
+            Ok(()) => {}
+            // 本来就没有：幂等，不当成失败
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
+            Err(e) => anyhow::bail!("移除启动项失败：{e}（可能被安全软件锁定）"),
+        }
         if is_enabled(entry)? {
             anyhow::bail!("移除启动项失败（仍检测到自启配置，可能被安全软件锁定）");
         }

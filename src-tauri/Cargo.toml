@@ -1,6 +1,6 @@
 [package]
 name = "mindmate"
-version = "1.0.8"
+version = "1.0.9"
 edition = "2021"
 description = "智伴 Mindmate 桌面端"
 authors = ["Mindmate"]
@@ -27,6 +27,12 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 rust-embed = "8"
+
+# Windows 注册表读写：读一次自启状态要 150–180ms 的话（reg.exe 子进程），
+# 设置页一进来就卡住用户；进程内读是微秒级。该 crate 本就在依赖树里（tauri-plugin-autostart
+# → auto-launch → winreg），直接声明不会引入新的下载。
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
 
 [profile.release]
 # 体积优化（技术设计文档 §11.1）

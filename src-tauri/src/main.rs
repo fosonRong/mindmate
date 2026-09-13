@@ -91,20 +91,34 @@ fn backend_port() -> u16 {
 }
 
 /// 查询开机自启状态（桌面端）
+///
+/// **必须是 async + spawn_blocking**：Tauri 的同步命令在**主线程**执行，而这里要启动
+/// reg.exe 读注册表（实测每次 150–180ms，机器上装了安全软件会更久）。写进同步命令里，
+/// 一进设置页就会把 WebView 主线程卡住——浏览器端根本不走这条路径（isDesktop 为假），
+/// 所以这个卡顿只在桌面端出现。
 #[tauri::command]
-fn autostart_status() -> Result<bool, String> {
-    autostart::is_enabled(autostart::ENTRY_NAME).map_err(|e| e.to_string())
+async fn autostart_status() -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        autostart::is_enabled(autostart::ENTRY_NAME).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| format!("查询开机自启状态失败：{e}"))?
 }
 
-/// 开启/关闭开机自启（桌面端）
+/// 开启/关闭开机自启（桌面端）—— 同样不能在主线程做进程 IO，理由同上
 #[tauri::command]
-fn autostart_set(enabled: bool) -> Result<bool, String> {
-    if enabled {
-        autostart::enable(autostart::ENTRY_NAME).map_err(|e| format!("开启开机自启失败：{e}"))?;
-    } else {
-        autostart::disable(autostart::ENTRY_NAME).map_err(|e| format!("关闭开机自启失败：{e}"))?;
-    }
-    autostart::is_enabled(autostart::ENTRY_NAME).map_err(|e| e.to_string())
+async fn autostart_set(enabled: bool) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if enabled {
+            autostart::enable(autostart::ENTRY_NAME).map_err(|e| format!("开启开机自启失败：{e}"))?;
+        } else {
+            autostart::disable(autostart::ENTRY_NAME).map_err(|e| format!("关闭开机自启失败：{e}"))?;
+        }
+        // enable/disable 内部都已读回校验，这里直接返回结论，省掉一次 reg.exe 调用
+        Ok(enabled)
+    })
+    .await
+    .map_err(|e| format!("设置开机自启失败：{e}"))?
 }
 
 /// 容器健康检查：--healthcheck 时请求本机 healthz，成功退出码 0

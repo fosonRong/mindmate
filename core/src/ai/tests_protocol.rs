@@ -399,3 +399,20 @@ fn 测试结论_成功带延迟失败带可读类别与原文() {
     assert_eq!(none.kind, "not_configured");
     assert!(none.upstream_status.is_none());
 }
+
+#[test]
+fn 预设_领Key入口是官方确认的管理页() {
+    let find = |id: &str| presets().into_iter().find(|p| p.id == id).expect("预设缺失");
+    // 真机踩过：智谱旧路径 /usercenter/apikeys 登录后会落到不存在的路由（页面 404），
+    // 官方文档给的是 /usercenter/proj-mgmt/apikeys —— 别再改回去
+    assert_eq!(
+        find("glm").key_url,
+        "https://bigmodel.cn/usercenter/proj-mgmt/apikeys"
+    );
+    assert_eq!(find("deepseek").key_url, "https://platform.deepseek.com/api_keys");
+    assert_eq!(find("openai").key_url, "https://platform.openai.com/api-keys");
+    assert_eq!(find("kimi").key_url, "https://platform.moonshot.cn/console/api-keys");
+    assert_eq!(find("ollama").key_url, "https://ollama.com/download");
+    // 百炼控制台用 hash 路由，直链要落到 API Key 页
+    assert!(find("qwen").key_url.contains("/api-key"), "通义应直达 API Key 页");
+}

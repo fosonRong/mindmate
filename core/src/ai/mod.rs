@@ -92,7 +92,7 @@ pub fn presets() -> Vec<Preset> {
             note: "免费模型零成本跑通全部 AI 功能；国内直连快（OpenAI 兼容端点）",
             recommended: true,
             free_model: Some("glm-4-flash"),
-            key_url: "https://open.bigmodel.cn/usercenter/apikeys",
+            key_url: "https://bigmodel.cn/usercenter/proj-mgmt/apikeys",
             requires_key: true,
         },
         Preset {
@@ -128,7 +128,7 @@ pub fn presets() -> Vec<Preset> {
             note: "阿里云百炼",
             recommended: false,
             free_model: None,
-            key_url: "https://bailian.console.aliyun.com/",
+            key_url: "https://bailian.console.aliyun.com/?tab=model#/api-key",
             requires_key: true,
         },
         Preset {

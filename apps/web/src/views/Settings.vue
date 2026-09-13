@@ -264,13 +264,22 @@ async function load() {
   } catch {
     dndRules.value = []
   }
-  presets.value = await api.presets()
-  aiConfig.value = await api.aiConfig()
-  push.value = await api.pushConfig()
-  await loadAutostart()
-  const tpl = await api.templates()
+  // 并行拉取：原先 5 次串行往返（预设 → AI 配置 → 推送配置 → 自启状态 → 模板），
+  // 每次都要等上一个回来，进设置页要等好几轮；并行后总耗时≈最慢的那一个。
+  const [pres, ai, pushCfg, tpl] = await Promise.all([
+    api.presets(),
+    api.aiConfig(),
+    api.pushConfig(),
+    api.templates()
+  ])
+  presets.value = pres
+  aiConfig.value = ai
+  push.value = pushCfg
   templates.value = tpl.templates
   templateDraft.value = tpl.templates[editingTemplate.value] || ''
+  // 自启状态不 await：它只影响一个开关，且桌面端要走一次 IPC（内核要读注册表）。
+  // 让它在后台填充，页面无需等它。
+  loadAutostart()
 }
 
 async function saveRemind() {
@@ -862,6 +871,9 @@ onMounted(load)
             </div>
             <div class="hint-bar info">
               {{ $t('申请一般需要注册（国内平台多需实名）；复制时注意别漏字符、别带空格。') }}
+            </div>
+            <div class="small muted">
+              {{ $t('页面打不开？登录厂商官网后，在控制台里找「API Keys / 密钥管理」即可。') }}
             </div>
           </template>
         </section>

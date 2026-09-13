@@ -82,6 +82,35 @@ for c in APP_COMMANDS:
 for p in ("autostart:allow-enable", "core:window:allow-hide", "core:event:default"):
     check(f"保留插件权限 {p}", p in perms)
 
+# ── 1.5 Tauri 命令不得在主线程做阻塞 IO ──
+# Tauri 的**同步**命令在主线程执行：命令体里一旦启动进程 / 读写注册表（哪怕只有 150ms），
+# WebView 主线程就会被冻住。真机踩过：autostart_status 调 reg.exe 读注册表，
+# 一切到设置页就卡很久（浏览器端不走这条路径，所以只在桌面端复现）。
+# 因此：凡是命令体里出现 autostart::（内部用 reg.exe）的命令，必须是 async。
+print("\n1.5 命令不得阻塞主线程")
+cmd_blocks = re.findall(r"#\[tauri::command\]\s*\n((?:.*\n)*?)\}", main_rs)
+for block in cmd_blocks:
+    m = re.search(r"fn\s+(\w+)", block)
+    if not m:
+        continue
+    name = m.group(1)
+    is_async = re.search(r"async\s+fn", block) is not None
+    does_process_io = "autostart::" in block or "Command::new" in block
+    if does_process_io:
+        check(f"命令 {name} 做进程/注册表 IO 且为 async（否则冻结界面）", is_async,
+              "同步命令在主线程执行" if not is_async else "已用 spawn_blocking")
+        check(f"命令 {name} 用 spawn_blocking 承载阻塞调用", "spawn_blocking" in block,
+              "避免占用 tokio worker")
+check("命令体解析到（结构变化时本检查需同步）", len(cmd_blocks) >= 4, f"解析到 {len(cmd_blocks)} 个命令")
+
+# 读注册表不得启动子进程：reg.exe 每次 150–180ms，设置页一进来就要读自启状态，
+# 用户感受就是「点设置卡很久」。已改为进程内注册表 API（winreg）。
+autostart_rs = read("src-tauri", "src", "autostart.rs")
+check("自启状态读取不启动子进程（不用 reg.exe）",
+      'Command::new("reg")' not in autostart_rs and "Stdio::piped" not in autostart_rs,
+      "reg.exe 单次 150–180ms，会拖慢设置页")
+check("Windows 侧使用进程内注册表 API（winreg）", "winreg" in autostart_rs and "RegKey" in autostart_rs)
+
 # ── 2. 前端不得销毁 WebView2 视图 ──
 section("2. 速记浮窗的收起方式（前端）")
 src_files = []

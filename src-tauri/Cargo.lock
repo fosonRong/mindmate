@@ -2648,7 +2648,7 @@ dependencies = [
 
 [[package]]
 name = "mindmate"
-version = "1.0.8"
+version = "1.0.9"
 dependencies = [
  "anyhow",
  "axum",
@@ -2668,11 +2668,12 @@ dependencies = [
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
+ "winreg 0.55.0",
 ]
 
 [[package]]
 name = "mindmate-core"
-version = "1.0.8"
+version = "1.0.9"
 dependencies = [
  "anyhow",
  "argon2",
