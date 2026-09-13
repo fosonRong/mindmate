@@ -56,15 +56,17 @@ jobs:
         run: npm run --workspace apps/web build
 
       - name: 构建桌面端并签名更新包
-        run: npm run desktop:build
+        run: |
+          npm run desktop:build -- --config "{\"plugins\":{\"updater\":{\"endpoints\":[\"${{ vars.RELEASE_BASE_URL }}/latest.json\"]}}}"
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        shell: bash
 
       - name: 生成更新清单与校验文件
         run: node scripts/make-manifest.mjs
         env:
-          RELEASE_BASE_URL: https://${{ vars.PAGES_PROJECT || 'mindmate' }}.pages.dev
+          RELEASE_BASE_URL: ${{ vars.RELEASE_BASE_URL }}
           RELEASE_NOTES: ${{ github.event.head_commit.message || '新版本发布' }}
 
       - name: 生成绿色版

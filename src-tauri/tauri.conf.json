@@ -16,9 +16,19 @@
     },
     "withGlobalTauri": false
   },
+  "plugins": {
+    "updater": {
+      "endpoints": ["https://REPLACE_WITH_YOUR_PAGES_DOMAIN/latest.json"],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFBODA1Nzc5OTYzRDdGM0EKUldRNmZ6MldlVmVBR28wdmJGZnB4YnBqdkQ4NjNnTm04cXN2dVpMUTViakEvUEhyVVVRVEtCU3MK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

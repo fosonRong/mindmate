@@ -4,9 +4,11 @@ import { computed, onMounted, ref } from 'vue'
 import { api, downloadFile } from '@/api/client'
 import { useAppStore, requestNotificationPermission, type ThemeMode } from '@/stores/app'
 import { isDesktop } from '@/lib/desktop'
+import { useUpdateStore } from '@/stores/update'
 import type { AiConfig, Preset, PushConfig } from '@/api/types'
 
 const app = useAppStore()
+const update = useUpdateStore()
 
 type Section = 'remind' | 'push' | 'ai' | 'goal' | 'appearance' | 'data' | 'about'
 const section = ref<Section>('remind')
@@ -948,7 +950,7 @@ onMounted(load)
             <div class="logo" style="width: 46px; height: 46px; font-size: 20px">M</div>
             <div>
               <div class="card-title" style="font-size: 16px">智伴 Mindmate</div>
-              <div class="small muted">v1.0.0 · AI 工作生活伴侣</div>
+              <div class="small muted">v{{ update.currentVersion || '1.0.0' }} · AI 工作生活伴侣</div>
             </div>
           </div>
           <div class="small" style="color: var(--text-regular); line-height: 1.8">
@@ -960,6 +962,45 @@ onMounted(load)
           <div class="row">
             <span class="small muted">服务状态：</span>
             <span class="badge" :class="app.connected ? 'ok' : 'danger'">{{ app.connected ? '运行中' : '未连接' }}</span>
+          </div>
+
+          <!-- 版本与更新 -->
+          <div class="divider"></div>
+          <div class="row">
+            <span style="flex: 1; font-size: 13px">自动检查更新</span>
+            <div
+              class="switch"
+              :class="{ on: update.autoCheckEnabled }"
+              :style="!isDesktop() ? 'opacity:.5;cursor:not-allowed' : ''"
+              @click="isDesktop() && app.saveSettings({ auto_update_check: update.autoCheckEnabled ? '0' : '1' })"
+            ></div>
+          </div>
+          <div class="hint-bar" v-if="!isDesktop()">
+            浏览器端不支持自动更新，请从下载页获取新版本。
+          </div>
+          <div class="row">
+            <span class="small muted" style="flex: 1">
+              {{ update.lastCheckedAt ? `上次检查：${update.lastCheckedAt}` : '尚未检查过新版本' }}
+              <span v-if="update.skippedVersion"> · 已跳过 v{{ update.skippedVersion }}</span>
+            </span>
+            <button
+              class="btn btn-sm"
+              :disabled="!isDesktop() || update.checking || update.installing"
+              @click="update.check(true)"
+            >
+              {{ update.checking ? '检查中…' : '检查更新' }}
+            </button>
+          </div>
+          <div v-if="update.available" class="row" style="gap: 8px">
+            <span class="small" style="color: var(--primary)">发现新版本 v{{ update.available.version }}</span>
+            <button class="btn btn-sm btn-primary" :disabled="update.installing" @click="update.install()">
+              {{ update.installing ? `更新中 ${update.progress || 0}%` : '下载并重启' }}
+            </button>
+          </div>
+          <div v-else-if="update.upToDate" class="small muted">已是最新版本</div>
+          <div v-if="update.error" class="small" style="color: var(--danger)">{{ update.error }}</div>
+          <div class="small muted" style="line-height: 1.7">
+            更新包由官方私钥签名，客户端验签通过才会安装；更新不会触碰你的数据目录，安装失败也不会影响现有版本。
           </div>
         </section>
       </template>

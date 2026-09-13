@@ -106,7 +106,7 @@ impl Db {
 
     /// 首次启动写入默认设置
     pub fn seed_defaults(&self) -> Result<()> {
-        let defaults: [(&str, &str); 22] = [
+        let defaults: [(&str, &str); 24] = [
             ("daily_goal", "4"),
             ("daily_goal_enabled", "1"),
             ("remind_freq_minutes", "60"),
@@ -129,6 +129,9 @@ impl Db {
             ("ai_max_tokens", "2048"),
             ("theme", "system"),
             ("deploy_mode", "local"),
+            // 自动更新（一期）：是否自动检查新版本、用户主动跳过的版本号
+            ("auto_update_check", "1"),
+            ("skipped_version", ""),
         ];
         let conn = self.lock();
         let now = models::now_string();

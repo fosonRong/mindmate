@@ -9,10 +9,13 @@ import { openQuickEntry as desktopQuickEntry, isDesktop } from '@/lib/desktop'
 import Icon from '@/components/Icon.vue'
 import Onboarding from '@/components/Onboarding.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
+import UpdateBanner from '@/components/UpdateBanner.vue'
+import { useUpdateStore } from '@/stores/update'
 
 const app = useAppStore()
 const todos = useTodosStore()
 const nodes = useNodesStore()
+const update = useUpdateStore()
 const route = useRoute()
 const router = useRouter()
 
@@ -80,6 +83,9 @@ onMounted(async () => {
     requestNotificationPermission()
     // 首次启动引导（里程碑 M7）
     if (app.settings.onboarded !== '1') showOnboarding.value = true
+    // 自动更新：读取当前版本，并延迟做一次检查（可在设置中关闭）
+    update.loadVersion()
+    update.scheduleAutoCheck()
   }
 })
 
@@ -151,6 +157,9 @@ onUnmounted(() => {
 
     <!-- 成就抽屉 -->
     <AchievementsDrawer v-if="showAchievements" @close="showAchievements = false" />
+
+    <!-- 新版本提示（桌面端） -->
+    <UpdateBanner v-if="app.loggedIn" />
 
     <!-- Toast -->
     <div class="toast-wrap">

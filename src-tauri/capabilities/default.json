@@ -21,6 +21,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-is-visible",
     "core:event:default",
+    "updater:default",
+    "process:default",
     "notification:default",
     "notification:allow-notify",
     "notification:allow-request-permission",
