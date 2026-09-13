@@ -60,6 +60,7 @@ run("端到端接口验收", [sys.executable, "scripts/e2e_test.py"] + ARGS)
 run("提醒系统专项验收（FR-4）", [sys.executable, "scripts/reminder_test.py"] + ARGS)
 run("推送渠道专项验收（FR-4.10）", [sys.executable, "scripts/push_test.py"] + ARGS)
 run("桌面端静态验收（IPC 授权/速记浮窗）", [sys.executable, "scripts/desktop_test.py"])
+run("国际化专项验收（四语/插值）", [sys.executable, "scripts/i18n_test.py"])
 run("前端生产构建", [NPM, "run", "build"], cwd=os.path.join(ROOT, "apps", "web"))
 
 print("\n" + "=" * 72)

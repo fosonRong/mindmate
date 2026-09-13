@@ -13,6 +13,7 @@ import MarkdownView from '@/components/MarkdownView.vue'
 import TodoEditModal from '@/components/TodoEditModal.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
 import type { AchievementDef } from '@/api/types'
+import { t } from '@/i18n'
 
 const app = useAppStore()
 const nodes = useNodesStore()
@@ -50,9 +51,9 @@ const todoDone = computed(() => todayTodoList.value.filter((t) => t.status === '
 
 const recordLabel = computed(() => {
   const s = app.stats
-  if (!s || !s.goalEnabled) return `${nodes.nodes.length} 条`
-  const over = s.nodeCount > s.dailyGoal ? ` · 超额 ${s.nodeCount - s.dailyGoal}` : ''
-  return `${s.nodeCount}/${s.dailyGoal} 条${over}`
+  if (!s || !s.goalEnabled) return t('{a} 条', { a: nodes.nodes.length })
+  const over = s.nodeCount > s.dailyGoal ? t(' · 超额 {a}', { a: s.nodeCount - s.dailyGoal }) : ''
+  return t('{a}/{b} 条', { a: s.nodeCount, b: s.dailyGoal }) + over
 })
 
 async function loadBrief() {
@@ -147,7 +148,7 @@ async function completeTodo(id: number) {
           <div style="flex: 1; min-width: 0">
             <div class="card-title" style="font-size: 15px">
               {{ $t('晨间简报') }}
-              <span class="card-sub">{{ briefAt ? `${briefAt} 生成` : $t('尚未生成') }}</span>
+              <span class="card-sub">{{ briefAt ? $t('{a} 生成', { a: briefAt }) : $t('尚未生成') }}</span>
             </div>
             <div v-if="!briefContent && !briefLoading" class="small muted" style="margin-top: 4px">
               {{ $t('看看今天的安排，让智伴帮你理一理。') }}

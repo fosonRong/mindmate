@@ -11,6 +11,7 @@ import Onboarding from '@/components/Onboarding.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
 import UpdateBanner from '@/components/UpdateBanner.vue'
 import { useUpdateStore } from '@/stores/update'
+import { t } from '@/i18n'
 
 const app = useAppStore()
 const todos = useTodosStore()
@@ -20,11 +21,12 @@ const route = useRoute()
 const router = useRouter()
 
 const isBare = computed(() => route.meta.bare === true || !app.loggedIn)
-const pageTitle = computed(() => (route.meta.title as string) || '智伴')
+const pageTitle = computed(() => t((route.meta.title as string) || '智伴'))
 const dateLabel = computed(() => {
   const d = new Date()
   const week = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} · 周${week}`
+  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return `${day} · ${t('周' + week)}`
 })
 
 const showOnboarding = ref(false)
@@ -40,7 +42,7 @@ const navItems = [
 
 const modeLabel = computed(() => {
   const m = app.auth?.mode || 'local'
-  return m === 'local' ? '本地模式' : m === 'lan' ? '局域网模式' : '服务器模式'
+  return t(m === 'local' ? '本地模式' : m === 'lan' ? '局域网模式' : '服务器模式')
 })
 
 async function openQuickEntry() {
@@ -106,7 +108,7 @@ onUnmounted(() => {
   <div v-else class="app-shell">
     <nav class="side-nav">
       <div class="logo">M</div>
-      <router-link v-for="n in navItems" :key="n.to" :to="n.to" class="nav-item" :title="n.title">
+      <router-link v-for="n in navItems" :key="n.to" :to="n.to" class="nav-item" :title="t(n.title)">
         <Icon :name="n.icon" :size="20" />
       </router-link>
       <div class="nav-spacer"></div>

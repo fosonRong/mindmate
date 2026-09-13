@@ -6,6 +6,7 @@ import { useNodesStore } from '@/stores/nodes'
 import { api } from '@/api/client'
 import type { PeriodStats } from '@/api/types'
 import ProgressPair from '@/components/ProgressPair.vue'
+import { t } from '@/i18n'
 
 const app = useAppStore()
 const nodes = useNodesStore()
@@ -76,7 +77,7 @@ function ringColor(percent: number) {
 function recordLabel() {
   if (!stats.value) return ''
   const goal = goalTotal.value
-  return `${stats.value.nodeCount}/${goal} 条`
+  return t('{a}/{b} 条', { a: stats.value.nodeCount, b: goal })
 }
 
 onMounted(load)

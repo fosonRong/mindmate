@@ -10,6 +10,7 @@ import ProgressPair from '@/components/ProgressPair.vue'
 import CalendarMonth from '@/components/CalendarMonth.vue'
 import QuickEntry from '@/components/QuickEntry.vue'
 import TodoItem from '@/components/TodoItem.vue'
+import { t } from '@/i18n'
 
 const app = useAppStore()
 const nodes = useNodesStore()
@@ -163,7 +164,7 @@ onMounted(load)
         :todo-titles="todoTitles"
         :max-todo-titles="2"
         @select="openDay"
-        @drop-todo="(p) => todos.reschedule(p.id, p.date).then(() => app.toast('success', `已改期至 ${p.date}`))"
+        @drop-todo="(p) => todos.reschedule(p.id, p.date).then(() => app.toast('success', t('已改期至 {a}', { a: p.date })))"
       />
     </section>
 

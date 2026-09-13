@@ -8,6 +8,7 @@ import TodoEditModal from '@/components/TodoEditModal.vue'
 import CalendarMonth from '@/components/CalendarMonth.vue'
 import { api } from '@/api/client'
 import type { PeriodStats, Todo } from '@/api/types'
+import { t } from '@/i18n'
 
 const todos = useTodosStore()
 const app = useAppStore()
@@ -101,7 +102,7 @@ async function selectDate(date: string) {
 
 async function onDropTodo(payload: { id: number; date: string }) {
   await todos.reschedule(payload.id, payload.date)
-  app.toast('success', `已改期至 ${payload.date}`)
+  app.toast('success', t('已改期至 {a}', { a: payload.date }))
   await loadAll()
 }
 

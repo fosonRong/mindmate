@@ -13,6 +13,7 @@
  */
 
 import { createI18n } from 'vue-i18n'
+import zhCN from './messages/zh-CN'
 import enUS from './messages/en-US'
 import jaJP from './messages/ja-JP'
 import koKR from './messages/ko-KR'
@@ -80,7 +81,7 @@ export const i18n = createI18n({
   globalInjection: true,
   locale: resolveLocale(loadLocaleMode()),
   fallbackLocale: 'zh-CN',
-  messages: { 'zh-CN': {}, 'en-US': enUS, 'ja-JP': jaJP, 'ko-KR': koKR },
+  messages: { 'zh-CN': zhCN, 'en-US': enUS, 'ja-JP': jaJP, 'ko-KR': koKR },
   // 缺翻译时静默回退，不刷控制台（由 scripts/i18n_test.py 做完整性校验）
   missingWarn: false,
   fallbackWarn: false

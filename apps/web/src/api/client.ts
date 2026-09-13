@@ -1,4 +1,5 @@
 // API 客户端：统一请求封装 + SSE 事件流（自动重连 + 断线提示）
+import { t } from '@/i18n'
 import type {
   Achievement, AchievementDef, AiConfig, AppEvent, AuthStatus, ChatMessage, DailyStats,
   MonthlySummary, Node, PeriodStats, Preset, PushConfig, PushResult, Report,
@@ -37,10 +38,10 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   try {
     body = text ? JSON.parse(text) : null
   } catch {
-    throw new ApiError(5000, `响应解析失败：${text.slice(0, 120)}`)
+    throw new ApiError(5000, t('响应解析失败：{a}', { a: text.slice(0, 120) }))
   }
   if (!resp.ok || (body && body.code !== 0)) {
-    throw new ApiError(body?.code ?? resp.status, body?.message || `请求失败（${resp.status}）`)
+    throw new ApiError(body?.code ?? resp.status, body?.message || t('请求失败（{a}）', { a: resp.status }))
   }
   return body?.data as T
 }
@@ -147,7 +148,7 @@ export async function downloadFile(path: string, filename: string): Promise<void
   if (token) headers['Authorization'] = `Bearer ${token}`
   const resp = await fetch(path, { headers })
   if (!resp.ok) {
-    let msg = `下载失败（${resp.status}）`
+    let msg = t('下载失败（{a}）', { a: resp.status })
     try {
       const j = await resp.json()
       if (j?.message) msg = j.message
@@ -194,9 +195,9 @@ export function streamRequest(
         const text = await resp.text()
         try {
           const j = JSON.parse(text)
-          handlers.onError?.(j.message || `请求失败（${resp.status}）`)
+          handlers.onError?.(j.message || t('请求失败（{a}）', { a: resp.status }))
         } catch {
-          handlers.onError?.(`请求失败（${resp.status}）`)
+          handlers.onError?.(t('请求失败（{a}）', { a: resp.status }))
         }
         return
       }

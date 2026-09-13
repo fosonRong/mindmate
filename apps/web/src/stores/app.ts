@@ -154,7 +154,7 @@ export const useAppStore = defineStore('app', {
           this.pushReminder(ev.payload)
           break
         case 'achievement.unlocked':
-          this.toast('success', `🏅 解锁成就：${ev.payload?.title || ev.payload?.id}`)
+          this.toast('success', t('🏅 解锁成就：{a}', { a: ev.payload?.title || ev.payload?.id }))
           this.loadAchievements().catch(() => {})
           break
         case 'settings.updated':
@@ -279,7 +279,7 @@ export function monthRange(s: string): [string, string] {
 export const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 export function weekdayLabel(s: string): string {
   const d = parseDate(s)
-  return t('周{a}', { a: WEEKDAYS[(d.getDay() + 6) % 7] })
+  return t('周' + WEEKDAYS[(d.getDay() + 6) % 7])
 }
 export function friendlyDate(s: string): string {
   const d = parseDate(s)

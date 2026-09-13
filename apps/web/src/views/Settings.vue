@@ -64,7 +64,7 @@ const effectiveLocale = computed(() => resolveLocale(localeMode.value))
 function changeLocale(mode: LocaleMode) {
   localeMode.value = mode
   applyLocaleMode(mode) // 立即生效 + 本地持久化 + 同步给后端（提醒/报告按此语言生成）
-  app.toast('success', mode === 'system' ? '界面语言：跟随系统' : `界面语言：${LOCALE_LABELS[mode]}`)
+  app.toast('success', mode === 'system' ? t('界面语言：跟随系统') : t('界面语言：{a}', { a: LOCALE_LABELS[mode] }))
 }
 
 // ── 推送渠道（FR-4.10）──
@@ -125,7 +125,7 @@ async function testPush(channel: string) {
     telegramTokenInput.value = ''
     const r = await api.testPush(channel)
     pushTestResult.value = { channel, ok: r.ok, detail: r.detail }
-    app.toast(r.ok ? 'success' : 'error', r.ok ? `${channel} 推送成功` : `${channel} 推送失败`)
+    app.toast(r.ok ? 'success' : 'error', r.ok ? t('{a} 推送成功', { a: channel }) : t('{a} 推送失败', { a: channel }))
   } catch (e: any) {
     pushTestResult.value = { channel, ok: false, detail: e?.message || '测试失败' }
     app.toast('error', e?.message || '测试失败')
@@ -174,7 +174,7 @@ async function toggleAutostart() {
   } catch (e: any) {
     // Tauri 命令返回的错误是字符串，给出可读提示
     const msg = typeof e === 'string' ? e : e?.message || String(e)
-    app.toast('error', msg.includes('开启') || msg.includes('关闭') ? msg : `设置开机自启失败：${msg}`)
+    app.toast('error', msg.includes('开启') || msg.includes('关闭') ? msg : t('设置开机自启失败：{a}', { a: msg }))
   } finally {
     autostartBusy.value = false
   }
@@ -348,7 +348,7 @@ async function testConnection() {
     apiKeyInput.value = ''
     app.refreshAiReady()
     const r = await api.testAi()
-    testResult.value = { ok: true, text: `连接成功 · 延迟 ${r.latencyMs}ms · 模型 ${r.model}` }
+    testResult.value = { ok: true, text: t('连接成功 · 延迟 {a}ms · 模型 {b}', { a: r.latencyMs, b: r.model }) }
     aiConfig.value.hasKey = true
   } catch (e: any) {
     testResult.value = { ok: false, text: e?.message || '连接失败' }
@@ -424,7 +424,7 @@ async function doImport() {
   try {
     const payload = JSON.parse(importText.value)
     const r = await api.importData(payload, wipeOnImport.value)
-    app.toast('success', `已导入 ${r.imported} 条数据`)
+    app.toast('success', t('已导入 {a} 条数据', { a: r.imported }))
     app.loadSettings()
   } catch (e: any) {
     app.toast('error', e?.message || '导入失败，请检查 JSON 格式')
@@ -1011,7 +1011,7 @@ onMounted(load)
           </div>
           <div class="row">
             <span class="small muted" style="flex: 1">
-              {{ update.lastCheckedAt ? `上次检查：${update.lastCheckedAt}` : $t('尚未检查过新版本') }}
+              {{ update.lastCheckedAt ? $t('上次检查：{a}', { a: update.lastCheckedAt }) : $t('尚未检查过新版本') }}
               <span v-if="update.skippedVersion"> {{ $t('· 已跳过 v{a}', { a: update.skippedVersion }) }}</span>
             </span>
             <button
@@ -1025,7 +1025,7 @@ onMounted(load)
           <div v-if="update.available" class="row" style="gap: 8px">
             <span class="small" style="color: var(--primary)">{{ $t('发现新版本 v{a}', { a: update.available.version }) }}</span>
             <button class="btn btn-sm btn-primary" :disabled="update.installing" @click="update.install()">
-              {{ update.installing ? `更新中 ${update.progress || 0}%` : $t('下载并重启') }}
+              {{ update.installing ? $t('更新中 {a}%', { a: update.progress || 0 }) : $t('下载并重启') }}
             </button>
           </div>
           <div v-else-if="update.upToDate" class="small muted">{{ $t('已是最新版本') }}</div>

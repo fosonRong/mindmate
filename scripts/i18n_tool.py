@@ -36,8 +36,8 @@ TEXT_NODE = re.compile(r">([^<>]*?)<")
 ATTR = re.compile(r'(?<![:\w-])(title|placeholder|aria-label|alt)="([^"]*)"')
 # 动态展示属性 :title="'文本'"
 DYN_ATTR = re.compile(r':(title|placeholder|aria-label|alt)="\'([^\']*)\'"')
-# 已抽取的 key
-KEY_USE = re.compile(r"\$?t\(\s*'((?:[^'\\]|\\.)*)'")
+# 已抽取的 key（前置边界 (?<![.\w]) 很重要：否则 split('/x')/api.get('/x')/mount('#app') 会被误判为文案）
+KEY_USE = re.compile(r"(?<![.\w])\$?t\(\s*'((?:[^'\\]|\\.)*)'")
 ATTR_SKIP = {"class", "style", "v-if", "v-else-if", "v-for", "v-model", "v-show", "v-html", "ref", "key"}
 
 

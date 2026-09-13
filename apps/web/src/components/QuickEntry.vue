@@ -3,6 +3,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useNodesStore } from '@/stores/nodes'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/i18n'
 
 const props = defineProps<{ date?: string; autofocus?: boolean; compact?: boolean }>()
 const emit = defineEmits<{ (e: 'saved'): void }>()
@@ -27,7 +28,7 @@ async function submit() {
   try {
     await nodes.create(content.value, [...pickedTags.value], props.date)
     content.value = ''
-    app.toast('success', `已记录 ${new Date().toTimeString().slice(0, 5)}`)
+    app.toast('success', t('已记录 {a}', { a: new Date().toTimeString().slice(0, 5) }))
     app.refreshStats()
     emit('saved')
     await nextTick()
