@@ -34,6 +34,9 @@ Thumbs.db
 *.log
 logs/
 
+# 一次性临时文件（设备码/推送日志等，绝不入库）
+.tmp-*
+
 # Python
 __pycache__/
 *.pyc
