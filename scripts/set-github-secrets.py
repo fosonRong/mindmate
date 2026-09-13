@@ -35,7 +35,7 @@ API = "https://api.github.com"
 
 # 本项目的固定参数（改动时同步这里与 docs/发布与更新文档.md）
 PAGES_PROJECT = "mindmate"
-RELEASE_BASE_URL = "https://production.mindmate-10v.pages.dev"
+RELEASE_BASE_URL = "https://mindmate-10v.pages.dev"
 CLOUDFLARE_ACCOUNT_ID = "dd67b277119c2a0643c7b3f039d15976"
 SIGNING_KEY_PATH = os.path.join(ROOT, ".tauri", "mindmate.key")
 

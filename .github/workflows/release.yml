@@ -84,7 +84,9 @@ jobs:
 
       - name: 部署到 Cloudflare Pages（安装包 + 更新清单 + 下载页）
         run: |
-          npx --yes wrangler@4 pages deploy release/site --project-name=${{ vars.PAGES_PROJECT || 'mindmate' }} --branch=production
+          # 注意：必须用项目生产分支（main）部署，否则会被 Cloudflare 判为 preview，不会进根别名；
+          # 根别名与分支别名均存在数十分钟的传播延迟（详见 docs/发布与更新文档.md 5.5）
+          npx --yes wrangler@4 pages deploy release/site --project-name=${{ vars.PAGES_PROJECT || 'mindmate' }} --branch=main
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
