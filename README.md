@@ -146,9 +146,9 @@ npm --prefix apps/web run dev
 
 | 测试 | 命令 | 结果 |
 | --- | --- | --- |
-| 全部验收（一键） | `python scripts/run_all_tests.py` | **290 项断言全部通过** |
-| Rust 单元测试 | `npm run test:rust` | 80 项通过 |
-| 端到端接口验收 | `npm run test:e2e` | 149 项通过 |
+| 全部验收（一键） | `python scripts/run_all_tests.py` | **307 项断言全部通过** |
+| Rust 单元测试 | `npm run test:rust` | 90 项通过 |
+| 端到端接口验收 | `npm run test:e2e` | 156 项通过 |
 | 提醒系统专项 | `python scripts/reminder_test.py` | 12 项通过 |
 | 推送渠道专项 | `python scripts/push_test.py` | 20 项通过（含真实 Webhook 投递） |
 | 桌面端静态验收 | `npm run test:desktop` | 29 项通过（IPC 授权 / 速记浮窗生命周期） |
@@ -189,7 +189,7 @@ smartLife/
 │       ├── views/           # 今日 / 周 / 月 / 待办 / 智伴 / 设置 / 速记 / 登录
 │       ├── components/      # 时间线 / 待办项 / 日历 / Markdown / 进度条
 │       └── styles/          # 设计系统（设计令牌与组件样式）
-├── scripts/                 # 验收测试套件 + i18n 抽取工具（默认 290 项断言）
+├── scripts/                 # 验收测试套件 + i18n 工具 + 发版脚本（默认 307 项断言）
 ├── docs/                    # 需求文档 / 技术设计 / UI 设计 / 商业化方案 / 部署 / 验收报告
 ├── Dockerfile               # 服务器模式镜像
 └── docker-compose.yml       # 一键部署
