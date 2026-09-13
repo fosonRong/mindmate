@@ -6,6 +6,7 @@ import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import { isDesktop } from '@/lib/desktop'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/i18n'
 
 interface Available {
   version: string
@@ -63,7 +64,7 @@ export const useUpdateStore = defineStore('update', () => {
       lastCheckedAt.value = new Date().toTimeString().slice(0, 5)
       if (!update) {
         upToDate.value = true
-        if (manual) app.toast('success', '已是最新版本')
+        if (manual) app.toast('success', t('已是最新版本'))
         return
       }
       if (!manual && skippedVersion.value && skippedVersion.value === update.version) {
@@ -101,7 +102,7 @@ export const useUpdateStore = defineStore('update', () => {
           progress.value = 100
         }
       })
-      app.toast('success', '更新已安装，正在重启…')
+      app.toast('success', t('更新已安装，正在重启…'))
       const { relaunch } = await import('@tauri-apps/plugin-process')
       await relaunch()
     } catch (e: any) {

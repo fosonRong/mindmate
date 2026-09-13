@@ -5,6 +5,7 @@ import { api, streamApi } from '@/api/client'
 import { useAppStore, todayStr, friendlyDate } from '@/stores/app'
 import type { ChatMessage, Report } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
+import { t } from '@/i18n'
 
 const app = useAppStore()
 
@@ -63,15 +64,15 @@ function generate() {
 function stop() {
   abortReport?.()
   reportLoading.value = false
-  app.toast('info', '已停止生成')
+  app.toast('info', t('已停止生成'))
 }
 
 async function copyReport() {
   try {
     await navigator.clipboard.writeText(reportContent.value)
-    app.toast('success', '已复制 Markdown')
+    app.toast('success', t('已复制 Markdown'))
   } catch {
-    app.toast('error', '复制失败，请手动选择')
+    app.toast('error', t('复制失败，请手动选择'))
   }
 }
 
@@ -194,7 +195,7 @@ function ask() {
 async function clearChat() {
   await api.clearChat()
   messages.value = []
-  app.toast('info', '已清空对话')
+  app.toast('info', t('已清空对话'))
 }
 
 const SUGGESTIONS = ['本周完成了几件待办？', '我周三记了什么？', '哪类任务最容易拖延？', '今天有哪些逾期待办？']

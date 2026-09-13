@@ -5,6 +5,7 @@ import { api } from '@/api/client'
 import { useAppStore } from '@/stores/app'
 import { isDesktop } from '@/lib/desktop'
 import type { Preset } from '@/api/types'
+import { t } from '@/i18n'
 
 const emit = defineEmits<{ (e: 'done'): void }>()
 const app = useAppStore()
@@ -73,7 +74,7 @@ async function finish(saveAi: boolean) {
         maxTokens: 2048,
         apiKey: apiKey.value || undefined
       })
-      app.toast('success', 'AI 模型已配置，可随时在设置中调整')
+      app.toast('success', t('AI 模型已配置，可随时在设置中调整'))
     }
     await app.saveSettings({ onboarded: '1' })
     emit('done')

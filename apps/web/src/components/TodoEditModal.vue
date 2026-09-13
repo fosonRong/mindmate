@@ -4,6 +4,7 @@ import { ref, onMounted } from 'vue'
 import type { Todo } from '@/api/types'
 import { useTodosStore } from '@/stores/todos'
 import { useAppStore, todayStr, addDays } from '@/stores/app'
+import { t } from '@/i18n'
 
 const props = defineProps<{ todo?: Todo | null; defaultDate?: string }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved'): void }>()
@@ -30,7 +31,7 @@ function toggleTag(t: string) {
 
 async function save() {
   if (!title.value.trim()) {
-    app.toast('warning', '请填写待办标题')
+    app.toast('warning', t('请填写待办标题'))
     return
   }
   creating.value = true
@@ -44,7 +45,7 @@ async function save() {
         priority: priority.value,
         tags: tags.value
       })
-      app.toast('success', '已保存')
+      app.toast('success', t('已保存'))
     } else {
       await todos.create({
         title: title.value.trim(),
@@ -55,7 +56,7 @@ async function save() {
         tags: tags.value,
         remindOffsetMin: dueTime.value ? remindOffset.value : undefined
       })
-      app.toast('success', '已添加待办')
+      app.toast('success', t('已添加待办'))
     }
     emit('saved')
   } catch (e: any) {

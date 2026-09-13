@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import type { Node } from '@/api/types'
 import { useNodesStore } from '@/stores/nodes'
 import { useAppStore } from '@/stores/app'
+import { t } from '@/i18n'
 
 const props = defineProps<{ node: Node; showLine?: boolean }>()
 const nodes = useNodesStore()
@@ -37,7 +38,7 @@ async function save() {
 async function remove() {
   try {
     await nodes.remove(props.node.id)
-    app.toast('info', '已删除')
+    app.toast('info', t('已删除'))
     app.refreshStats()
   } catch (e: any) {
     app.toast('error', e?.message || '删除失败')

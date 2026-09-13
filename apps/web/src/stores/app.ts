@@ -1,7 +1,7 @@
 // 应用级状态：设置、主题三态、连接状态、提醒、Toast
 import { defineStore } from 'pinia'
 import { api, subscribeEvents } from '@/api/client'
-import { LOCALE_STORAGE_KEY, applyLocaleMode, loadLocaleMode } from '@/i18n'
+import { LOCALE_STORAGE_KEY, applyLocaleMode, loadLocaleMode, t } from '@/i18n'
 import type { AchievementDef, AppEvent, AuthStatus, DailyStats, Setting } from '@/api/types'
 
 export type ThemeMode = 'system' | 'light' | 'dark'
@@ -275,20 +275,21 @@ export function monthRange(s: string): [string, string] {
   const end = new Date(d.getFullYear(), d.getMonth() + 1, 0)
   return [fmtDate(start), fmtDate(end)]
 }
+// 星期与相对日期都是**展示文案**，随界面语言变化；日期本身仍以 YYYY-MM-DD 存储
 export const WEEKDAYS = ['一', '二', '三', '四', '五', '六', '日']
 export function weekdayLabel(s: string): string {
   const d = parseDate(s)
-  return '周' + WEEKDAYS[(d.getDay() + 6) % 7]
+  return t('周{a}', { a: WEEKDAYS[(d.getDay() + 6) % 7] })
 }
 export function friendlyDate(s: string): string {
   const d = parseDate(s)
-  const t = todayStr()
-  if (s === t) return '今天'
-  if (s === addDays(t, 1)) return '明天'
-  if (s === addDays(t, -1)) return '昨天'
-  return `${d.getMonth() + 1}月${d.getDate()}日`
+  const today = todayStr()
+  if (s === today) return t('今天')
+  if (s === addDays(today, 1)) return t('明天')
+  if (s === addDays(today, -1)) return t('昨天')
+  return t('{a}月{b}日', { a: d.getMonth() + 1, b: d.getDate() })
 }
 export function monthTitle(s: string): string {
   const d = parseDate(s)
-  return `${d.getFullYear()} 年 ${d.getMonth() + 1} 月`
+  return t('{a} 年 {b} 月', { a: d.getFullYear(), b: d.getMonth() + 1 })
 }

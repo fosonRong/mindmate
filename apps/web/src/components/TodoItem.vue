@@ -3,6 +3,7 @@
 import type { Todo } from '@/api/types'
 import { useTodosStore } from '@/stores/todos'
 import { useAppStore, friendlyDate } from '@/stores/app'
+import { t } from '@/i18n'
 
 const props = defineProps<{ todo: Todo; draggable?: boolean; showActions?: boolean }>()
 const todos = useTodosStore()
@@ -29,7 +30,7 @@ async function toggle() {
 async function remove() {
   try {
     await todos.remove(props.todo.id)
-    app.toast('info', '已删除待办')
+    app.toast('info', t('已删除待办'))
   } catch (e: any) {
     app.toast('error', e?.message || '删除失败')
   }

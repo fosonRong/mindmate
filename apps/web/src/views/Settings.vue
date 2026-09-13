@@ -5,7 +5,7 @@ import { api, downloadFile } from '@/api/client'
 import { useAppStore, requestNotificationPermission, type ThemeMode } from '@/stores/app'
 import { isDesktop } from '@/lib/desktop'
 import { useUpdateStore } from '@/stores/update'
-import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode } from '@/i18n'
+import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode, t } from '@/i18n'
 import { ref as _ref } from 'vue'
 import type { AiConfig, Preset, PushConfig } from '@/api/types'
 
@@ -93,21 +93,21 @@ async function savePush() {
   try {
     // 渠道启用前做最小配置校验，避免开启后静默失败
     if (channelOn('email') && (!push.value.smtpHost || !push.value.emailTo)) {
-      app.toast('warning', '启用邮件推送需要填写 SMTP 服务器与收件人')
+      app.toast('warning', t('启用邮件推送需要填写 SMTP 服务器与收件人'))
       return
     }
     if (channelOn('telegram') && (!push.value.telegramChatId || (!push.value.hasTelegramToken && !telegramTokenInput.value))) {
-      app.toast('warning', '启用 Telegram 需要 Chat ID 与 Bot Token')
+      app.toast('warning', t('启用 Telegram 需要 Chat ID 与 Bot Token'))
       return
     }
     if (channelOn('wecom') && !push.value.wecomWebhook) {
-      app.toast('warning', '启用企业微信需要 Webhook 地址')
+      app.toast('warning', t('启用企业微信需要 Webhook 地址'))
       return
     }
     push.value = await api.savePushConfig(push.value, smtpPasswordInput.value, telegramTokenInput.value)
     smtpPasswordInput.value = ''
     telegramTokenInput.value = ''
-    app.toast('success', '推送渠道已保存')
+    app.toast('success', t('推送渠道已保存'))
   } catch (e: any) {
     app.toast('error', e?.message || '保存失败')
   } finally {
@@ -169,7 +169,7 @@ async function toggleAutostart() {
         ? '已开启开机自启（登录后自动启动智伴，提醒持续生效）'
         : '已关闭开机自启')
     } else {
-      app.toast('warning', '设置未生效，请检查系统安全软件是否拦截了启动项写入')
+      app.toast('warning', t('设置未生效，请检查系统安全软件是否拦截了启动项写入'))
     }
   } catch (e: any) {
     // Tauri 命令返回的错误是字符串，给出可读提示
@@ -229,9 +229,9 @@ async function load() {
   aiConfig.value = await api.aiConfig()
   push.value = await api.pushConfig()
   await loadAutostart()
-  const t = await api.templates()
-  templates.value = t.templates
-  templateDraft.value = t.templates[editingTemplate.value] || ''
+  const tpl = await api.templates()
+  templates.value = tpl.templates
+  templateDraft.value = tpl.templates[editingTemplate.value] || ''
 }
 
 async function saveRemind() {
@@ -251,7 +251,7 @@ async function saveRemind() {
     remind_sound: soundEnabled.value ? '1' : '0',
     dnd_rules: JSON.stringify(dndRules.value)
   })
-  app.toast('success', '提醒设置已保存')
+  app.toast('success', t('提醒设置已保存'))
 }
 
 function addDnd() {
@@ -287,7 +287,7 @@ function useDefaultUrl() {
   if (p) {
     aiConfig.value.baseUrl = p.baseUrl
     testResult.value = null
-    app.toast('info', '已填入该提供商的默认 OpenAI 兼容地址')
+    app.toast('info', t('已填入该提供商的默认 OpenAI 兼容地址'))
   }
 }
 
@@ -295,13 +295,13 @@ function useDefaultUrl() {
 function useAnthropicUrl() {
   const p = presets.value.find((x) => x.id === aiConfig.value.provider)
   if (!p?.anthropicUrl) {
-    app.toast('warning', '该提供商未提供 Anthropic 兼容地址，可手动填写')
+    app.toast('warning', t('该提供商未提供 Anthropic 兼容地址，可手动填写'))
     return
   }
   aiConfig.value.baseUrl = p.anthropicUrl
   aiConfig.value.protocolMode = 'auto'
   testResult.value = null
-  app.toast('info', '已填入 Anthropic 兼容地址（将使用 /v1/messages 协议）')
+  app.toast('info', t('已填入 Anthropic 兼容地址（将使用 /v1/messages 协议）'))
 }
 
 const baseUrlCustomized = computed(
@@ -321,7 +321,7 @@ async function saveAi() {
       apiKey: apiKeyInput.value || undefined
     })
     apiKeyInput.value = ''
-    app.toast('success', 'AI 配置已保存')
+    app.toast('success', t('AI 配置已保存'))
     app.loadSettings()
     app.refreshAiReady()
   } catch (e: any) {
@@ -359,23 +359,23 @@ async function testConnection() {
 
 async function loadTemplate(type: string) {
   editingTemplate.value = type
-  const t = await api.template(type)
-  templateDraft.value = t.content
-  templateSaved.value = t.customized ? '已自定义' : '默认模板'
+  const tpl = await api.template(type)
+  templateDraft.value = tpl.content
+  templateSaved.value = tpl.customized ? '已自定义' : '默认模板'
 }
 
 async function saveTemplate() {
   await api.setTemplate(editingTemplate.value, templateDraft.value)
   templateSaved.value = '已自定义'
-  app.toast('success', '模板已保存')
+  app.toast('success', t('模板已保存'))
 }
 
 async function resetTemplate() {
-  const t = await api.template(editingTemplate.value)
-  templateDraft.value = t.builtin
-  await api.setTemplate(editingTemplate.value, t.builtin)
+  const tpl = await api.template(editingTemplate.value)
+  templateDraft.value = tpl.builtin
+  await api.setTemplate(editingTemplate.value, tpl.builtin)
   templateSaved.value = '默认模板'
-  app.toast('info', '已恢复默认模板')
+  app.toast('info', t('已恢复默认模板'))
 }
 
 async function saveGoal() {
@@ -383,7 +383,7 @@ async function saveGoal() {
     daily_goal: String(dailyGoal.value),
     daily_goal_enabled: goalEnabled.value ? '1' : '0'
   })
-  app.toast('success', '每日目标已保存')
+  app.toast('success', t('每日目标已保存'))
 }
 
 async function doExport() {
@@ -396,7 +396,7 @@ async function doExport() {
   a.download = `mindmate-backup-${new Date().toISOString().slice(0, 10)}.json`
   a.click()
   URL.revokeObjectURL(url)
-  app.toast('success', '备份已导出')
+  app.toast('success', t('备份已导出'))
 }
 
 const exportingMd = ref(false)
@@ -408,7 +408,7 @@ async function doExportMarkdown() {
       '/api/v1/data/export/markdown',
       `mindmate-archive-${new Date().toISOString().slice(0, 10)}.zip`
     )
-    app.toast('success', 'Markdown 归档已导出（按日/周/月分文件）')
+    app.toast('success', t('Markdown 归档已导出（按日/周/月分文件）'))
   } catch (e: any) {
     app.toast('error', e?.message || '导出失败')
   } finally {
@@ -418,7 +418,7 @@ async function doExportMarkdown() {
 
 async function doImport() {
   if (!importText.value.trim()) {
-    app.toast('warning', '请粘贴备份 JSON')
+    app.toast('warning', t('请粘贴备份 JSON'))
     return
   }
   try {
@@ -433,14 +433,14 @@ async function doImport() {
 
 async function savePassword() {
   if (password.value.length < 6) {
-    app.toast('warning', '密码至少 6 位')
+    app.toast('warning', t('密码至少 6 位'))
     return
   }
   savingPassword.value = true
   try {
     await api.setPassword(password.value)
     password.value = ''
-    app.toast('success', '访问密码已设置')
+    app.toast('success', t('访问密码已设置'))
   } catch (e: any) {
     app.toast('error', e?.message || '设置失败')
   } finally {
@@ -546,7 +546,7 @@ onMounted(load)
           </div>
           <div class="row">
             <span style="flex: 1; font-size: 13px">{{ $t('浏览器通知权限') }}</span>
-            <button class="btn btn-sm" @click="requestNotificationPermission(); app.toast('info', '已请求通知权限（若浏览器弹窗请允许）')">{{ $t('请求权限') }}</button>
+            <button class="btn btn-sm" @click="requestNotificationPermission(); app.toast('info', t('已请求通知权限（若浏览器弹窗请允许）'))">{{ $t('请求权限') }}</button>
           </div>
           <div class="row">
             <span style="flex: 1; font-size: 13px">
