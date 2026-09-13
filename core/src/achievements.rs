@@ -15,27 +15,28 @@ use serde::Serialize;
 #[serde(rename_all = "camelCase")]
 pub struct AchievementDef {
     pub id: &'static str,
-    pub name: &'static str,
-    pub description: &'static str,
+    /// 名称/说明/条件由 i18n 按界面语言解析（T1.4），故为 String
+    pub name: String,
+    pub description: String,
     pub icon: &'static str,
-    /// 解锁条件说明（展示用）
-    pub condition: &'static str,
+    pub condition: String,
     pub unlocked: bool,
     pub unlocked_at: Option<String>,
 }
 
 /// 全部徽章定义（顺序即展示顺序）
-pub const CATALOG: [(&str, &str, &str, &str, &str); 10] = [
-    ("first_node", "起步", "完成首次速记", "✍️", "录入第一条记录"),
-    ("first_todo", "第一件事", "完成首件待办", "✅", "勾选完成任意待办"),
-    ("streak_3", "三日之约", "连续记录 3 天", "🔥", "连续 3 天每天至少 1 条记录"),
-    ("streak_7", "一周之约", "连续记录 7 天", "🔥", "连续 7 天每天至少 1 条记录"),
-    ("streak_30", "三十日之约", "连续记录 30 天", "🔥", "连续 30 天每天至少 1 条记录"),
-    ("speed_10", "手速达人", "单日录入 10 条", "⚡", "单日节点数达到 10 条"),
-    ("over_goal_3", "超额完成", "连续 3 天超过每日目标", "🎯", "连续 3 天记录数超过每日目标"),
-    ("report_first", "汇报达人", "首次生成日报/周报/月报", "📄", "成功生成任意一类周期报告"),
-    ("review_first", "复盘专家", "首次查看周度复盘", "📊", "生成或查看一次周度智能复盘"),
-    ("month_25", "记录满月", "当月 25 天以上有记录", "🗓️", "当月有记录的天数达到 25 天"),
+/// 徽章定义：名称/说明/条件存**词条 key**，展示时按界面语言解析（T1.4）
+pub const CATALOG: [(&str, &str, &str, &str); 10] = [
+    ("first_node", "✍️", "ach.first_node.name", "ach.first_node.desc"),
+    ("first_todo", "✅", "ach.first_todo.name", "ach.first_todo.desc"),
+    ("streak_3", "🔥", "ach.streak_3.name", "ach.streak_3.desc"),
+    ("streak_7", "🔥", "ach.streak_7.name", "ach.streak_7.desc"),
+    ("streak_30", "🔥", "ach.streak_30.name", "ach.streak_30.desc"),
+    ("speed_10", "⚡", "ach.speed_10.name", "ach.speed_10.desc"),
+    ("over_goal_3", "🎯", "ach.over_goal_3.name", "ach.over_goal_3.desc"),
+    ("report_first", "📄", "ach.report_first.name", "ach.report_first.desc"),
+    ("review_first", "📊", "ach.review_first.name", "ach.review_first.desc"),
+    ("month_25", "🗓️", "ach.month_25.name", "ach.month_25.desc"),
 ];
 
 /// 徽章目录 + 解锁状态
@@ -45,14 +46,17 @@ pub fn catalog(db: &Db) -> Result<Vec<AchievementDef>> {
         .into_iter()
         .map(|a| (a.id, a.unlocked_at))
         .collect();
+    let lang = crate::i18n::Lang::from_setting(
+        &db.get_setting("ui_locale").ok().flatten().unwrap_or_default(),
+    );
     Ok(CATALOG
         .iter()
-        .map(|(id, name, desc, icon, cond)| AchievementDef {
+        .map(|(id, icon, name_key, desc_key)| AchievementDef {
             id,
-            name,
-            description: desc,
+            name: crate::i18n::tr(lang, name_key),
+            description: crate::i18n::tr(lang, desc_key),
             icon,
-            condition: cond,
+            condition: crate::i18n::tr(lang, &format!("ach.{id}.cond")),
             unlocked: map.contains_key(*id),
             unlocked_at: map.get(*id).cloned(),
         })
@@ -121,6 +125,9 @@ pub fn check_all(db: &Db, bus: &EventBus) -> Result<Vec<AchievementDef>> {
         ("month_25", month_days_with_records >= 25),
     ];
 
+    let lang = crate::i18n::Lang::from_setting(
+        &db.get_setting("ui_locale").ok().flatten().unwrap_or_default(),
+    );
     for (id, ok) in conditions {
         if !ok {
             continue;
@@ -129,12 +136,12 @@ pub fn check_all(db: &Db, bus: &EventBus) -> Result<Vec<AchievementDef>> {
             let def = CATALOG
                 .iter()
                 .find(|(i, ..)| *i == id)
-                .map(|(id, name, desc, icon, cond)| AchievementDef {
+                .map(|(id, icon, name_key, desc_key)| AchievementDef {
                     id,
-                    name,
-                    description: desc,
+                    name: crate::i18n::tr(lang, name_key),
+                    description: crate::i18n::tr(lang, desc_key),
                     icon,
-                    condition: cond,
+                    condition: crate::i18n::tr(lang, &format!("ach.{id}.cond")),
                     unlocked: true,
                     unlocked_at: Some(crate::db::now_string()),
                 });

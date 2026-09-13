@@ -725,14 +725,15 @@ async fn all_templates(
 ) -> ApiResult<serde_json::Value> {
     ensure_auth(&ctx, &headers)?;
     let stored: HashMap<String, String> = ctx.db.all_templates()?.into_iter().collect();
+    let lang = ctx.lang();
     let builtin = json!({
-        "daily": ai::DEFAULT_DAILY,
-        "weekly": ai::DEFAULT_WEEKLY,
-        "monthly": ai::DEFAULT_MONTHLY,
-        "brief": ai::DEFAULT_BRIEF,
-        "goodnight": ai::DEFAULT_GOODNIGHT,
-        "review": ai::DEFAULT_REVIEW,
-        "qa": ai::DEFAULT_QA,
+        "daily": ai::default_template("daily", lang),
+        "weekly": ai::default_template("weekly", lang),
+        "monthly": ai::default_template("monthly", lang),
+        "brief": ai::default_template("brief", lang),
+        "goodnight": ai::default_template("goodnight", lang),
+        "review": ai::default_template("review", lang),
+        "qa": ai::default_template("qa", lang),
     });
     let mut merged = builtin.clone();
     for (k, v) in stored {
@@ -748,15 +749,7 @@ async fn get_template(
 ) -> ApiResult<serde_json::Value> {
     ensure_auth(&ctx, &headers)?;
     let stored = ctx.db.get_template(&ttype)?;
-    let builtin = match ttype.as_str() {
-        "weekly" => ai::DEFAULT_WEEKLY,
-        "monthly" => ai::DEFAULT_MONTHLY,
-        "brief" => ai::DEFAULT_BRIEF,
-        "goodnight" => ai::DEFAULT_GOODNIGHT,
-        "review" => ai::DEFAULT_REVIEW,
-        "qa" => ai::DEFAULT_QA,
-        _ => ai::DEFAULT_DAILY,
-    };
+    let builtin = ai::default_template(ttype.as_str(), ctx.lang());
     Ok(ApiResp::ok(json!({
         "type": ttype,
         "content": stored.clone().unwrap_or_else(|| builtin.to_string()),
@@ -898,7 +891,8 @@ async fn build_report_messages(
     let cfg = ai::load_config(&ctx.db).map_err(|e| e.to_string())?;
     if !cfg.has_key && cfg.provider != "ollama" {
         // 降级：本地模板拼装（落库由 ai_stream_from 统一处理）
-        let content = ai::fallback_report(&ctx.db, rtype, date).map_err(|e| e.to_string())?;
+        let lang = ctx.lang();
+        let content = ai::fallback_report_lang(&ctx.db, rtype, date, lang).map_err(|e| e.to_string())?;
         let period = if rtype == "daily" { date.to_string() } else { ai::period_range(rtype, date).2 };
         return Ok(StreamPlan::degraded(content, Some((rtype.to_string(), period))));
     }
@@ -967,11 +961,7 @@ async fn build_report_messages(
         .db
         .get_template(tpl_key)
         .map_err(|e| e.to_string())?
-        .unwrap_or_else(|| match tpl_key {
-            "weekly" => ai::DEFAULT_WEEKLY.to_string(),
-            "monthly" => ai::DEFAULT_MONTHLY.to_string(),
-            _ => ai::DEFAULT_DAILY.to_string(),
-        });
+        .unwrap_or_else(|| ai::default_template(tpl_key, ctx.lang()));
     let prompt = ai::render_template(&tpl, &vars);
     let period = if rtype == "daily" { date.to_string() } else { label };
     Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report(rtype, &period))

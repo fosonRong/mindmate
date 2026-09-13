@@ -112,62 +112,69 @@ pub fn decide(
 }
 
 /// 生成提醒文案（对应需求文档 6.4 文案表）
-pub fn compose(kind: &ReminderKind, node_count: i64, daily_goal: i64, overdue: &[String]) -> Notification {
+pub fn compose(
+    kind: &ReminderKind,
+    node_count: i64,
+    daily_goal: i64,
+    overdue: &[String],
+    lang: crate::i18n::Lang,
+) -> Notification {
+    use crate::i18n::{tr, tr_args};
     match kind {
         ReminderKind::Record => Notification {
             kind: kind.clone(),
-            title: "该记录一下了".into(),
-            body: format!("今日已录 {node_count}/{daily_goal} 条，点击速记"),
+            title: tr(lang, "rem.record.title"),
+            body: tr_args(lang, "rem.record.body", &[("done", node_count.to_string()), ("goal", daily_goal.to_string())]),
             action: "quick_entry".into(),
             sound: true,
         },
         ReminderKind::Overdue => {
             let first = overdue.first().cloned().unwrap_or_default();
             let more = if overdue.len() > 1 {
-                format!(" 等 {} 项", overdue.len())
+                tr_args(lang, "rem.overdue.more", &[("n", overdue.len().to_string())])
             } else {
                 String::new()
             };
             Notification {
                 kind: kind.clone(),
-                title: format!("有 {} 个待办已逾期", overdue.len()),
-                body: format!("{first}{more}，别忘啦，点击速记"),
+                title: tr_args(lang, "rem.overdue.title", &[("n", overdue.len().to_string())]),
+                body: tr_args(lang, "rem.overdue.body", &[("first", first), ("more", more)]),
                 action: "quick_entry".into(),
                 sound: true,
             }
         }
         ReminderKind::Care => Notification {
             kind: kind.clone(),
-            title: "这两天没见到你的记录了".into(),
-            body: "还好吗？花 30 秒记一笔吧".into(),
+            title: tr(lang, "rem.care.title"),
+            body: tr(lang, "rem.care.body"),
             action: "quick_entry".into(),
             sound: false,
         },
         ReminderKind::Makeup => Notification {
             kind: kind.clone(),
-            title: "你错过了几次记录提醒".into(),
-            body: format!("现在花 30 秒补记吧（今日已录 {node_count}/{daily_goal} 条）"),
+            title: tr(lang, "rem.makeup.title"),
+            body: tr_args(lang, "rem.makeup.body", &[("done", node_count.to_string()), ("goal", daily_goal.to_string())]),
             action: "quick_entry".into(),
             sound: true,
         },
         ReminderKind::Todo => Notification {
             kind: kind.clone(),
-            title: "待办即将到期".into(),
-            body: overdue.first().cloned().unwrap_or_else(|| "查看待办".into()),
+            title: tr(lang, "rem.todo.title"),
+            body: overdue.first().cloned().unwrap_or_else(|| tr(lang, "rem.todo.fallback")),
             action: "open_todos".into(),
             sound: true,
         },
         ReminderKind::Brief => Notification {
             kind: kind.clone(),
-            title: "早安，今天的计划已就绪".into(),
-            body: "晨间简报已生成，点击查看".into(),
+            title: tr(lang, "rem.brief.title"),
+            body: tr(lang, "rem.brief.body"),
             action: "open_today".into(),
             sound: false,
         },
         ReminderKind::Goodnight => Notification {
             kind: kind.clone(),
-            title: "今天辛苦了".into(),
-            body: "晚安总结已生成，看看今天的收获".into(),
+            title: tr(lang, "rem.goodnight.title"),
+            body: tr(lang, "rem.goodnight.body"),
             action: "open_today".into(),
             sound: false,
         },
@@ -313,8 +320,9 @@ async fn tick(
         let goal = stats.daily_goal;
         let reached = stats.goal_enabled && stats.node_count >= goal && goal > 0;
         if !reached && !in_dnd(db) {
-            let mut n = compose(&ReminderKind::Makeup, stats.node_count, goal, &overdue_titles);
-            n.body = makeup_body(missed, stats.node_count, goal);
+            let lang = ctx.lang();
+            let mut n = compose(&ReminderKind::Makeup, stats.node_count, goal, &overdue_titles, lang);
+            n.body = makeup_body(missed, stats.node_count, goal, lang);
             publish(ctx, &n);
         }
         last_record_fire.store(now_minutes(), Ordering::SeqCst);
@@ -354,7 +362,7 @@ async fn tick(
             &overdue_titles,
             dnd,
         ) {
-            let n = compose(&kind, stats.node_count, stats.daily_goal, &overdue_titles);
+            let n = compose(&kind, stats.node_count, stats.daily_goal, &overdue_titles, ctx.lang());
             publish(ctx, &n);
             last_record_fire.store(now_minutes(), Ordering::SeqCst);
         }
@@ -371,7 +379,7 @@ async fn tick(
             *guard = today.clone();
             drop(guard);
             if !db.latest_report("brief", &today)?.is_some() {
-                publish(ctx, &compose(&ReminderKind::Brief, 0, 0, &[]));
+                publish(ctx, &compose(&ReminderKind::Brief, 0, 0, &[], ctx.lang()));
             }
         }
     }
@@ -384,7 +392,7 @@ async fn tick(
             *guard = today.clone();
             drop(guard);
             if !db.latest_report("goodnight", &today)?.is_some() {
-                publish(ctx, &compose(&ReminderKind::Goodnight, 0, 0, &[]));
+                publish(ctx, &compose(&ReminderKind::Goodnight, 0, 0, &[], ctx.lang()));
             }
         }
     }
@@ -434,8 +442,16 @@ pub fn should_compensate(gap_secs: i64, freq_minutes: i64) -> bool {
 }
 
 /// 补偿提醒的聚合文案（FR-4.8）
-pub fn makeup_body(missed: i64, node_count: i64, daily_goal: i64) -> String {
-    format!("错过了 {missed} 次记录提醒，现在花 30 秒补记吧（今日已录 {node_count}/{daily_goal} 条）")
+pub fn makeup_body(missed: i64, node_count: i64, daily_goal: i64, lang: crate::i18n::Lang) -> String {
+    crate::i18n::tr_args(
+        lang,
+        "rem.makeup.template",
+        &[
+            ("missed", missed.to_string()),
+            ("done", node_count.to_string()),
+            ("goal", daily_goal.to_string()),
+        ],
+    )
 }
 
 /// 判断设置变更是否影响提醒评估（用于重置计时）

@@ -698,11 +698,45 @@ pub fn format_todos(todos: &[Todo]) -> String {
 }
 
 /// 进度描述
-pub fn format_progress(node_count: i64, daily_goal: i64, goal_enabled: bool, todo_total: i64, todo_done: i64) -> String {
+pub fn format_progress(
+    node_count: i64,
+    daily_goal: i64,
+    goal_enabled: bool,
+    todo_total: i64,
+    todo_done: i64,
+) -> String {
+    format_progress_lang(
+        node_count,
+        daily_goal,
+        goal_enabled,
+        todo_total,
+        todo_done,
+        crate::i18n::Lang::Zh,
+    )
+}
+
+/// 按语言生成进度文案（T1.4）
+pub fn format_progress_lang(
+    node_count: i64,
+    daily_goal: i64,
+    goal_enabled: bool,
+    todo_total: i64,
+    todo_done: i64,
+    lang: crate::i18n::Lang,
+) -> String {
+    use crate::i18n::{tr_args, Lang};
     let record = if goal_enabled {
-        format!("记录 {node_count}/{daily_goal} 条")
+        match lang {
+            Lang::Zh => tr_args(lang, "report.progress.recorded", &[("done", node_count.to_string()), ("goal", daily_goal.to_string())]),
+            _ => tr_args(lang, "report.progress.recorded", &[("done", node_count.to_string()), ("goal", daily_goal.to_string())]),
+        }
     } else {
-        format!("记录 {node_count} 条")
+        match lang {
+            Lang::Zh => format!("记录 {node_count} 条"),
+            Lang::En => format!("{node_count} logged"),
+            Lang::Ja => format!("{node_count} 件記録"),
+            Lang::Ko => format!("{node_count}건 기록"),
+        }
     };
     let pct = if todo_total > 0 {
         (todo_done as f64 / todo_total as f64 * 100.0).round() as i64
@@ -720,6 +754,42 @@ pub fn render_template(tpl: &str, vars: &[(&str, String)]) -> String {
         out = out.replace(&format!("{{{{{k}}}}}"), v);
     }
     out
+}
+
+/// 输出语言指令：提示词正文保持中文（不改动既有输出结构），
+/// 但明确要求模型**用目标语言撰写全部内容**，从而让 AI 报告跟随界面语言。
+fn output_lang_directive(lang: crate::i18n::Lang) -> &'static str {
+    match lang {
+        crate::i18n::Lang::Zh => "",
+        crate::i18n::Lang::En => {
+            "\n\nIMPORTANT: Write the entire answer in English — including the title, all section headings and table headers."
+        }
+        crate::i18n::Lang::Ja => {
+            "\n\n重要：タイトル・見出し・表のヘッダーを含め、出力はすべて日本語で書いてください。"
+        }
+        crate::i18n::Lang::Ko => {
+            "\n\n중요: 제목, 모든 섹션 제목, 표 머리글을 포함해 전체 출력을 한국어로 작성하세요."
+        }
+    }
+}
+
+/// 按类型与语言取默认提示词（用户自定义过则用用户的，见 api 层）
+pub fn default_template(kind: &str, lang: crate::i18n::Lang) -> String {
+    let base = match kind {
+        "weekly" => DEFAULT_WEEKLY,
+        "monthly" => DEFAULT_MONTHLY,
+        "brief" => DEFAULT_BRIEF,
+        "goodnight" => DEFAULT_GOODNIGHT,
+        "review" => DEFAULT_REVIEW,
+        "qa" => DEFAULT_QA,
+        _ => DEFAULT_DAILY,
+    };
+    let dir = output_lang_directive(lang);
+    if dir.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}{dir}")
+    }
 }
 
 pub const DEFAULT_DAILY: &str = r#"你是我的个人工作助手。请根据以下今日记录，生成一份简洁的日报。
@@ -829,14 +899,30 @@ pub const DEFAULT_QA: &str = r#"你是智伴，用户的个人工作生活助手
 // ───────────────────────── 无 Key 本地降级（模板拼装） ─────────────────────────
 
 pub fn fallback_report(db: &Db, rtype: &str, date: &str) -> Result<String> {
+    fallback_report_lang(db, rtype, date, crate::i18n::Lang::Zh)
+}
+
+/// 带语言的降级报告（T1.4）：未配置 AI 时用户看到的本地模板内容
+pub fn fallback_report_lang(
+    db: &Db,
+    rtype: &str,
+    date: &str,
+    lang: crate::i18n::Lang,
+) -> Result<String> {
+    use crate::i18n::{tr, tr_args};
     match rtype {
         "daily" => {
             let nodes = db.list_nodes_by_date(date)?;
             let (_, todos) = db.schedule_for_date(date)?;
             let stats = db.daily_stats(date)?;
-            let mut md = format!("# {date} 日报\n\n> 由本地模板生成（未配置 AI 模型）\n\n## 今日完成\n\n");
+            let mut md = format!(
+                "# {date} {}\n\n> {}\n\n## {}\n\n",
+                tr(lang, "report.type.daily"),
+                tr(lang, "report.notice"),
+                tr(lang, "report.h.today_done")
+            );
             if nodes.is_empty() {
-                md.push_str("- （今日暂无记录）\n");
+                md.push_str(&format!("- {}\n", tr(lang, "report.empty.today")));
             } else {
                 for n in &nodes {
                     let t = n.created_at.get(11..16).unwrap_or("--:--");
@@ -844,20 +930,25 @@ pub fn fallback_report(db: &Db, rtype: &str, date: &str) -> Result<String> {
                 }
             }
             md.push_str(&format!(
-                "\n## 当前进度\n\n- {}\n- 待办完成 {}/{}\n",
-                format_progress(
+                "\n## {}\n\n- {}\n- {}\n",
+                tr(lang, "report.h.progress"),
+                format_progress_lang(
                     stats.node_count,
                     stats.daily_goal,
                     stats.goal_enabled,
                     stats.total_todos,
-                    stats.done_todos
+                    stats.done_todos,
+                    lang
                 ),
-                stats.today_done_todos,
-                stats.today_todos
+                tr_args(
+                    lang,
+                    "report.todos_done",
+                    &[("done", stats.today_done_todos.to_string()), ("all", stats.today_todos.to_string())]
+                )
             ));
-            md.push_str("\n## 今日待办\n\n");
+            md.push_str(&format!("\n## {}\n\n", tr(lang, "report.h.today_todos")));
             if todos.is_empty() {
-                md.push_str("- （无）\n");
+                md.push_str(&format!("- {}\n", tr(lang, "report.empty.none")));
             } else {
                 for t in &todos {
                     let mark = if t.status == "已完成" { "x" } else { " " };
@@ -865,21 +956,41 @@ pub fn fallback_report(db: &Db, rtype: &str, date: &str) -> Result<String> {
                 }
             }
             if stats.overdue_todos > 0 {
-                md.push_str(&format!("\n## 需要注意\n\n- 有 {} 个待办已逾期\n", stats.overdue_todos));
+                md.push_str(&format!(
+                    "\n## {}\n\n- {}\n",
+                    tr(lang, "report.h.attention"),
+                    tr_args(lang, "report.overdue_line", &[("n", stats.overdue_todos.to_string())])
+                ));
             }
             Ok(md)
         }
         _ => {
-            let (from, to, label) = period_range(rtype, date);
+            let (from, to, label) = period_range_lang(rtype, date, lang);
             let stats = db.period_stats(&from, &to)?;
             let nodes = db.list_nodes_range(&from, &to)?;
-            let title = if rtype == "weekly" { "周报" } else { "月报" };
+            let title = tr(lang, if rtype == "weekly" { "report.type.weekly" } else { "report.type.monthly" });
             let mut md = format!(
-                "# {label} {title}\n\n> 由本地模板生成（未配置 AI 模型）\n\n## 概览\n\n- 记录 {} 条，覆盖 {} / {} 天\n- 待办完成 {}/{}\n\n## 按日记录\n\n",
-                stats.node_count, stats.days_with_records, stats.total_days, stats.done_todos, stats.total_todos
+                "# {label} {title}\n\n> {}\n\n## {}\n\n- {}\n- {}\n\n## {}\n\n",
+                tr(lang, "report.notice"),
+                tr(lang, "report.h.overview"),
+                tr_args(
+                    lang,
+                    "report.summary_line",
+                    &[
+                        ("nodes", stats.node_count.to_string()),
+                        ("days", stats.days_with_records.to_string()),
+                        ("total", stats.total_days.to_string())
+                    ]
+                ),
+                tr_args(
+                    lang,
+                    "report.todos_done",
+                    &[("done", stats.done_todos.to_string()), ("all", stats.total_todos.to_string())]
+                ),
+                tr(lang, "report.h.by_day")
             );
             if nodes.is_empty() {
-                md.push_str("（该周期无记录）\n");
+                md.push_str(&format!("{}\n", tr(lang, "report.empty.period")));
             } else {
                 md.push_str(&format_nodes_by_day(&nodes));
                 md.push('\n');
@@ -891,6 +1002,15 @@ pub fn fallback_report(db: &Db, rtype: &str, date: &str) -> Result<String> {
 
 /// 计算周期起止（日/周/月）
 pub fn period_range(rtype: &str, date: &str) -> (String, String, String) {
+    period_range_lang(rtype, date, crate::i18n::Lang::Zh)
+}
+
+/// 带语言的周期标签（周/月）
+pub fn period_range_lang(
+    rtype: &str,
+    date: &str,
+    lang: crate::i18n::Lang,
+) -> (String, String, String) {
     let d = NaiveDate::parse_from_str(date, "%Y-%m-%d").unwrap_or_else(|_| Local::now().date_naive());
     match rtype {
         "weekly" => {
@@ -901,7 +1021,11 @@ pub fn period_range(rtype: &str, date: &str) -> (String, String, String) {
             (
                 start.format("%Y-%m-%d").to_string(),
                 end.format("%Y-%m-%d").to_string(),
-                format!("{} 第{}周", iso_week.year(), iso_week.week()),
+                crate::i18n::tr_args(
+                    lang,
+                    "report.week_label",
+                    &[("year", iso_week.year().to_string()), ("week", iso_week.week().to_string())],
+                ),
             )
         }
         "monthly" => {
@@ -915,7 +1039,12 @@ pub fn period_range(rtype: &str, date: &str) -> (String, String, String) {
             (
                 start.format("%Y-%m-%d").to_string(),
                 end.format("%Y-%m-%d").to_string(),
-                format!("{}年{}月", d.year(), d.month()),
+                match lang {
+                    crate::i18n::Lang::Zh => format!("{}年{}月", d.year(), d.month()),
+                    crate::i18n::Lang::Ja => format!("{}年{}月", d.year(), d.month()),
+                    crate::i18n::Lang::Ko => format!("{}년 {}월", d.year(), d.month()),
+                    crate::i18n::Lang::En => format!("{:02}/{}", d.month(), d.year()),
+                },
             )
         }
         _ => (
@@ -942,7 +1071,10 @@ pub async fn generate_report(
 ) -> Result<(String, bool)> {
     let cfg = load_config(db)?;
     if !cfg.has_key && cfg.provider != "ollama" {
-        return Ok((fallback_report(db, rtype, date)?, false));
+                let lang = crate::i18n::Lang::from_setting(
+            &db.get_setting("ui_locale").ok().flatten().unwrap_or_default(),
+        );
+        return Ok((fallback_report_lang(db, rtype, date, lang)?, false));
     }
     let (from, to, label) = period_range(rtype, date);
     let vars: Vec<(&str, String)> = match rtype {
@@ -1003,9 +1135,9 @@ pub async fn generate_report(
     let tpl = db
         .get_template(tpl_key)?
         .unwrap_or_else(|| match tpl_key {
-            "weekly" => DEFAULT_WEEKLY.to_string(),
-            "monthly" => DEFAULT_MONTHLY.to_string(),
-            _ => DEFAULT_DAILY.to_string(),
+            "weekly" => default_template("weekly", crate::i18n::Lang::Zh),
+            "monthly" => default_template("monthly", crate::i18n::Lang::Zh),
+            _ => default_template("daily", crate::i18n::Lang::Zh),
         });
     let prompt = render_template(&tpl, &vars);
     let key = crate::secrets::load_api_key()?;

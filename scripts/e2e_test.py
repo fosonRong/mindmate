@@ -720,6 +720,36 @@ r2, _ = call("GET", "/install")
 check("重复查询首次使用时间不变",
       (r2.get("data") or {}).get("firstSeenAt") == inst.get("firstSeenAt"))
 
+# ─────────────────────── 10.14 Rust 侧本地化（T1.4）───────────────────────
+section("10.14 Rust 侧文案按界面语言生成")
+# 切到英文：徽章名、降级报告标题、AI 提示词都应由 Rust 按 ui_locale 生成英文
+call("PUT", "/settings", {"values": {"ui_locale": "en-US"}})
+
+r, _ = call("GET", "/achievements")
+defs = r.get("data") or []
+first = next((a for a in defs if a["id"] == "first_node"), {})
+check("徽章名按语言生成（英文）", first.get("name") == "First step", str(first.get("name")))
+check("徽章说明按语言生成（英文）", "first entry" in (first.get("description") or ""), str(first.get("description")))
+check("徽章解锁条件按语言生成（英文）", bool(first.get("condition")) and not any("一" <= c <= "鿿" for c in first.get("condition", "")),
+      str(first.get("condition")))
+
+r, _ = call("GET", "/templates/brief")
+tpl = (r.get("data") or {}).get("builtin") or ""
+check("AI 提示词含英文输出指令（保证报告用英文生成）", "Write the entire answer in English" in tpl)
+r, _ = call("GET", "/templates")
+tpls = (r.get("data") or {}).get("builtin") or {}
+check("全部内置提示词都带输出语言指令",
+      all("English" in (v or "") for k, v in tpls.items() if k in ("daily", "weekly", "monthly", "brief", "goodnight", "review", "qa")),
+      f"{len(tpls)} 个模板")
+
+# 切回中文并复核
+call("PUT", "/settings", {"values": {"ui_locale": "zh-CN"}})
+r, _ = call("GET", "/achievements")
+zh_first = next((a for a in (r.get("data") or []) if a["id"] == "first_node"), {})
+check("切回中文后徽章名恢复中文", zh_first.get("name") == "起步", str(zh_first.get("name")))
+r, _ = call("GET", "/templates/brief")
+check("切回中文后提示词不再带英文指令", "Write the entire answer in English" not in ((r.get("data") or {}).get("builtin") or ""))
+
 # 具体日程接口按日期返回（月视图/待办中心右侧栏依赖）
 r, _ = call("GET", f"/todos/schedule?date={today_d.isoformat()}")
 d = r.get("data") or {}

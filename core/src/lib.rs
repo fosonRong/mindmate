@@ -11,6 +11,7 @@ pub mod config;
 pub mod db;
 pub mod events;
 pub mod export;
+pub mod i18n;
 pub mod firstseen;
 pub mod push;
 pub mod reminder;
@@ -53,6 +54,11 @@ impl AppContext {
             local_token,
             jwt_secret,
         }))
+    }
+
+    /// 当前界面语言（读 ui_locale 设置；每次读取，切换语言后无需重启）
+    pub fn lang(&self) -> i18n::Lang {
+        i18n::Lang::from_setting(&self.db.get_setting("ui_locale").ok().flatten().unwrap_or_default())
     }
 
     pub fn data_dir(&self) -> PathBuf {

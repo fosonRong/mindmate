@@ -4,6 +4,7 @@
 
 use mindmate_core::ai;
 use mindmate_core::db::{classify, compute_remind_at, is_overdue, Db, NewNode, NewTodo, TodoPatch};
+use mindmate_core::i18n::Lang;
 use mindmate_core::reminder::{compose, decide, hhmm_to_minutes, ReminderKind};
 
 // ───────────────────────── 上下文智能提醒规则（FR-4.3）─────────────────────────
@@ -87,24 +88,24 @@ fn 规则_频率未到不重复提醒() {
 
 #[test]
 fn 提醒文案_四类场景符合设计规范() {
-    let n = compose(&ReminderKind::Record, 2, 4, &[]);
+    let n = compose(&ReminderKind::Record, 2, 4, &[], Lang::Zh);
     assert_eq!(n.title, "该记录一下了");
     assert!(n.body.contains("2/4"));
     assert_eq!(n.action, "quick_entry");
 
-    let n = compose(&ReminderKind::Overdue, 1, 4, &["修复登录 bug".into()]);
+    let n = compose(&ReminderKind::Overdue, 1, 4, &["修复登录 bug".into()], Lang::Zh);
     assert!(n.title.contains("已逾期"));
     assert!(n.body.contains("修复登录 bug"));
 
-    let n = compose(&ReminderKind::Care, 0, 4, &[]);
+    let n = compose(&ReminderKind::Care, 0, 4, &[], Lang::Zh);
     assert!(n.title.contains("没见到你的记录"));
 
-    let n = compose(&ReminderKind::Makeup, 1, 4, &[]);
+    let n = compose(&ReminderKind::Makeup, 1, 4, &[], Lang::Zh);
     assert!(n.action == "quick_entry");
 
-    let n = compose(&ReminderKind::Brief, 0, 0, &[]);
+    let n = compose(&ReminderKind::Brief, 0, 0, &[], Lang::Zh);
     assert_eq!(n.action, "open_today");
-    let n = compose(&ReminderKind::Todo, 0, 0, &["写方案".into()]);
+    let n = compose(&ReminderKind::Todo, 0, 0, &["写方案".into()], Lang::Zh);
     assert_eq!(n.action, "open_todos");
     assert!(n.body.contains("写方案"));
 }
