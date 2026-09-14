@@ -11,7 +11,7 @@
  *
  * 产物：
  *   release/latest.json        Tauri updater 清单（按平台给 URL 与签名）
- *   release/SHA256SUMS.txt     所有安装包/绿色版校验值
+ *   release/SHA256SUMS.txt     所有安装包校验值
  *   release/site/              待部署到 Cloudflare Pages 的目录（清单 + 安装包 + 下载页）
  *
  * 平台键（必须与 Tauri updater 的识别名一致）：
@@ -64,7 +64,6 @@ function candidateFiles() {
   const dirs = []
   if (process.env.ARTIFACTS_DIR) dirs.push(path.resolve(root, process.env.ARTIFACTS_DIR))
   dirs.push(path.join(root, 'src-tauri', 'target'))
-  dirs.push(path.join(root, 'release', 'portable'))
   return dirs.flatMap((d) => walk(d))
 }
 
@@ -85,8 +84,7 @@ function macArch(file) {
 }
 
 function resetSite() {
-  // 只清站点目录与本脚本产出的两个文件：release/portable（绿色版）是 make-portable 的产物，
-  // 不能在这里被删掉（早期版本把它一起清空，导致绿色版从没进过清单与下载页）
+  // 只清站点目录与本脚本产出的两个文件，不要动 release/ 下的其它内容
   rmSync(siteDir, { recursive: true, force: true })
   mkdirSync(siteDir, { recursive: true })
   for (const f of ['latest.json', 'SHA256SUMS.txt']) rmSync(path.join(outDir, f), { force: true })
@@ -109,7 +107,6 @@ function main() {
   }
 
   const nsisExe = best(/Mindmate[^/]*setup\.exe$/i)
-  const portableZips = pick(/_portable\.zip$/i).filter((f) => path.basename(f).includes(version))
 
   // macOS：按架构各取一个最新的（两个架构的 .app.tar.gz / .dmg 同名，只靠路径里的三元组区分）
   const byArch = (re) => {
@@ -172,12 +169,6 @@ function main() {
     downloads.push({ group: 'macOS', label: archLabel[arch] || arch, name, size: a.size })
   }
 
-  // Windows 绿色版（由 make-portable.mjs 产出；本地在 release/portable，CI 在下载产物里）
-  for (const z of portableZips) {
-    const name = path.basename(z)
-    const a = collect(z, name)
-    downloads.push({ group: 'Windows', label: '绿色版（免安装）', name, size: a.size })
-  }
 
   // ── 更新清单 ──
   const manifest = { version, notes, pub_date: new Date().toISOString(), platforms }
@@ -265,9 +256,6 @@ function main() {
   Cache-Control: no-cache
 
 /*.exe
-  Cache-Control: public, max-age=31536000, immutable
-
-/*.zip
   Cache-Control: public, max-age=31536000, immutable
 
 /*.dmg

@@ -15,6 +15,7 @@
 用法：python scripts/reminder_test.py [base_url]
 """
 import json
+import os
 import sys
 import threading
 import time
@@ -30,6 +31,35 @@ for stream in (sys.stdout, sys.stderr):
         pass
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:17801") + "/api/v1"
+
+# ── 数据安全守卫（2026-09-13 事故后新增）─────────────────────────────────
+# 本套件会用 /data/import 且 wipe=true 清空 nodes/todos/reports/chat/achievements 等表。
+# 曾经因为"先启动应用再跑测试"的习惯，把用户真实数据目录里的待办清掉了。
+# 现在必须同时满足两条才允许清库，缺一即拒绝运行：
+#   1) 环境变量 MINDMATE_ALLOW_WIPE=1（显式确认"这会清库"）
+#   2) 目标服务是 server 模式（临时测试服务），不是用户的桌面实例（local/lan 模式）
+def _wipe_guard():
+    if os.environ.get("MINDMATE_ALLOW_WIPE") != "1":
+        print("✗ 已阻止：本套件会清空数据（/data/import wipe=true），需要显式确认。")
+        print("  正确用法：python scripts/run_all_tests.py   （自动拉起独立数据目录的临时服务）")
+        print("  如确要针对自建服务运行：设 MINDMATE_ALLOW_WIPE=1，并确保该服务用的是测试数据目录。")
+        sys.exit(2)
+    try:
+        import json as _j
+        import urllib.request as _u
+        with _u.urlopen(BASE + "/healthz", timeout=5) as _r:
+            _mode = (_j.loads(_r.read().decode("utf-8")).get("data") or {}).get("mode")
+    except Exception as e:
+        print(f"✗ 已阻止：无法确认目标服务模式（{e}）")
+        sys.exit(2)
+    if _mode != "server":
+        print(f"✗ 已阻止：目标服务运行在 {_mode!r} 模式，看起来是正在使用的应用而不是测试服务。")
+        print("  请改用：python scripts/run_all_tests.py（会拉起独立数据目录的临时测试服务）")
+        sys.exit(2)
+
+
+_wipe_guard()
+
 TODAY = date.today().isoformat()
 YESTERDAY = (date.today() - timedelta(days=1)).isoformat()
 TOKEN = None

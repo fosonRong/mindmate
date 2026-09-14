@@ -972,14 +972,38 @@ impl Db {
         }))
     }
 
-    /// 数据清空（导入前）
+    /// 数据清空（导入前）。
+    ///
+    /// **清空前一定先做一次整库备份**：这个方法会删掉用户的全部记录与待办，
+    /// 一旦被误调用（真实事故：测试套件把用户的待办清掉了）就没有任何挽回余地。
+    /// 备份与迁移前备份用同一套机制（`VACUUM INTO`），可用任意 SQLite 工具直接打开。
     pub fn wipe(&self) -> Result<()> {
+        if let Some(backup) = self.backup_before_wipe()? {
+            tracing::warn!("清空数据前已自动备份：{}", backup.display());
+        }
         let conn = self.lock();
         conn.execute_batch(
             "DELETE FROM nodes; DELETE FROM todos; DELETE FROM reports; DELETE FROM chat_messages;
              DELETE FROM achievements;",
         )?;
         Ok(())
+    }
+
+    /// 清空数据前的整库备份（`data.db.bak.wipe-<时间戳>`，只保留最近 3 份）
+    pub fn backup_before_wipe(&self) -> Result<Option<std::path::PathBuf>> {
+        let Some(path) = self.path.as_ref() else {
+            return Ok(None); // 内存库（测试）无需备份
+        };
+        if !path.exists() {
+            return Ok(None);
+        }
+        let stamp = Local::now().format("%Y%m%d-%H%M%S");
+        let bak = path.with_extension(format!("db.bak.wipe-{stamp}"));
+        let conn = self.lock();
+        let escaped = bak.to_string_lossy().replace('\'', "''");
+        conn.execute_batch(&format!("VACUUM INTO '{escaped}'"))?;
+        crate::db::prune_backups_with_prefix(path, &format!("{}.bak.wipe-", crate::db::file_name_of(path)), 3);
+        Ok(Some(bak))
     }
 }
 

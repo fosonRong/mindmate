@@ -255,22 +255,23 @@ fn backup_before_migrate(
 }
 
 /// 只保留最近 N 份迁移备份，避免长期占用磁盘
-fn prune_backups(path: &Path, keep: usize) {
+pub(crate) fn prune_backups(path: &Path, keep: usize) {
+    prune_backups_with_prefix(path, &format!("{}.bak.v", file_name_of(path)), keep);
+}
+
+/// 同上，但按给定前缀筛选（清空数据前的备份用 `*.bak.wipe-` 前缀）
+pub(crate) fn prune_backups_with_prefix(path: &Path, prefix: &str, keep: usize) {
     let dir = match path.parent() {
         Some(d) => d,
         None => return,
     };
-    let prefix = format!(
-        "{}.bak.v",
-        path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
-    );
     let mut backups: Vec<std::path::PathBuf> = std::fs::read_dir(dir)
         .map(|rd| {
             rd.filter_map(|e| e.ok())
                 .map(|e| e.path())
                 .filter(|p| {
                     p.file_name()
-                        .map(|n| n.to_string_lossy().starts_with(&prefix))
+                        .map(|n| n.to_string_lossy().starts_with(prefix))
                         .unwrap_or(false)
                 })
                 .collect()
@@ -289,6 +290,10 @@ fn prune_backups(path: &Path, keep: usize) {
     for p in backups.into_iter().take(drop_count) {
         let _ = std::fs::remove_file(p);
     }
+}
+
+pub(crate) fn file_name_of(path: &Path) -> String {
+    path.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -398,6 +403,48 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().contains(".bak.v"))
             .count();
         assert_eq!(count, 3, "应只保留最近 3 份备份");
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn 清空数据前必须留下可恢复的备份() {
+        // 真实事故：测试套件误调 wipe()，把用户刚录入的待办清掉了且无从恢复。
+        // 现在 wipe 前置一次 VACUUM INTO 备份，这条测试锁住"备份一定存在且内容完整"。
+        let dir = tmp_dir("wipe");
+        let path = dir.join("data.db");
+        let db = Db::open(&path).unwrap();
+        db.migrate().unwrap();
+        db.create_todo(crate::db::models::NewTodo {
+            title: "不能被无声删除的待办".into(),
+            description: String::new(),
+            due_date: Some("2026-12-31".into()),
+            due_time: None,
+            priority: "中".into(),
+            tags: vec![],
+            remind_offset_min: None,
+            remind_at: None,
+        })
+        .unwrap();
+
+        db.wipe().unwrap();
+        assert!(db.list_todos(None, None, None, None, None).unwrap().is_empty(), "wipe 后当前库应为空");
+
+        let backups: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|p| p.to_string_lossy().contains(".bak.wipe-"))
+            .collect();
+        assert_eq!(backups.len(), 1, "清空前应留下 1 份备份，实际：{backups:?}");
+
+        // 备份必须能被独立打开，并且待办还在里面
+        let restored = Db::open(&backups[0]).unwrap();
+        let todos = restored.list_todos(None, None, None, None, None).unwrap();
+        assert_eq!(todos.len(), 1, "备份里应保留被清空前的待办");
+        assert_eq!(todos[0].title, "不能被无声删除的待办");
+
+        drop(restored);
         drop(db);
         let _ = std::fs::remove_dir_all(&dir);
     }

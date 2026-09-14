@@ -7,6 +7,45 @@ use mindmate_core::db::{classify, compute_remind_at, is_overdue, Db, NewNode, Ne
 use mindmate_core::i18n::Lang;
 use mindmate_core::reminder::{compose, decide, hhmm_to_minutes, ReminderKind};
 
+/// 待办归类是**按当天**算的（今日/本周/本月），所以测试里不能写死日期：
+/// 曾经写死 2026-09-20 断言「本月」，等真实日期走到 09-14 那一周，09-20 落进了本周，
+/// 测试就无缘无故红了（产品没问题）。这里统一用相对今天的日期。
+fn today() -> chrono::NaiveDate {
+    chrono::Local::now().date_naive()
+}
+
+/// 今天之后的第 n 天
+fn day_after(n: i64) -> String {
+    (today() + chrono::Duration::days(n)).format("%Y-%m-%d").to_string()
+}
+
+/// 本月内、但不在本周内的一天（用于「本月」归类断言）。
+/// 优先取本月末尾；若末尾恰在本周内，则改取本月开头。
+fn day_in_month_not_this_week() -> String {
+    use chrono::Datelike;
+    let t = today();
+    let first = t.with_day(1).unwrap();
+    let last = {
+        let next_month = if t.month() == 12 {
+            chrono::NaiveDate::from_ymd_opt(t.year() + 1, 1, 1)
+        } else {
+            chrono::NaiveDate::from_ymd_opt(t.year(), t.month() + 1, 1)
+        }
+        .unwrap()
+        - chrono::Duration::days(1);
+        next_month
+    };
+    let monday = t - chrono::Duration::days(t.weekday().num_days_from_monday() as i64);
+    let sunday = monday + chrono::Duration::days(6);
+    for d in [last, first] {
+        if d < monday || d > sunday {
+            return d.format("%Y-%m-%d").to_string();
+        }
+    }
+    // 极端情况（整月都在本周内，理论上不可能）：退回本月任意一天
+    first.format("%Y-%m-%d").to_string()
+}
+
 // ───────────────────────── 上下文智能提醒规则（FR-4.3）─────────────────────────
 
 const WINDOW: (i64, i64) = (9 * 60, 21 * 60); // 09:00 - 21:00
@@ -356,7 +395,7 @@ fn 数据层_待办完成与撤销流转() {
         .create_todo(NewTodo {
             title: "写技术方案".into(),
             description: String::new(),
-            due_date: Some("2026-09-12".into()),
+            due_date: Some(today().format("%Y-%m-%d").to_string()),
             due_time: None,
             priority: "高".into(),
             tags: vec![],
@@ -402,7 +441,7 @@ fn 数据层_待办改期后重新归类() {
         .create_todo(NewTodo {
             title: "跨月任务".into(),
             description: String::new(),
-            due_date: Some("2026-10-05".into()),
+            due_date: Some(day_after(40)),
             due_time: None,
             priority: "中".into(),
             tags: vec![],
@@ -418,7 +457,7 @@ fn 数据层_待办改期后重新归类() {
             TodoPatch {
                 title: None,
                 description: None,
-                due_date: Some("2026-09-20".into()),
+                due_date: Some(day_in_month_not_this_week()),
                 due_time: None,
                 remind_at: None,
                 priority: None,

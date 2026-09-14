@@ -109,6 +109,18 @@ autostart_rs = read("src-tauri", "src", "autostart.rs")
 check("自启状态读取不启动子进程（不用 reg.exe）",
       'Command::new("reg")' not in autostart_rs and "Stdio::piped" not in autostart_rs,
       "reg.exe 单次 150–180ms，会拖慢设置页")
+
+# 数据安全（2026-09-13 事故）：/data/import + wipe=true 曾把用户的真实待办清掉。
+# 现在两道锁：清空前自动备份 + 测试套件必须指向独立数据目录的服务。
+queries_rs = read("core", "src", "db", "queries.rs")
+check("清空数据（wipe）前会先做整库备份", "backup_before_wipe" in queries_rs and "VACUUM INTO" in queries_rs,
+      "否则误调用后无法恢复")
+run_all = read("scripts", "run_all_tests.py")
+check("全量验收自行拉起独立数据目录的临时服务（不再打真实数据目录）",
+      "--data-dir" in run_all and "--mode" in run_all and "MINDMATE_ALLOW_WIPE" in run_all,
+      "事故根因：测试清库直接作用在用户数据目录")
+guards = all("_wipe_guard" in read("scripts", f) for f in ("e2e_test.py", "reminder_test.py", "push_test.py"))
+check("三个破坏性套件都装了清库守卫（显式确认 + 必须是 server 模式）", guards)
 check("Windows 侧使用进程内注册表 API（winreg）", "winreg" in autostart_rs and "RegKey" in autostart_rs)
 
 # ── 2. 前端不得销毁 WebView2 视图 ──
@@ -180,7 +192,14 @@ check("流水线注入 RELEASE_BASE_URL（清单下载地址来源）", "RELEASE
 check("流水线先跑 Rust 单测再出包", "cargo test" in wf)
 check("存在清单生成脚本（latest.json / 校验文件 / 下载页）",
       os.path.exists(os.path.join(ROOT, "scripts", "make-manifest.mjs")))
-check("存在绿色版打包脚本", os.path.exists(os.path.join(ROOT, "scripts", "make-portable.mjs")))
+check("发布只包含安装版（不再生成绿色版）",
+      not os.path.exists(os.path.join(ROOT, "scripts", "make-portable.mjs"))
+      and "portable" not in read(".github", "workflows", "release.yml"))
+manifest_js = read("scripts", "make-manifest.mjs")
+check("更新清单按多平台生成（windows + darwin 两个架构）",
+      "darwin-aarch64" in manifest_js and "darwin-x86_64" in manifest_js and "windows-x86_64" in manifest_js)
+check("更新清单覆盖 macOS 平台键（写错会让 mac 用户收不到更新）",
+      "darwin-${arch}" in manifest_js or "darwin-" in manifest_js)
 check("发布文档已就位", os.path.exists(os.path.join(ROOT, "docs", "发布与更新文档.md")))
 
 # 版本号一致性：core 与应用同时发布，版本号必须相同（否则 /install 诊断信息会误导）
