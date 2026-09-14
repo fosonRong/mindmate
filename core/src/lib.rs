@@ -43,6 +43,15 @@ impl AppContext {
         let jwt_secret = secrets::load_or_create_jwt_secret(&cfg.data_dir)?;
         db.migrate()?;
         db.seed_defaults()?;
+        // 存量默认模板升级：产品改进内置模板后，让"保存过默认/点过恢复默认"的老用户
+        // 也能自动拿到新模板（真正自定义过的不受影响）。见 ai::STOCK_TEMPLATES_HISTORY。
+        match ai::upgrade_stock_templates(&db) {
+            Ok(kinds) if !kinds.is_empty() => {
+                tracing::info!("已升级内置模板（未自定义的存量默认）：{}", kinds.join(", "))
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("内置模板升级失败（不影响使用）：{e}"),
+        }
         // 首见证据埋点（商业化二期老用户识别的唯一来源，须在第一期就写下）
         match firstseen::ensure(&db, &cfg.data_dir, &jwt_secret, env!("CARGO_PKG_VERSION")) {
             Ok(v) => tracing::debug!("首见证据：{}（来源 {}）", v.at, v.source),

@@ -485,3 +485,54 @@ fn 简报模板渲染_无记录时给出明确空值提示() {
     );
     assert!(prompt.contains("（今日无记录）"), "空记录应有明确提示：{prompt}");
 }
+
+// ── 存量默认模板升级（v1.0.13 用户反馈：升级后简报仍用旧模板，看不到今日记录）──
+
+#[test]
+fn 模板升级_存量的旧默认会换成新默认() {
+    use crate::db::Db;
+
+    let db = Db::open_memory().unwrap();
+    db.migrate().unwrap();
+    // 模拟老用户：点过「保存模板/恢复默认」，库里固化了 V1 默认（无 {{nodes}}）
+    let v1 = STOCK_TEMPLATES_HISTORY
+        .iter()
+        .find(|(k, _)| *k == "brief")
+        .unwrap()
+        .1[0];
+    db.set_template("brief", v1).unwrap();
+    assert!(!db.get_template("brief").unwrap().unwrap().contains("{{nodes}}"));
+
+    let updated = upgrade_stock_templates(&db).unwrap();
+    assert_eq!(updated, vec!["brief".to_string()], "应识别并升级 brief");
+    let now = db.get_template("brief").unwrap().unwrap();
+    assert!(now.contains("{{nodes}}"), "升级后应包含今日记录变量");
+    // 幂等：再次启动不应重复报告
+    assert!(upgrade_stock_templates(&db).unwrap().is_empty(), "已是最新不应再升级");
+}
+
+#[test]
+fn 模板升级_用户真正自定义的内容绝不动() {
+    use crate::db::Db;
+
+    let db = Db::open_memory().unwrap();
+    db.migrate().unwrap();
+    let custom = "我的专属简报模板：{{nodes}} {{todos}} {{today}}，风格要简短。";
+    db.set_template("brief", custom).unwrap();
+
+    let updated = upgrade_stock_templates(&db).unwrap();
+    assert!(updated.is_empty(), "自定义模板不应被升级：{updated:?}");
+    assert_eq!(db.get_template("brief").unwrap().unwrap(), custom);
+}
+
+#[test]
+fn 模板升级_历史默认清单与当前默认不同且可回溯() {
+    // 防呆：清单里的"历史默认"绝不能等于当前默认（那样升级就是空转），
+    // 且当前默认必须比历史版本多出新增能力（{{nodes}}）——锁住这次改进本身。
+    let (_, history) = STOCK_TEMPLATES_HISTORY.iter().find(|(k, _)| *k == "brief").unwrap();
+    let current = default_template("brief", crate::i18n::Lang::Zh);
+    for h in *history {
+        assert!(h.trim() != current.trim(), "历史默认不应与当前默认相同");
+    }
+    assert!(current.contains("{{nodes}}") && !history[0].contains("{{nodes}}"));
+}

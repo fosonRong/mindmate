@@ -115,6 +115,14 @@ check("自启状态读取不启动子进程（不用 reg.exe）",
 queries_rs = read("core", "src", "db", "queries.rs")
 check("清空数据（wipe）前会先做整库备份", "backup_before_wipe" in queries_rs and "VACUUM INTO" in queries_rs,
       "否则误调用后无法恢复")
+# 内置模板改进要惠及存量用户（v1.0.13 教训：改了默认简报模板，点过「保存/恢复默认」
+# 的用户库里固化着旧模板，升级后新能力永远不生效且无提示）
+ai_rs = read("core", "src", "ai", "mod.rs")
+check("存在存量默认模板升级机制（STOCK_TEMPLATES_HISTORY + upgrade_stock_templates）",
+      "STOCK_TEMPLATES_HISTORY" in ai_rs and "upgrade_stock_templates" in ai_rs)
+check("启动时会执行模板升级", "upgrade_stock_templates" in read("core", "src", "lib.rs"))
+check("模板升级不触碰用户自定义（只匹配历史默认）",
+      "stored.trim() == h.trim()" in ai_rs.replace('"', '') or "h.trim()" in ai_rs)
 run_all = read("scripts", "run_all_tests.py")
 check("全量验收自行拉起独立数据目录的临时服务（不再打真实数据目录）",
       "--data-dir" in run_all and "--mode" in run_all and "MINDMATE_ALLOW_WIPE" in run_all,

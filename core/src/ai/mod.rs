@@ -980,6 +980,51 @@ pub fn default_template(kind: &str, lang: crate::i18n::Lang) -> String {
     }
 }
 
+/// 历届内置默认模板（按类型）。
+///
+/// 背景（v1.0.13 用户反馈）：「保存模板」与「恢复默认」都会把**当时版本**的内置默认
+/// 写进数据库；之后产品改进默认模板（例如简报新增「今日记录」数据源），这些用户
+/// 升级后仍然用旧模板，新能力永远不生效。因此启动时做一次"存量模板升级"：
+/// 库中内容与**任一历史默认**逐字一致（即用户从未真正自定义）就替换为当前默认；
+/// 真正自定义过的内容绝不动。每改一次默认模板，就把旧版追加进对应清单。
+pub const STOCK_TEMPLATES_HISTORY: &[(&str, &[&str])] = &[(
+    "brief",
+    &[r#"你是我的个人工作助手。请生成今天的晨间简报。
+
+# 今日日期
+{{date}}
+
+# 昨日未完成的待办
+{{todos}}
+
+# 今日日程与待办
+{{today}}
+
+# 要求
+1. 输出 Markdown，标题「☀️ 今日简报」
+2. 包含：昨日遗留、今日重点（按优先级给出 Top3 建议顺序）、一句话鼓励
+3. 不超过 200 字，不编造内容"#],
+)];
+
+/// 启动时升级"存量默认模板"：库中内容 == 某历史默认 → 换成当前默认。
+/// 返回被更新的类型列表（写日志用）；真正自定义过的模板不会出现在这里。
+pub fn upgrade_stock_templates(db: &crate::db::Db) -> Result<Vec<String>> {
+    let mut updated = Vec::new();
+    for (kind, history) in STOCK_TEMPLATES_HISTORY {
+        if let Some(stored) = db.get_template(kind)? {
+            let current = default_template(kind, crate::i18n::Lang::Zh);
+            if stored.trim() == current.trim() {
+                continue; // 已是最新
+            }
+            if history.iter().any(|h| stored.trim() == h.trim()) {
+                db.set_template(kind, &current)?;
+                updated.push((*kind).to_string());
+            }
+        }
+    }
+    Ok(updated)
+}
+
 pub const DEFAULT_DAILY: &str = r#"你是我的个人工作助手。请根据以下今日记录，生成一份简洁的日报。
 
 # 今日录入内容（按时刻顺序的节点）

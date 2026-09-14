@@ -1,6 +1,6 @@
 {
   "name": "mindmate",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "private": true,
   "type": "module",
   "description": "智伴 Mindmate — AI 工作生活伴侣（桌面端 + 浏览器端）",
