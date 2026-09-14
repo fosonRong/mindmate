@@ -187,8 +187,10 @@
 
 /* 设置页 */
 .set-split { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 20px; align-items: start; }
-@media (max-width: 820px) { .set-split { grid-template-columns: 1fr; } }
-.set-menu { display: flex; flex-direction: column; gap: 2px; }
+/* 内容下滑时左侧菜单固定不动（sticky 相对滚动容器 .page-body 生效） */
+.set-menu { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; }
+/* 窄屏切为单列后菜单在内容上方，固定反而挡内容 */
+@media (max-width: 820px) { .set-split { grid-template-columns: 1fr; } .set-menu { position: static; } }
 .set-menu button { text-align: left; padding: 9px 12px; border-radius: 10px; font-size: 13px; color: var(--text-regular); }
 .set-menu button:hover { background: var(--bg-hover); }
 .set-menu button.on { background: var(--primary-weak); color: var(--primary); font-weight: 500; }

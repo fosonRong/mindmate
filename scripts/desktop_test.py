@@ -123,6 +123,12 @@ check("存在存量默认模板升级机制（STOCK_TEMPLATES_HISTORY + upgrade_
 check("启动时会执行模板升级", "upgrade_stock_templates" in read("core", "src", "lib.rs"))
 check("模板升级不触碰用户自定义（只匹配历史默认）",
       "stored.trim() == h.trim()" in ai_rs.replace('"', '') or "h.trim()" in ai_rs)
+# 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
+md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
+check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)
+check("剥围栏实现独立成模块（供验收脚本直接测试）",
+      os.path.exists(os.path.join(ROOT, "apps", "web", "src", "lib", "markdown.ts")))
+check("报告模板带防围栏提示词约束", "不要把整份内容包在" in ai_rs)
 run_all = read("scripts", "run_all_tests.py")
 check("全量验收自行拉起独立数据目录的临时服务（不再打真实数据目录）",
       "--data-dir" in run_all and "--mode" in run_all and "MINDMATE_ALLOW_WIPE" in run_all,

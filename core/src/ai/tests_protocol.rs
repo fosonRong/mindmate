@@ -536,3 +536,32 @@ fn 模板升级_历史默认清单与当前默认不同且可回溯() {
     }
     assert!(current.contains("{{nodes}}") && !history[0].contains("{{nodes}}"));
 }
+
+// ── 防围栏约束（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）──
+
+#[test]
+fn 报告类模板_都带防围栏输出约束() {
+    // 提示词约束只是降低概率，渲染层 unwrapMarkdownFence 才是兜底；两层都要在
+    for (name, tpl) in [
+        ("日报", DEFAULT_DAILY),
+        ("周报", DEFAULT_WEEKLY),
+        ("月报", DEFAULT_MONTHLY),
+        ("简报", DEFAULT_BRIEF),
+        ("晚安", DEFAULT_GOODNIGHT),
+        ("复盘", DEFAULT_REVIEW),
+    ] {
+        assert!(
+            tpl.contains("不要把整份内容包在"),
+            "{name}模板缺少防围栏约束"
+        );
+    }
+    // 历史清单里登记的旧版本不含该约束（这正是要升级它们的原因）
+    for (kind, history) in STOCK_TEMPLATES_HISTORY {
+        for h in *history {
+            assert!(
+                !h.contains("不要把整份内容包在"),
+                "{kind} 的历史版本不应含新约束（它应该是改动前的旧版）"
+            );
+        }
+    }
+}

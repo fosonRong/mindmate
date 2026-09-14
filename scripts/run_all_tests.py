@@ -118,6 +118,7 @@ try:
     run("桌面端静态验收（IPC 授权/速记浮窗）", [sys.executable, "scripts/desktop_test.py"])
     run("国际化专项验收（四语/插值）", [sys.executable, "scripts/i18n_test.py"])
     run("国际化消息编译验收（防白屏）", ["node", "scripts/i18n_compile_test.mjs"])
+    run("Markdown 渲染验收（防源码显示）", ["node", "scripts/markdown_test.mjs"])
     run("前端生产构建", [NPM, "run", "build"], cwd=os.path.join(ROOT, "apps", "web"))
 finally:
     server.kill()
