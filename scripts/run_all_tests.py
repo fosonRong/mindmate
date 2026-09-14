@@ -85,9 +85,13 @@ def start_test_server():
     port = free_port()
     base = f"http://127.0.0.1:{port}"
     print(f"临时测试服务：data-dir={data_dir} port={port}")
+    # MINDMATE_AI_KEY="" ：强制"未配置 AI Key"，让套件确定性走本地降级路径。
+    # 系统钥匙串是全局的，若不显式清掉，测试会拿用户真实 Key 去打真实上游 API，
+    # 上游限流/网络波动就会让断言随机失败（长期存在的"偶发 175/176"即源于此）。
+    child_env = dict(os.environ, MINDMATE_AI_KEY="")
     proc = subprocess.Popen(
         [exe, "--mode", "server", "--headless", "--port", str(port), "--data-dir", data_dir],
-        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=child_env,
     )
     for _ in range(60):  # 最多等 30 秒
         try:

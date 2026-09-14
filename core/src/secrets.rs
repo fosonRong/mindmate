@@ -98,10 +98,25 @@ pub fn has_secret(name: &str) -> bool {
 }
 
 // ── AI Key 便捷封装 ──
+
+/// 环境变量覆盖：设置后用它的值当作 AI Key（**空字符串表示"没有 Key"**）。
+///
+/// 两个用途：
+///   1) 自动化验收必须**确定、离线**——系统钥匙串是全局的，临时测试服务即使用独立数据目录
+///      也照样读到用户的真实 Key，于是测试会去打真实上游 API；上游一旦限流/网络波动，
+///      断言就随机失败（这正是长期存在的"偶发 175/176"的根因）。测试服务设
+///      `MINDMATE_AI_KEY=`（空值）即可确定性走本地降级路径。
+///   2) 服务器/容器部署可直接从环境注入 Key，不依赖桌面钥匙串。
+pub const ENV_AI_KEY: &str = "MINDMATE_AI_KEY";
+
 pub fn save_api_key(key: &str) -> Result<()> {
     save_secret(SECRET_AI_KEY, key)
 }
 pub fn load_api_key() -> Result<Option<String>> {
+    if let Ok(v) = std::env::var(ENV_AI_KEY) {
+        let v = v.trim().to_string();
+        return Ok(if v.is_empty() { None } else { Some(v) });
+    }
     load_secret(SECRET_AI_KEY)
 }
 pub fn delete_api_key() -> Result<()> {
@@ -128,5 +143,32 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
             .verify_password(password.as_bytes(), &parsed)
             .is_ok(),
         Err(_) => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ai_key_环境变量可覆盖且空值表示未配置() {
+        // 自动化验收依赖这个语义：测试服务设 MINDMATE_AI_KEY="" → 视为未配置 Key，
+        // 走确定性的本地降级路径，不会拿用户真实 Key 去打真实上游 API。
+        let saved = std::env::var(ENV_AI_KEY).ok();
+
+        std::env::set_var(ENV_AI_KEY, "sk-from-env");
+        assert_eq!(load_api_key().unwrap().as_deref(), Some("sk-from-env"));
+
+        std::env::set_var(ENV_AI_KEY, "");
+        assert_eq!(load_api_key().unwrap(), None, "空值必须表示未配置");
+        assert!(!matches!(load_api_key(), Ok(Some(_))));
+
+        std::env::set_var(ENV_AI_KEY, "   ");
+        assert_eq!(load_api_key().unwrap(), None, "纯空白也视为未配置");
+
+        match saved {
+            Some(v) => std::env::set_var(ENV_AI_KEY, v),
+            None => std::env::remove_var(ENV_AI_KEY),
+        }
     }
 }

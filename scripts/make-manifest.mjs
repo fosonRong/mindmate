@@ -76,10 +76,18 @@ function readSignature(file) {
 
 const sha256 = (file) => createHash('sha256').update(readFileSync(file)).digest('hex')
 
-/** 从路径推断 macOS 架构（CI 会显式传 --target，故三元组一定在路径里） */
+/** 从路径推断 macOS 架构。
+ *
+ * ⚠️ 不要只认 cargo 三元组：CI 用 actions/download-artifact 下载后，目录名是
+ * `artifacts/darwin-aarch64/...`，而不是 `.../aarch64-apple-darwin/...`。
+ * 早期实现只匹配三元组，两个架构于是都落到 fallback、被当成同一个架构 ——
+ * 结果是清单里只剩 x86_64，Apple 芯片用户永远收不到更新，而且**不报任何错**
+ * （v1.0.11 发布时实际发生）。这里按「先 arm，再 x86」判断，覆盖两种目录布局。
+ */
 function macArch(file) {
-  if (file.includes('aarch64-apple-darwin')) return 'aarch64'
-  if (file.includes('x86_64-apple-darwin')) return 'x86_64'
+  const p = file.replace(/\\/g, '/').toLowerCase()
+  if (/aarch64|arm64/.test(p)) return 'aarch64'
+  if (/x86_64|x64|amd64/.test(p)) return 'x86_64'
   return process.arch === 'arm64' ? 'aarch64' : 'x86_64'
 }
 
@@ -125,6 +133,24 @@ function main() {
     console.error('  请先运行 npm run desktop:build（CI 请确认 ARTIFACTS_DIR 指向下载目录）')
     process.exit(1)
   }
+
+  // 关键校验：两个 macOS 架构必须各有一个产物。少一个就意味着对应机型的用户
+  // 永远收不到更新（清单里没有 darwin-<arch> 时 updater 只是"没有可用更新"，不会报错），
+  // 所以这里必须当红灯而不是静默跳过。CI 上传产物时就已经用 if-no-files-found: error
+  // 保证文件存在，这里再兜一道，防止"文件在但架构被识别成同一个"。
+  const missingArch = ['aarch64', 'x86_64'].filter((a) => !appTarballs[a])
+  if (Object.keys(appTarballs).length > 0 && missingArch.length) {
+    console.error(`✗ macOS 缺少架构：${missingArch.join(', ')}（清单里没有该键，对应机型收不到更新）`)
+    console.error(`  已识别到的产物：${Object.entries(appTarballs).map(([a, f]) => `${a}=${path.basename(f)}`).join(', ')}`)
+    process.exit(1)
+  }
+  for (const [arch, f] of Object.entries(appTarballs)) {
+    if (!f.endsWith('.sig') && !existsSync(`${f}.sig`)) {
+      console.error(`✗ macOS ${arch} 缺少更新签名：${path.basename(f)}.sig（客户端会拒绝安装）`)
+      process.exit(1)
+    }
+  }
+
   if (nsisExe && !path.basename(nsisExe).includes(version)) {
     console.warn(`⚠️  安装包文件名里没有当前版本 ${version}：${path.basename(nsisExe)}（确认不是旧产物？）`)
   }

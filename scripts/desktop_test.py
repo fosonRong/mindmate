@@ -200,6 +200,11 @@ check("更新清单按多平台生成（windows + darwin 两个架构）",
       "darwin-aarch64" in manifest_js and "darwin-x86_64" in manifest_js and "windows-x86_64" in manifest_js)
 check("更新清单覆盖 macOS 平台键（写错会让 mac 用户收不到更新）",
       "darwin-${arch}" in manifest_js or "darwin-" in manifest_js)
+check("架构识别兼容 CI 的产物目录名（darwin-aarch64 / darwin-x86_64，而非只有 cargo 三元组）",
+      "darwin-aarch64" in manifest_js and "/aarch64|arm64/" in manifest_js,
+      "曾把两个架构识别成同一个，清单里只剩 x86_64，Apple 芯片用户静默收不到更新")
+check("清单生成会校验两个 macOS 架构都在（缺一个直接失败而非静默跳过）",
+      "缺少架构" in manifest_js and "process.exit(1)" in manifest_js)
 check("发布文档已就位", os.path.exists(os.path.join(ROOT, "docs", "发布与更新文档.md")))
 
 # 版本号一致性：core 与应用同时发布，版本号必须相同（否则 /install 诊断信息会误导）
