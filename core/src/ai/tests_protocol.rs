@@ -416,3 +416,72 @@ fn 预设_领Key入口是官方确认的管理页() {
     // 百炼控制台用 hash 路由，直链要落到 API Key 页
     assert!(find("qwen").key_url.contains("/api-key"), "通义应直达 API Key 页");
 }
+
+// ── 晨间简报：必须汇总「今日记录 + 待办」（用户反馈：录入了却不在简报里）──
+
+#[test]
+fn 简报默认模板_包含今日记录与两类待办变量() {
+    // 变量名写错会让模板渲染后残留 {{xxx}} 字面量，模型收到脏提示词，
+    // 而界面看不出问题；所以这里逐项断言模板里有这些占位符。
+    for var in ["{{date}}", "{{nodes}}", "{{todos}}", "{{today}}"] {
+        assert!(
+            DEFAULT_BRIEF.contains(var),
+            "晨间简报模板缺少 {var}（用户要求：待办 + 今日记录汇总后润色）"
+        );
+    }
+    assert!(
+        DEFAULT_BRIEF.contains("今日进展") || DEFAULT_BRIEF.contains("已记录"),
+        "要求里应说明如何呈现今日已记录内容"
+    );
+}
+
+#[test]
+fn 简报模板渲染_今日记录会真正进入提示词() {
+    use crate::db::{Db, NewNode};
+
+    let db = Db::open_memory().unwrap();
+    db.migrate().unwrap();
+    let node = db
+        .create_node(NewNode {
+            content: "编写北极星OAuth2授权接入千问办公方案".into(),
+            date: Some("2026-09-14".into()),
+            tags: vec!["工作".into()],
+            todo_id: None,
+        })
+        .unwrap();
+    let nodes = db.list_nodes_by_date("2026-09-14").unwrap();
+    assert_eq!(nodes.len(), 1);
+
+    let prompt = render_template(
+        DEFAULT_BRIEF,
+        &[
+            ("date", "2026-09-14".into()),
+            ("nodes", format_nodes(&nodes)),
+            ("todos", "（无待办）".into()),
+            ("today", "（无待办）".into()),
+        ],
+    );
+    assert!(
+        prompt.contains("编写北极星OAuth2授权接入千问办公方案"),
+        "渲染后的提示词必须包含用户当天录入的内容"
+    );
+    assert!(!prompt.contains("{{nodes}}"), "占位符应已被替换，不能残留");
+    // 记录格式化应带上时刻与标签（便于模型理解上下文）
+    assert!(prompt.contains("[工作]"), "记录应带上标签：{prompt}");
+    assert_eq!(node.tags, vec!["工作".to_string()]);
+}
+
+#[test]
+fn 简报模板渲染_无记录时给出明确空值提示() {
+    // 空列表不能变成空字符串：那会让模型看到「已记录内容：」后面什么都没有，容易编造
+    let prompt = render_template(
+        DEFAULT_BRIEF,
+        &[
+            ("date", "2026-09-14".into()),
+            ("nodes", format_nodes(&[])),
+            ("todos", "（无待办）".into()),
+            ("today", "（无待办）".into()),
+        ],
+    );
+    assert!(prompt.contains("（今日无记录）"), "空记录应有明确提示：{prompt}");
+}

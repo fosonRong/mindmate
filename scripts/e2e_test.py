@@ -353,6 +353,12 @@ check("月报生成成功", len(text_m) > 50 and "月报" in text_m, f"{len(text
 
 text_b, _ = read_sse("/ai/brief", {"date": TODAY})
 check("晨间简报生成成功", len(text_b) > 30, f"{len(text_b)} 字符")
+# 用户反馈：当天已录入内容，简报里却看不到。简报应汇总「今日记录 + 待办」后生成，
+# 因此断言简报确实反映了当天节点（无 Key 走降级模板时同样必须包含）。
+_brief_probe = "早起晨跑 5km"  # §2 创建的节点之一
+check("晨间简报包含今日记录内容（降级模板同样要求）",
+      _brief_probe in text_b or "今日进展" in text_b,
+      f"简报未反映今日记录：{text_b[:80]}")
 
 text_g, _ = read_sse("/ai/goodnight", {"date": TODAY})
 check("晚安总结生成成功", len(text_g) > 30, f"{len(text_g)} 字符")

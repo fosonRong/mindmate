@@ -1174,11 +1174,25 @@ async fn ai_brief(
                 .filter(|t| t.due_date == date)
                 .cloned()
                 .collect();
+            // 今天已录入的记录节点：简报要「汇总待办 + 今日记录」再润色，
+            // 缺了它就会出现「刚记完却不在简报里」的错觉（用户实际反馈过）
+            let today_nodes = ctx
+                .db
+                .list_nodes_by_date(&date)
+                .map_err(|e| e.to_string())?;
 
             if !cfg.has_key && cfg.provider != "ollama" {
                 // 降级：规则拼装简报（落库由 ai_stream_from 统一处理）
                 let mut md =
-                    format!("# ☀️ 今日简报\n\n> 本地模板生成（未配置 AI 模型）\n\n## 昨日遗留\n\n");
+                    format!("# ☀️ 今日简报\n\n> 本地模板生成（未配置 AI 模型）\n\n");
+                // 今天已记录的内容：使用者希望简报能反映当日实际录入，
+                // 因此降级模板也必须包含（否则「录入了却看不到」）
+                if !today_nodes.is_empty() {
+                    md.push_str("## 今日进展\n\n");
+                    md.push_str(&ai::format_nodes(&today_nodes));
+                    md.push_str("\n\n");
+                }
+                md.push_str("## 昨日遗留\n\n");
                 if pending.is_empty() {
                     md.push_str("- 无，干得漂亮 ✨\n");
                 } else {
@@ -1218,6 +1232,7 @@ async fn ai_brief(
                 &tpl,
                 &[
                     ("date", date.clone()),
+                    ("nodes", ai::format_nodes(&today_nodes)),
                     ("todos", ai::format_todos(&pending)),
                     ("today", ai::format_todos(&today_todos)),
                 ],
@@ -1225,6 +1240,7 @@ async fn ai_brief(
             Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report("brief", &date))
         }
     })
+
     .await?;
     Ok(stream)
 }
