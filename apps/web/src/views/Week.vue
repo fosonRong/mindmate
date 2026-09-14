@@ -42,6 +42,31 @@ function statOf(date: string) {
   return stats.value?.days.find((x) => x.date === date)
 }
 
+// 每天默认只列 3 条；「＋N 更多」可点击展开全部（再点收起）。
+// 真机踩过：这里原来只是一行纯文本提示，点击没反应——用户看到"更多"就会去点。
+const FOLD_LIMIT = 3
+const expanded = ref<Record<string, boolean>>({})
+
+function isExpanded(date: string) {
+  return expanded.value[date] === true
+}
+
+function toggleExpand(date: string) {
+  expanded.value[date] = !isExpanded(date)
+}
+
+/** 折叠时取前 N 条，展开时取全部 */
+function visibleNodes(date: string) {
+  const list = nodesOf(date)
+  return isExpanded(date) ? list : list.slice(0, FOLD_LIMIT)
+}
+
+/** 折叠时截断长文本，展开后显示完整内容（否则"展开"看不到更多信息） */
+function displayText(content: string, date: string) {
+  if (isExpanded(date)) return content
+  return content.length > 22 ? `${content.slice(0, 22)}…` : content
+}
+
 async function load() {
   loading.value = true
   try {
@@ -145,15 +170,22 @@ onMounted(load)
             </div>
           </div>
           <div
-            v-for="n in nodesOf(d.date).slice(0, 3)"
+            v-for="n in visibleNodes(d.date)"
             :key="n.id"
             class="small"
             style="color: var(--text-regular); margin-bottom: 2px"
           >
             <span class="mono muted">{{ n.createdAt.slice(11, 16) }}</span>
-            {{ n.content.slice(0, 22) }}{{ n.content.length > 22 ? '…' : '' }}
+            {{ displayText(n.content, d.date) }}
           </div>
-          <div v-if="nodesOf(d.date).length > 3" class="small muted">{{ $t('＋{a} 更多', { a: nodesOf(d.date).length - 3 }) }}</div>
+          <button
+            v-if="nodesOf(d.date).length > FOLD_LIMIT"
+            class="btn-more"
+            :title="isExpanded(d.date) ? $t('收起 ▴') : $t('展开当天全部记录')"
+            @click.stop="toggleExpand(d.date)"
+          >
+            {{ isExpanded(d.date) ? $t('收起 ▴') : $t('＋{a} 更多', { a: nodesOf(d.date).length - FOLD_LIMIT }) }}
+          </button>
         </template>
 
         <template v-else-if="d.isFuture">

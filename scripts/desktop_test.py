@@ -129,6 +129,14 @@ check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFen
 check("剥围栏实现独立成模块（供验收脚本直接测试）",
       os.path.exists(os.path.join(ROOT, "apps", "web", "src", "lib", "markdown.ts")))
 check("报告模板带防围栏提示词约束", "不要把整份内容包在" in ai_rs)
+# 可点击提示必须真的能点（真机踩过：周视图「＋N 更多」是纯文本，点击没反应）
+week_vue = read("apps", "web", "src", "views", "Week.vue")
+_has_more_button = "btn-more" in week_vue and "@click.stop=\"toggleExpand(d.date)\"" in week_vue
+check("周视图「＋N 更多」是按钮且绑定了展开事件", _has_more_button,
+      "纯文本提示会让用户以为是可点击的")
+check("周视图支持展开后收起（不只有展开）", "toggleExpand" in week_vue and "收起 ▴" in week_vue)
+check("展开后显示记录全文（截断只在折叠态）",
+      "displayText" in week_vue and "isExpanded(date)" in week_vue)
 run_all = read("scripts", "run_all_tests.py")
 check("全量验收自行拉起独立数据目录的临时服务（不再打真实数据目录）",
       "--data-dir" in run_all and "--mode" in run_all and "MINDMATE_ALLOW_WIPE" in run_all,

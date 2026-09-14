@@ -143,6 +143,10 @@
 
 /* 进度条 */
 .progress { height: 5px; }
+/* 周视图「＋N 更多 / 收起」：可点击（此前是纯文本提示，点了没反应） */
+.btn-more { align-self: flex-start; margin-top: 2px; padding: 1px 6px; border-radius: 6px; font-size: 12px; color: var(--primary); background: none; border: none; cursor: pointer; }
+.btn-more:hover { background: var(--primary-weak); }
+
 .ring { width: 40px; height: 40px; }
 .ring .num { font-size: 10px; }
 

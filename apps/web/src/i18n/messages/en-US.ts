@@ -456,4 +456,5 @@ export default {
   '网络不通或连接超时：检查本机网络；使用 OpenAI 等境外服务通常需要开代理': 'Network unreachable or timed out: check your connection; overseas services such as OpenAI usually need a proxy.',
   '返回内容不是接口响应：多半是 Base URL 填成了网页地址，检查一下': 'The response was not an API response: the Base URL is most likely a web page address — please check it.',
   '页面打不开？登录厂商官网后，在控制台里找「API Keys / 密钥管理」即可。': 'Page not opening? Sign in on the provider website and look for "API Keys" in the console.',
+  '展开当天全部记录': 'Show all entries for this day',
 } as Record<string, string>
