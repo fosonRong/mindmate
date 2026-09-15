@@ -233,6 +233,18 @@ function main() {
        Apple 芯片选 aarch64，Intel 机型选 x86_64。</p>`
     : ''
 
+  // Windows 杀软误报（v1.0.16 真实事故）：未签名程序会被 Defender 的机器学习模型判为木马，
+  // 安装包能装、但 exe 一落地就被隔离，用户看到的就是"装完打不开"。
+  // 我们现在发布前会扫描并拦截（scripts/defender_check.py），但用户本机的定义版本可能更新，
+  // 所以下载页必须给出可自查、可自救的说明。
+  const winNote = downloads.some((d) => d.group === 'Windows')
+    ? `<p class="muted">Windows 说明：当前安装包<b>未经代码签名</b>。若安装后程序打不开（没有窗口、也没有报错），
+       多半是 Windows Defender 把未签名程序误判成了木马并隔离了主程序。请在
+       「Windows 安全中心 → 病毒和威胁防护 → 保护历史记录」里确认，然后把
+       <code>%LOCALAPPDATA%\\Mindmate</code> 加入「排除项」后重新安装；
+       也可用下面的 SHA-256 核对文件完整性。</p>`
+    : ''
+
   const html = `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -256,6 +268,7 @@ function main() {
   <h2>校验（建议安装前核对）</h2>
   <pre>${sumsText}</pre>
   ${macNote}
+  ${winNote}
   <p class="muted">已安装的用户会在应用内自动收到更新提示，无需手动下载。</p>
   <footer class="muted">
     <p>隐私：你的记录与待办只保存在本机；本页仅提供程序下载与版本信息。</p>

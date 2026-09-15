@@ -119,6 +119,18 @@ try:
     run("国际化专项验收（四语/插值）", [sys.executable, "scripts/i18n_test.py"])
     run("国际化消息编译验收（防白屏）", ["node", "scripts/i18n_compile_test.mjs"])
     run("Markdown 渲染验收（防源码显示）", ["node", "scripts/markdown_test.mjs"])
+    # 杀软误报自检（v1.0.16 的教训）：未签名二进制会被 Defender 的机器学习模型误判成木马，
+    # 用户表现为「安装后打不开」——文件装上了，但一落地就被实时保护隔离。
+    # 放在这里是因为此前**没有任何环节会真正扫一次即将发布的二进制**。
+    # 非 Windows 或无 Defender 自动跳过，不影响 macOS 构建。
+    run(
+        "杀软误报自检（Windows Defender）",
+        [sys.executable, "scripts/defender_check.py", "--strict",
+         os.path.join(ROOT, "src-tauri", "target", "release",
+                      "mindmate.exe" if os.name == "nt" else "mindmate"),
+         os.path.join(ROOT, "src-tauri", "target", "release", "bundle", "nsis", "*.exe")],
+        show=("通过", "干净", "被检出", "未能判定", "FAIL", "error"),
+    )
     run("前端生产构建", [NPM, "run", "build"], cwd=os.path.join(ROOT, "apps", "web"))
 finally:
     server.kill()

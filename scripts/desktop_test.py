@@ -229,6 +229,30 @@ check("清单生成会校验两个 macOS 架构都在（缺一个直接失败而
       "缺少架构" in manifest_js and "process.exit(1)" in manifest_js)
 check("发布文档已就位", os.path.exists(os.path.join(ROOT, "docs", "发布与更新文档.md")))
 
+# 杀软误报（v1.0.16 的真实事故：安装包能装，但主程序被 Defender 判为
+# Trojan:Win32/Bearfoos.A!ml 并隔离，用户表现为"安装后打不开"）。
+# 未签名二进制的 ML 误报无法从代码里消除，只能靠"发布前真的扫一次"来拦截，
+# 因此这里把这条防线也钉成静态断言，避免后续提交把它删掉。
+av_script = read("scripts", "defender_check.py")
+check("存在杀软误报自检脚本", os.path.exists(os.path.join(ROOT, "scripts", "defender_check.py")))
+check("杀软自检在 %TEMP% 中立目录扫描（项目目录/安装目录已在 Defender 排除项内，原地扫恒为干净）",
+      "mkdtemp" in av_script and "copy2" in av_script)
+check("杀软自检以 MpCmdRun 退出码为判据（2 = 检出威胁）",
+      "MpCmdRun" in av_script and "returncode == 2" in av_script)
+check("杀软自检支持 --strict（CI 检出即失败）",
+      "--strict" in av_script and "return 1 if strict else 0" in av_script)
+check("非 Windows / 无 Defender 时自检自动跳过（不阻断 macOS 构建）",
+      "非 Windows：跳过杀软自检" in av_script and "未找到 MpCmdRun.exe" in av_script)
+check("CI 在上传 Windows 产物前强制杀软自检",
+      "defender_check.py --strict" in wf,
+      "缺这一步就会把「装完打不开」的包发给用户（v1.0.16 事故）")
+check("全量验收纳入杀软误报自检", "defender_check.py" in read("scripts", "run_all_tests.py"))
+check("下载页给出 Windows 误报自救指引（保护历史记录 → 排除项 → 重装）",
+      "保护历史记录" in manifest_js and "排除项" in manifest_js)
+check("误报处置文档已就位（含提交给微软的说明文本）",
+      os.path.exists(os.path.join(ROOT, "docs", "杀软误报处置.md"))
+      and "filesubmission" in read("docs", "杀软误报处置.md"))
+
 # 版本号一致性：core 与应用同时发布，版本号必须相同（否则 /install 诊断信息会误导）
 core_toml = read("core", "Cargo.toml")
 m = re.search(r'^version = "([^"]+)"', core_toml, re.M)
