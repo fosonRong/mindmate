@@ -27,7 +27,36 @@ export interface Todo {
   createdAt: string
   updatedAt: string
   completedAt: string | null
+  /** 循环类型：''=不循环 daily=每天 weekly=每周 monthly=每月 */
+  recurType: string
+  /** 循环锚点日期（首个实例的 dueDate） */
+  recurAnchor: string
+  /** 本实例由哪个根实例生成（用户手建的是根：null） */
+  recurSourceId: number | null
   overdue: boolean
+}
+
+export interface NewsItem {
+  title: string
+  url: string
+  hot: number | null
+  channel: string
+  channelName: string
+}
+
+export interface HotNewsResult {
+  items: NewsItem[]
+  /** live=本次实抓 cache=回退缓存 none=无数据 */
+  source: string
+  fetchedAt: string
+  errors: string[]
+  /** true=源站抓取失败后回退的历史数据 */
+  stale: boolean
+}
+
+export interface NewsChannel {
+  id: string
+  name: string
 }
 
 export interface DailyStats {

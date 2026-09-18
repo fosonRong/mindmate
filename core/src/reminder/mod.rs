@@ -240,6 +240,8 @@ pub fn spawn(ctx: Arc<AppContext>) {
     let last_tick = Arc::new(AtomicI64::new(Local::now().timestamp()));
     let last_brief_day = Arc::new(std::sync::Mutex::new(String::new()));
     let last_goodnight_day = Arc::new(std::sync::Mutex::new(String::new()));
+    // 循环待办补期：每天第一次 tick 时跑一次（幂等）
+    let last_recur_day = Arc::new(std::sync::Mutex::new(String::new()));
 
     tokio::spawn(async move {
         let mut ticker = interval(TokioDuration::from_secs(20));
@@ -249,6 +251,26 @@ pub fn spawn(ctx: Arc<AppContext>) {
                 _ = ticker.tick() => {
                     if let Err(e) = tick(&ctx, &last_record_fire, &last_tick, &last_brief_day, &last_goodnight_day).await {
                         tracing::warn!("提醒调度 tick 失败: {e}");
+                    }
+                    // 跨天后的第一次 tick：为循环待办补齐下一期（幂等）
+                    let today = Local::now().format("%Y-%m-%d").to_string();
+                    let mut last = last_recur_day.lock().unwrap_or_else(|e| e.into_inner());
+                    if *last != today {
+                        *last = today;
+                        drop(last);
+                        match ctx.db.ensure_recurring() {
+                            Ok(created) if !created.is_empty() => {
+                                tracing::info!("循环待办跨天补期 {} 条", created.len());
+                                for todo in created {
+                                    ctx.bus.publish(Event::new(
+                                        "todo.created",
+                                        serde_json::to_value(&todo).unwrap_or_default(),
+                                    ));
+                                }
+                            }
+                            Ok(_) => {}
+                            Err(e) => tracing::warn!("循环待办补期失败（不影响使用）：{e}"),
+                        }
                     }
                 }
                 Ok(ev) = rx.recv() => {

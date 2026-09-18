@@ -1,6 +1,6 @@
 [package]
 name = "mindmate"
-version = "1.0.17"
+version = "1.0.18"
 edition = "2021"
 description = "智伴 Mindmate 桌面端"
 authors = ["Mindmate"]

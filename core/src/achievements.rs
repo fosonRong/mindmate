@@ -299,6 +299,7 @@ mod tests {
                 tags: vec![],
                 remind_offset_min: None,
                 remind_at: None,
+                recur_type: String::new(),
             })
             .unwrap();
         let bus = EventBus::new();

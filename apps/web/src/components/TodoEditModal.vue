@@ -19,7 +19,17 @@ const dueTime = ref(props.todo?.dueTime || '')
 const priority = ref(props.todo?.priority || '中')
 const tags = ref<string[]>(props.todo?.tags ? [...props.todo.tags] : [])
 const remindOffset = ref<number>(30)
+// 循环待办：''=不循环 daily=每天 weekly=每周 monthly=每月。
+// 编辑既有循环实例时显示其类型；修改会写回链的根实例（后端按根重算后续生成）。
+const recurType = ref<string>(props.todo?.recurType || '')
 const creating = ref(false)
+
+const RECUR_OPTIONS = [
+  { value: '', label: '不循环' },
+  { value: 'daily', label: '每天' },
+  { value: 'weekly', label: '每周' },
+  { value: 'monthly', label: '每月' },
+]
 
 const TAG_OPTIONS = ['工作', '生活', '健康', '学习']
 
@@ -43,7 +53,8 @@ async function save() {
         dueDate: dueDate.value,
         dueTime: dueTime.value || null,
         priority: priority.value,
-        tags: tags.value
+        tags: tags.value,
+        recurType: recurType.value
       })
       app.toast('success', t('已保存'))
     } else {
@@ -54,7 +65,8 @@ async function save() {
         dueTime: dueTime.value || null,
         priority: priority.value,
         tags: tags.value,
-        remindOffsetMin: dueTime.value ? remindOffset.value : undefined
+        remindOffsetMin: dueTime.value ? remindOffset.value : undefined,
+        recurType: recurType.value
       })
       app.toast('success', t('已添加待办'))
     }
@@ -94,6 +106,23 @@ async function save() {
       </div>
 
       <div class="row" style="gap: 12px">
+        <div class="form-row" style="flex: 1">
+          <label class="form-label">{{ $t('重复') }}</label>
+          <div class="seg" style="width: 100%">
+            <button
+              v-for="o in RECUR_OPTIONS"
+              :key="o.value"
+              :class="{ on: recurType === o.value }"
+              style="flex: 1; font-size: 12px"
+              @click="recurType = o.value"
+            >
+              {{ $t(o.label) }}
+            </button>
+          </div>
+          <div v-if="recurType" class="small muted" style="margin-top: 4px">
+            {{ $t('完成后自动生成下一期（{a}）', { a: $t(RECUR_OPTIONS.find((o) => o.value === recurType)?.label || '') }) }}
+          </div>
+        </div>
         <div class="form-row" style="flex: 1">
           <label class="form-label">{{ $t('优先级') }}</label>
           <div class="seg" style="width: 100%">

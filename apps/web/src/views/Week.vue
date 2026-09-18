@@ -1,11 +1,12 @@
 <script setup lang="ts">
-// 周视图：周一~周日按日聚合 + 周进度
+// 周视图：周一~周日按日聚合 + 周进度 + 农历/节假日（休/班）
 import { computed, onMounted, ref } from 'vue'
 import { useAppStore, weekStart, addDays, fmtDate, weekdayLabel, parseDate } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { api } from '@/api/client'
 import type { PeriodStats } from '@/api/types'
 import ProgressPair from '@/components/ProgressPair.vue'
+import { daySubLabel, dayBadge } from '@/lib/lunar'
 import { t } from '@/i18n'
 
 const app = useAppStore()
@@ -40,6 +41,12 @@ const days = computed(() => {
 
 function statOf(date: string) {
   return stats.value?.days.find((x) => x.date === date)
+}
+
+/** 周末或法定休日 → 日期标红 */
+function isRedDay(date: string) {
+  const dow = parseDate(date).getDay()
+  return dow === 0 || dow === 6
 }
 
 // 每天默认只列 3 条；「＋N 更多」可点击展开全部（再点收起）。
@@ -134,18 +141,22 @@ onMounted(load)
       </div>
     </section>
 
-    <!-- 7 列 -->
+    <!-- 7 列：卡片宽高等额自适应，内容超出隐藏（展开态改为卡内滚动，不撑大布局） -->
     <div class="week-grid">
       <div
         v-for="d in days"
         :key="d.date"
-        class="card"
-        :class="{ 'today-card': d.isToday }"
+        class="card week-card"
+        :class="{ 'today-card': d.isToday, 'red-day': isRedDay(d.date) }"
         :style="d.isFuture ? 'opacity:.55' : d.isToday ? 'border-color:var(--primary)' : ''"
       >
-        <div class="row" style="justify-content: space-between; margin-bottom: 6px">
+        <div class="row" style="justify-content: space-between; margin-bottom: 2px">
           <b style="font-size: 14px">{{ d.label }}</b>
           <span class="mono small muted">{{ d.date.slice(5) }}</span>
+        </div>
+        <div class="row week-lunar" style="margin-bottom: 6px">
+          <span class="small muted lunar-text">{{ daySubLabel(d.date) }}</span>
+          <span v-if="dayBadge(d.date)" class="day-badge" :class="dayBadge(d.date) === '休' ? 'off' : 'work'">{{ dayBadge(d.date) }}</span>
         </div>
 
         <template v-if="statOf(d.date) && statOf(d.date)!.nodeCount > 0">
@@ -169,14 +180,15 @@ onMounted(load)
               <span class="num">{{ statOf(d.date)!.doneTodos }}/{{ statOf(d.date)!.totalTodos }}</span>
             </div>
           </div>
-          <div
-            v-for="n in visibleNodes(d.date)"
-            :key="n.id"
-            class="small"
-            style="color: var(--text-regular); margin-bottom: 2px"
-          >
-            <span class="mono muted">{{ n.createdAt.slice(11, 16) }}</span>
-            {{ displayText(n.content, d.date) }}
+          <div class="week-body" :class="{ open: isExpanded(d.date) }">
+            <div
+              v-for="n in visibleNodes(d.date)"
+              :key="n.id"
+              class="small week-node-line"
+            >
+              <span class="mono muted">{{ n.createdAt.slice(11, 16) }}</span>
+              {{ displayText(n.content, d.date) }}
+            </div>
           </div>
           <button
             v-if="nodesOf(d.date).length > FOLD_LIMIT"

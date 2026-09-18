@@ -13,6 +13,7 @@ pub mod events;
 pub mod export;
 pub mod i18n;
 pub mod firstseen;
+pub mod news;
 pub mod push;
 pub mod reminder;
 pub mod secrets;
@@ -51,6 +52,14 @@ impl AppContext {
             }
             Ok(_) => {}
             Err(e) => tracing::warn!("内置模板升级失败（不影响使用）：{e}"),
+        }
+        // 循环待办补期：启动时为每条循环链补齐「下一期」（幂等，详见 queries::ensure_recurring）
+        match db.ensure_recurring() {
+            Ok(created) if !created.is_empty() => {
+                tracing::info!("循环待办已自动生成 {} 期：{}", created.len(), created.iter().map(|t| t.title.as_str()).collect::<Vec<_>>().join("、"))
+            }
+            Ok(_) => {}
+            Err(e) => tracing::warn!("循环待办补期失败（不影响使用）：{e}"),
         }
         // 首见证据埋点（商业化二期老用户识别的唯一来源，须在第一期就写下）
         match firstseen::ensure(&db, &cfg.data_dir, &jwt_secret, env!("CARGO_PKG_VERSION")) {

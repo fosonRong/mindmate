@@ -3,7 +3,7 @@
 //! 运行：cargo test -p mindmate-core
 
 use mindmate_core::ai;
-use mindmate_core::db::{classify, compute_remind_at, is_overdue, Db, NewNode, NewTodo, TodoPatch};
+use mindmate_core::db::{classify, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, Db, NewNode, NewTodo, TodoPatch};
 use mindmate_core::i18n::Lang;
 use mindmate_core::reminder::{compose, decide, hhmm_to_minutes, ReminderKind};
 
@@ -401,6 +401,7 @@ fn 数据层_待办完成与撤销流转() {
             tags: vec![],
             remind_offset_min: None,
             remind_at: None,
+            recur_type: String::new(),
         })
         .unwrap();
     assert_eq!(t.status, "待处理");
@@ -427,6 +428,7 @@ fn 数据层_逾期刷新标记() {
         tags: vec![],
         remind_offset_min: None,
         remind_at: None,
+        recur_type: String::new(),
     })
     .unwrap();
     let overdue = db.refresh_overdue().unwrap();
@@ -447,6 +449,7 @@ fn 数据层_待办改期后重新归类() {
             tags: vec![],
             remind_offset_min: None,
             remind_at: None,
+            recur_type: String::new(),
         })
         .unwrap();
     assert_eq!(t.category, "日程");
@@ -460,6 +463,7 @@ fn 数据层_待办改期后重新归类() {
                 due_date: Some(day_in_month_not_this_week()),
                 due_time: None,
                 remind_at: None,
+                recur_type: None,
                 priority: None,
                 tags: None,
                 status: None,
@@ -527,6 +531,7 @@ fn 降级_日报模板拼装含记录与待办() {
         tags: vec![],
         remind_offset_min: None,
         remind_at: None,
+        recur_type: String::new(),
     })
     .unwrap();
 
@@ -603,6 +608,7 @@ fn 月度小结_记录天数与完成待办与最长连续() {
                 tags: vec![],
                 remind_offset_min: None,
                 remind_at: None,
+                recur_type: String::new(),
             })
             .unwrap();
         if title != "任务C" {
@@ -706,4 +712,186 @@ fn 进度文案_按语言生成() {
     let en = format_progress_lang(2, 4, true, 5, 1, Lang::En);
     assert!(en.contains("2/4") && !en.contains("记录"), "英文进度文案残留中文：{en}");
     assert!(format_progress_lang(0, 0, false, 0, 0, Lang::Ko).contains("기록"));
+}
+
+// ───────────────────────── 循环待办（每周/每月自动生成） ─────────────────────────
+
+
+fn recur_db() -> mindmate_core::db::Db {
+    let db = mindmate_core::db::Db::open_memory().unwrap();
+    db
+}
+
+#[test]
+fn 循环类型_只认每天每周与每月() {
+    assert_eq!(normalize_recur_type("daily"), "daily");
+    assert_eq!(normalize_recur_type("weekly"), "weekly");
+    assert_eq!(normalize_recur_type("monthly"), "monthly");
+    assert_eq!(normalize_recur_type(""), "");
+    assert_eq!(normalize_recur_type("yearly"), "");
+}
+
+#[test]
+fn 下一步日期_每天逐日推进() {
+    assert_eq!(
+        next_recur_date("daily", "2026-09-14", "2026-09-14", "2026-09-15").unwrap(),
+        "2026-09-15"
+    );
+    // 追溯创建：连推到不早于 not_before
+    assert_eq!(
+        next_recur_date("daily", "2026-09-10", "2026-09-10", "2026-09-15").unwrap(),
+        "2026-09-15"
+    );
+    // 恰好等于今天：下一期是明天
+    assert_eq!(
+        next_recur_date("daily", "2026-09-14", "2026-09-14", "2026-09-14").unwrap(),
+        "2026-09-15"
+    );
+}
+
+#[test]
+fn 下一步日期_每周保持周几并推进到不早于今天() {
+    // 周一 → 下一个周一
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-15").unwrap(),
+        "2026-09-21"
+    );
+    // 已过期很久：连续推进到不早于 not_before
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-10-05").unwrap(),
+        "2026-10-05"
+    );
+    // 恰好等于今天：+7 天（下一期在未来）
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-14").unwrap(),
+        "2026-09-21"
+    );
+}
+
+#[test]
+fn 下一步日期_每月保持几号且月末截断() {
+    // 31 号在 9 月截断为 9/30（取当月最后一天）
+    assert_eq!(
+        next_recur_date("monthly", "2026-08-31", "2026-08-31", "2026-09-01").unwrap(),
+        "2026-09-30"
+    );
+    // 下一轮回到 10/31（锚点的几号不因截断漂移）
+    assert_eq!(
+        next_recur_date("monthly", "2026-08-31", "2026-09-30", "2026-10-01").unwrap(),
+        "2026-10-31"
+    );
+    // 普通日期：下月同日
+    assert_eq!(
+        next_recur_date("monthly", "2026-01-15", "2026-01-15", "2026-01-20").unwrap(),
+        "2026-02-15"
+    );
+    // 2 月末：1 月 30 → 2 月 28（2026 非闰年）
+    assert_eq!(
+        next_recur_date("monthly", "2026-01-30", "2026-01-30", "2026-02-01").unwrap(),
+        "2026-02-28"
+    );
+    assert_eq!(next_recur_date("none", "2026-09-14", "2026-09-14", "2026-09-15"), None);
+}
+
+#[test]
+fn 循环待办_创建根实例即补齐下一期() {
+    let db = recur_db();
+    let root = db
+        .create_todo(NewTodo {
+            title: "周报整理".into(),
+            description: String::new(),
+            // 创建在昨天：ensure 应生成今天（或更晚）的一期
+            due_date: Some("2026-09-01".into()),
+            due_time: None,
+            priority: "中".into(),
+            tags: vec![],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: "weekly".into(),
+        })
+        .unwrap();
+    assert_eq!(root.recur_type, "weekly");
+    assert_eq!(root.recur_anchor, "2026-09-01");
+    assert!(root.recur_source_id.is_none());
+
+    let created = db.ensure_recurring().unwrap();
+    assert_eq!(created.len(), 1, "应恰好补齐一期：{:?}", created.iter().map(|t| t.due_date.clone()).collect::<Vec<_>>());
+    let next = &created[0];
+    assert_eq!(next.title, "周报整理");
+    assert_eq!(next.recur_source_id, Some(root.id));
+    assert_eq!(next.recur_anchor, "2026-09-01");
+    // 追溯创建（due_date 在过去）：应推进到「不早于今天」的那一期，且仍在锚点的星期序上
+    let d0 = chrono::NaiveDate::parse_from_str("2026-09-01", "%Y-%m-%d").unwrap();
+    let dn = chrono::NaiveDate::parse_from_str(&next.due_date, "%Y-%m-%d").unwrap();
+    assert!(dn >= today(), "下一期应不早于今天：{dn}");
+    assert_eq!((dn - d0).num_days() % 7, 0, "每周循环应保持锚点星期几：{dn}");
+    // 幂等：再跑一次不再生成
+    assert!(db.ensure_recurring().unwrap().is_empty());
+}
+
+#[test]
+fn 循环待办_完成最后一期后生成下一期() {
+    let db = recur_db();
+    let root = db
+        .create_todo(NewTodo {
+            title: "每月体检".into(),
+            description: String::new(),
+            due_date: Some("2026-09-10".into()),
+            due_time: None,
+            priority: "低".into(),
+            tags: vec![],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: "monthly".into(),
+        })
+        .unwrap();
+    let today = mindmate_core::db::today_string();
+    // 补齐「>= 今天」的一期
+    let _ = db.ensure_recurring().unwrap();
+    let chain: Vec<_> = db.list_todos(Some("全部"), Some("全部"), None, None, None).unwrap();
+    assert_eq!(chain.len(), 2, "根 + 下一期");
+
+    // 完成最新一期 → 生成再下一期
+    let latest = chain.iter().filter(|t| t.recur_source_id.is_some()).max_by_key(|t| t.due_date.clone()).unwrap();
+    db.complete_todo(latest.id, true).unwrap();
+    let created = db.ensure_recurring().unwrap();
+    assert_eq!(created.len(), 1, "完成后应补下一期");
+    assert!(created[0].due_date > latest.due_date, "下一期应晚于被完成的实例");
+
+    // 标记：链内所有实例都带同样的 recur_type 与锚点
+    for t in db.list_todos(Some("全部"), Some("全部"), None, None, None).unwrap() {
+        assert_eq!(t.recur_type, "monthly");
+        assert_eq!(t.recur_anchor, "2026-09-10");
+        assert!(t.id == root.id || t.recur_source_id == Some(root.id));
+    }
+    let _ = today;
+}
+
+#[test]
+fn 循环待办_停止循环后不再生成() {
+    let db = recur_db();
+    let root = db
+        .create_todo(NewTodo {
+            title: "临时循环".into(),
+            description: String::new(),
+            due_date: Some("2026-09-01".into()),
+            due_time: None,
+            priority: "中".into(),
+            tags: vec![],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: "weekly".into(),
+        })
+        .unwrap();
+    let _ = db.ensure_recurring().unwrap();
+    // 用户关闭循环（recur_type 置空）
+    db.update_todo(
+        root.id,
+        mindmate_core::db::TodoPatch {
+            recur_type: Some(String::new()),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert!(db.ensure_recurring().unwrap().is_empty(), "停止循环后不应再生成");
 }

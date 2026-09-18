@@ -152,6 +152,9 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/ollama", get(ai_ollama_probe))
         // 系统集成：用默认浏览器打开外链（仅本地模式）
         .route("/api/v1/system/open-url", post(system_open_url))
+        // 今日热点：栏目清单（自动生成）+ 热点抓取（缓存降级）
+        .route("/api/v1/news/channels", get(news_channels))
+        .route("/api/v1/news/hot", get(news_hot))
         .route("/api/v1/ai/report", post(ai_report))
         .route("/api/v1/ai/brief", post(ai_brief))
         .route("/api/v1/ai/goodnight", post(ai_goodnight))
@@ -508,6 +511,19 @@ async fn stats_monthly(
 
 // ───────────────────────── 待办 ─────────────────────────
 
+/// 循环待办补期：生成缺失的「下一期」实例并广播 todo.created（幂等，失败不阻断主流程）
+fn publish_recurring_created(ctx: &Arc<AppContext>) -> anyhow::Result<()> {
+    if let Ok(created) = ctx.db.ensure_recurring() {
+        for t in created {
+            ctx.bus.publish(Event::new(
+                "todo.created",
+                serde_json::to_value(&t).unwrap_or_default(),
+            ));
+        }
+    }
+    Ok(())
+}
+
 async fn create_todo(
     State(ctx): State<Arc<AppContext>>,
     headers: HeaderMap,
@@ -522,6 +538,8 @@ async fn create_todo(
         "todo.created",
         serde_json::to_value(&todo).unwrap_or_default(),
     ));
+    // 循环待办：新建根实例后补齐「下一期」（幂等；追溯创建过去日期的循环时尤其需要）
+    publish_recurring_created(&ctx)?;
     Ok(ApiResp::ok(todo))
 }
 
@@ -556,6 +574,8 @@ async fn update_todo(
         "todo.updated",
         serde_json::to_value(&todo).unwrap_or_default(),
     ));
+    // 循环待办：改动（改期/改周期/恢复循环）后补齐「下一期」（幂等）
+    publish_recurring_created(&ctx)?;
     Ok(ApiResp::ok(todo))
 }
 
@@ -584,6 +604,18 @@ async fn complete_todo(
         "todo.completed",
         serde_json::to_value(&todo).unwrap_or_default(),
     ));
+    // 循环待办（weekly/monthly）：完成即补齐下一期（幂等），并广播新实例
+    match ctx.db.ensure_recurring() {
+        Ok(created) => {
+            for t in created {
+                ctx.bus.publish(Event::new(
+                    "todo.created",
+                    serde_json::to_value(&t).unwrap_or_default(),
+                ));
+            }
+        }
+        Err(e) => tracing::warn!("循环待办补期失败（不影响本次完成）：{e}"),
+    }
     crate::achievements::check_all(&ctx.db, &ctx.bus)?;
     Ok(ApiResp::ok(todo))
 }
@@ -878,6 +910,72 @@ struct OpenUrlReq {
 ///
 /// 只在本地模式开放：桌面端需要跳出 WebView 打开厂商页面，而局域网/服务器模式
 /// 是别人在远程访问，绝不该能借这台机器调起浏览器进程。
+// ───────────────────────── 今日热点 ─────────────────────────
+
+/// 可用栏目清单（由 news::CHANNELS 注册表自动生成，设置页多选用）
+async fn news_channels(State(ctx): State<Arc<AppContext>>, headers: HeaderMap) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let channels: Vec<serde_json::Value> = crate::news::CHANNELS
+        .iter()
+        .map(|(id, name)| json!({ "id": id, "name": name }))
+        .collect();
+    Ok(ApiResp::ok(json!({ "channels": channels })))
+}
+
+/// 抓取热点新闻。query：
+/// - refresh=1  跳过缓存强制实抓
+/// - channels   逗号分隔栏目 id（缺省读设置 news_channels，默认 weibo）
+/// - limit      条数上限（缺省读设置 news_limit，默认 10）
+async fn news_hot(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<crate::news::HotNewsResult> {
+    ensure_auth(&ctx, &headers)?;
+    let refresh = q.get("refresh").map(|v| v == "1").unwrap_or(false);
+    let limit = q
+        .get("limit")
+        .and_then(|v| v.parse::<usize>().ok())
+        .or_else(|| ctx.db.get_setting("news_limit").ok().flatten().and_then(|v| v.parse().ok()))
+        .unwrap_or(10)
+        .clamp(1, 200);
+    let channels: Vec<String> = match q.get("channels") {
+        Some(raw) if !raw.is_empty() => raw.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+        _ => ctx
+            .db
+            .get_setting("news_channels")
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+            .unwrap_or_else(|| vec!["weibo".to_string()]),
+    };
+    let channels: Vec<String> = if channels.is_empty() { vec!["weibo".to_string()] } else { channels };
+
+    // 未强制刷新且有未过期的缓存（30 分钟）→ 直接回缓存，避免每次进页面都打源站。
+    // 缓存条数必须覆盖请求条数：下滑加载更多会带着更大的 limit 回来，
+    // 小缓存直接命中会让翻页永远拿不到新条目（此时应走实抓补足）。
+    if !refresh {
+        if let Some((cached, at)) = crate::news::load_cache(&ctx.db) {
+            if cached.items.len() >= limit {
+                if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(&at, "%Y-%m-%d %H:%M:%S") {
+                    let age = chrono::Local::now().naive_local() - ts;
+                    if age.num_minutes() < 30 {
+                        let mut r = cached;
+                        r.source = "cache".into();
+                        r.stale = false; // 30 分钟内的缓存命中属正常路径，不提示「非实时」
+                        r.items.truncate(limit);
+                        r.errors.clear();
+                        return Ok(ApiResp::ok(r));
+                    }
+                }
+            }
+        }
+    }
+    let mut result = crate::news::fetch_hot_news(&ctx.db, &channels, limit).await;
+    result.items.truncate(limit);
+    Ok(ApiResp::ok(result))
+}
+
 async fn system_open_url(
     State(ctx): State<Arc<AppContext>>,
     headers: HeaderMap,
@@ -1661,6 +1759,7 @@ async fn data_import(
                 due_date: t["dueDate"].as_str().map(String::from),
                 due_time: t["dueTime"].as_str().map(String::from),
                 priority: t["priority"].as_str().unwrap_or("中").to_string(),
+                recur_type: String::new(),
                 tags: t["tags"]
                     .as_array()
                     .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())

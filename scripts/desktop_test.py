@@ -253,6 +253,61 @@ check("误报处置文档已就位（含提交给微软的说明文本）",
       os.path.exists(os.path.join(ROOT, "docs", "杀软误报处置.md"))
       and "filesubmission" in read("docs", "杀软误报处置.md"))
 
+# ── 迭代：农历节假日 / 日程方块自适应 / 循环待办 / 我的简报+今日热点（2026-09 需求） ──
+lunar = read("apps", "web", "src", "lib", "lunar.ts")
+check("农历模块存在且带 1900-2049 压缩表", "LUNAR_INFO" in lunar and "0x04bd8" in lunar)
+check("农历含法定节假日调休表（休/班）", "HOLIDAY_DATA" in lunar and "'work':" in lunar.replace('"work"', "'work'") or "work:" in lunar or "work" in lunar)
+check("农历测试用真实锚点校验（历年春节）", os.path.exists(os.path.join(ROOT, "scripts", "lunar_test.mjs"))
+      and "2026-02-17" in read("scripts", "lunar_test.mjs"))
+check("日历格等额自适应（minmax(0,1fr) 列 + 行 + 视口高度）",
+      "grid-template-columns: repeat(7, minmax(0, 1fr))" in read("apps", "web", "src", "styles", "app.css")
+      and "grid-auto-rows: minmax(0, 1fr)" in read("apps", "web", "src", "styles", "app.css"))
+check("格内摘要自动换行且溢出隐藏（line-clamp）", "-webkit-line-clamp" in read("apps", "web", "src", "styles", "app.css"))
+
+check("循环待办：库迁移 V2 加 recur 三列", "recur_type" in read("core", "src", "db", "mod.rs")
+      and "SCHEMA_V2" in read("core", "src", "db", "mod.rs") and "SCHEMA_VERSION: i64 = 2" in read("core", "src", "db", "mod.rs"))
+check("循环待办：补期引擎（每天/每周/每月 + 月末截断）",
+      "ensure_recurring" in read("core", "src", "db", "queries.rs")
+      and '"daily"' in read("core", "src", "db", "queries.rs")
+      and "days_in_month" in read("core", "src", "db", "queries.rs"))
+check("循环待办：完成后补期并广播 todo.created",
+      "publish_recurring_created" in read("core", "src", "api", "mod.rs"))
+check("循环待办：跨天定时补期（提醒调度器内）",
+      "ensure_recurring" in read("core", "src", "reminder", "mod.rs"))
+check("循环待办：弹窗提供 不循环/每天/每周/每月",
+      "RECUR_OPTIONS" in read("apps", "web", "src", "components", "TodoEditModal.vue")
+      and "'daily'" in read("apps", "web", "src", "components", "TodoEditModal.vue"))
+check("循环待办：列表项显示循环徽标", "chip recur" in read("apps", "web", "src", "components", "TodoItem.vue"))
+
+check("晨间简报已更名为我的简报（界面无残留）",
+      "我的简报" in read("apps", "web", "src", "views", "Today.vue")
+      and "$t('晨间简报')" not in read("apps", "web", "src", "views", "Today.vue")
+      and "$t('晨间简报')" not in read("apps", "web", "src", "views", "Settings.vue"))
+check("简报模板同步更名且旧版进入升级清单（存量自动升级）",
+      "请生成今天的我的简报" in read("core", "src", "ai", "mod.rs")
+      and '标题「☀️ 我的简报」' in read("core", "src", "ai", "mod.rs"))
+
+news = read("core", "src", "news.rs")
+check("今日热点：后端抓取模块（60s 源 + 栏目注册表自动生成）",
+      "60s.viki.moe" in news and "CHANNELS" in news)
+check("今日热点：解析/合并纯函数有单测", "parse_channel" in news and "merge_items" in news and "mod tests" in news)
+check("今日热点：API 路由（栏目清单 + 抓取）",
+      "/api/v1/news/channels" in read("core", "src", "api", "mod.rs")
+      and "/api/v1/news/hot" in read("core", "src", "api", "mod.rs"))
+check("今日热点：缓存降级（stale 标记，空结果不覆盖旧缓存）",
+      "stale" in news and "空结果不覆盖旧缓存" in news)
+check("今日热点：下滑加载更多（前端滚动分页 + 更大 limit 上限）",
+      "onNewsScroll" in read("apps", "web", "src", "views", "Today.vue")
+      and "clamp(1, 200)" in read("core", "src", "api", "mod.rs"))
+check("今日热点：自动更新开关与频率（设置持久化）",
+      "news_auto_refresh" in read("apps", "web", "src", "views", "Settings.vue")
+      and "news_refresh_minutes" in read("apps", "web", "src", "views", "Settings.vue")
+      and "news_auto_refresh" in read("core", "src", "db", "mod.rs"))
+check("今日热点：点击新闻用系统浏览器打开（桌面走 openUrl，浏览器开新标签）",
+      "openNews" in read("apps", "web", "src", "views", "Today.vue")
+      and "api.openUrl" in read("apps", "web", "src", "views", "Today.vue"))
+check("全量验收纳入农历/节假日专项", "lunar_test.mjs" in read("scripts", "run_all_tests.py"))
+
 # 版本号一致性：core 与应用同时发布，版本号必须相同（否则 /install 诊断信息会误导）
 core_toml = read("core", "Cargo.toml")
 m = re.search(r'^version = "([^"]+)"', core_toml, re.M)

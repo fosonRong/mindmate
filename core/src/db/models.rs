@@ -61,6 +61,12 @@ pub struct Todo {
     pub created_at: String,
     pub updated_at: String,
     pub completed_at: Option<String>,
+    /// 循环类型：''=普通 weekly=每周 monthly=每月
+    pub recur_type: String,
+    /// 循环锚点日期（首个实例的 due_date），用于固定周几/几号推算下一期
+    pub recur_anchor: String,
+    /// 本实例由哪个根实例生成（用户手建的那条是根：NULL）
+    pub recur_source_id: Option<i64>,
     /// 是否已逾期（服务端计算，仅展示用）
     pub overdue: bool,
 }
@@ -81,13 +87,16 @@ pub struct NewTodo {
     pub remind_offset_min: Option<i64>,
     /// 精确提醒时刻
     pub remind_at: Option<String>,
+    /// 循环类型：''=不循环 weekly=每周 monthly=每月
+    #[serde(default)]
+    pub recur_type: String,
 }
 
 fn default_priority() -> String {
     "中".into()
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TodoPatch {
     pub title: Option<String>,
@@ -100,6 +109,8 @@ pub struct TodoPatch {
     pub status: Option<String>,
     pub category: Option<String>,
     pub sort_order: Option<i64>,
+    /// 修改循环类型（weekly/monthly/空串=停止循环）。对根实例生效；实例自身的该字段随生成复制。
+    pub recur_type: Option<String>,
 }
 
 /// 报告

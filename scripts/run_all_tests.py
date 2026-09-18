@@ -119,6 +119,7 @@ try:
     run("国际化专项验收（四语/插值）", [sys.executable, "scripts/i18n_test.py"])
     run("国际化消息编译验收（防白屏）", ["node", "scripts/i18n_compile_test.mjs"])
     run("Markdown 渲染验收（防源码显示）", ["node", "scripts/markdown_test.mjs"])
+    run("农历与节假日专项验收", ["node", "scripts/lunar_test.mjs"])
     # 杀软误报自检（v1.0.16 的教训）：未签名二进制会被 Defender 的机器学习模型误判成木马，
     # 用户表现为「安装后打不开」——文件装上了，但一落地就被实时保护隔离。
     # 放在这里是因为此前**没有任何环节会真正扫一次即将发布的二进制**。

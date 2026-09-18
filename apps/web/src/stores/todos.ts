@@ -63,6 +63,8 @@ export const useTodosStore = defineStore('todos', {
       priority?: string
       tags?: string[]
       remindOffsetMin?: number
+      /** 循环类型：''=不循环 daily=每天 weekly=每周 monthly=每月 */
+      recurType?: string
     }) {
       const todo = await api.createTodo(data as any)
       // 幂等：SSE 事件可能先于 HTTP 响应到达并已插入同一条待办

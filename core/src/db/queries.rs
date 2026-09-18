@@ -189,11 +189,14 @@ impl Db {
             created_at: row.get(11)?,
             updated_at: row.get(12)?,
             completed_at: row.get(13)?,
+            recur_type: row.get(14)?,
+            recur_anchor: row.get(15)?,
+            recur_source_id: row.get(16)?,
             overdue: is_overdue(&due_date, due_time.as_deref(), &status),
         })
     }
 
-    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at";
+    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id";
 
     pub fn create_todo(&self, input: NewTodo) -> Result<Todo> {
         let now = now_string();
@@ -216,11 +219,13 @@ impl Db {
             _ => None,
         };
         let tags = serde_json::to_string(&input.tags)?;
+        // 循环待办：recur_type 合法性收敛（只认 weekly/monthly），锚点=首个实例的截止日期
+        let recur_type = normalize_recur_type(&input.recur_type);
         let conn = self.lock();
         conn.execute(
-            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9)",
-            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now],
+            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?3)",
+            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now, recur_type],
         )?;
         let id = conn.last_insert_rowid();
         let todo = conn.query_row(
@@ -333,6 +338,9 @@ impl Db {
         if let Some(v) = patch.sort_order {
             t.sort_order = v;
         }
+        if let Some(v) = patch.recur_type {
+            t.recur_type = normalize_recur_type(&v);
+        }
         let today = today_string();
         // 归类：显式指定优先，否则按截止日期重算
         t.category = patch
@@ -342,8 +350,9 @@ impl Db {
         let conn = self.lock();
         conn.execute(
             "UPDATE todos SET title=?1, description=?2, due_date=?3, due_time=?4, remind_at=?5,
-                    priority=?6, tags=?7, status=?8, category=?9, sort_order=?10, updated_at=?11
-             WHERE id=?12",
+                    priority=?6, tags=?7, status=?8, category=?9, sort_order=?10, updated_at=?11,
+                    recur_type=?12
+             WHERE id=?13",
             params![
                 t.title,
                 t.description,
@@ -356,6 +365,7 @@ impl Db {
                 t.category,
                 t.sort_order,
                 now,
+                t.recur_type,
                 id
             ],
         )?;
@@ -465,6 +475,120 @@ impl Db {
             params![now_string(), id],
         )?;
         Ok(())
+    }
+
+    // ───────────────────────── 循环待办（每周/每月自动生成） ─────────────────────────
+
+    /// 为每条循环链保证「存在一个未完成且 due_date >= 今天的实例」，没有就生成下一期。
+    /// 生成规则：以链上最新实例的 due_date 为基点按周期推进，直到不早于今天；
+    /// 幂等（已有未来实例/同日实例就跳过），启动与每次完成/改动后都可安全调用。
+    pub fn ensure_recurring(&self) -> Result<Vec<Todo>> {
+        let today = today_string();
+        let cols = Self::TODO_COLS;
+        let mut created = Vec::new();
+
+        let roots: Vec<Todo> = {
+            let conn = self.lock();
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {cols} FROM todos
+                 WHERE deleted_at IS NULL AND recur_type != '' AND recur_source_id IS NULL"
+            ))?;
+            let rows: Vec<Todo> = stmt
+                .query_map([], Self::row_to_todo)?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            rows
+        };
+
+        for root in roots {
+            let (latest_due, _latest_status): (String, String) = {
+                let conn = self.lock();
+                let r = conn
+                    .query_row(
+                        &format!(
+                            "SELECT due_date, status FROM todos
+                             WHERE deleted_at IS NULL AND (id = ?1 OR recur_source_id = ?1)
+                             ORDER BY due_date DESC, id DESC LIMIT 1"
+                        ),
+                        params![root.id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .optional()?;
+                match r {
+                    Some(v) => v,
+                    None => continue,
+                }
+            };
+            // 链上已存在未完成的未来实例 → 下一期已在，无需生成
+            let has_pending = {
+                let conn = self.lock();
+                conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM todos
+                      WHERE deleted_at IS NULL AND (id = ?1 OR recur_source_id = ?1)
+                        AND status != '已完成' AND due_date >= ?2)",
+                    params![root.id, today],
+                    |row| row.get::<_, i64>(0),
+                )? > 0
+            };
+            if has_pending {
+                continue;
+            }
+            // 下一期从链上最新一条之后推（已完成的那条也算「最新」）
+            let Some(next_date) = next_recur_date(&root.recur_type, &root.recur_anchor, &latest_due, &today) else {
+                continue;
+            };
+            // 同根同日已有实例（用户手动补建等）：跳过，避免重复
+            let dup = {
+                let conn = self.lock();
+                conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM todos
+                      WHERE deleted_at IS NULL AND (id = ?1 OR recur_source_id = ?1) AND due_date = ?2)",
+                    params![root.id, next_date],
+                    |row| row.get::<_, i64>(0),
+                )? > 0
+            };
+            if dup {
+                continue;
+            }
+            // 复制根实例的内容属性；提醒时刻按原规则重算
+            let remind_at = root.due_time.as_deref().and_then(|tt| {
+                let offset = self
+                    .get_setting("todo_remind_offset_min")
+                    .ok()
+                    .flatten()
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(30);
+                compute_remind_at(&next_date, tt, offset)
+            });
+            let tags = serde_json::to_string(&root.tags)?;
+            let category = classify(&next_date, root.due_time.as_deref(), &today);
+            let now = now_string();
+            let id = {
+                let conn = self.lock();
+                conn.execute(
+                    "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_source_id)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?11,?12)",
+                    params![
+                        root.title,
+                        root.description,
+                        next_date,
+                        root.due_time,
+                        remind_at,
+                        root.priority,
+                        tags,
+                        category,
+                        now,
+                        root.recur_type,
+                        root.recur_anchor,
+                        root.id
+                    ],
+                )?;
+                conn.last_insert_rowid()
+            };
+            if let Some(todo) = self.get_todo(id)? {
+                created.push(todo);
+            }
+        }
+        Ok(created)
     }
 
     // ───────────────────────── 设置 ─────────────────────────
@@ -1067,6 +1191,81 @@ pub fn compute_remind_at(due_date: &str, due_time: &str, offset_min: i64) -> Opt
     .ok()?;
     let r = dt - Duration::minutes(offset_min);
     Some(r.format("%Y-%m-%d %H:%M").to_string())
+}
+
+// ───────────────────────── 循环待办：日期推算 ─────────────────────────
+
+/// 收敛循环类型：只认 daily / weekly / monthly，其余一律视为不循环
+pub fn normalize_recur_type(v: &str) -> String {
+    match v {
+        "daily" => "daily".into(),
+        "weekly" => "weekly".into(),
+        "monthly" => "monthly".into(),
+        _ => String::new(),
+    }
+}
+
+/// 循环待办的下一期日期：从 `from_date` 起按周期推进，直到不早于 `not_before`。
+/// - weekly：按周步进（保持星期几）
+/// - monthly：保持锚点的「几号」，月内无该日则取月末（如 31 号在 2 月取 28/29）
+fn parse_day(s: &str) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
+}
+
+fn days_in_month(y: i32, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 {
+                29
+            } else {
+                28
+            }
+        }
+        _ => 30,
+    }
+}
+
+pub fn next_recur_date(
+    recur_type: &str,
+    anchor: &str,
+    from_date: &str,
+    not_before: &str,
+) -> Option<String> {
+    let mut cur = parse_day(from_date)?;
+    let not_before_d = parse_day(not_before).unwrap_or(cur);
+    match recur_type {
+        // 每天：逐日推进
+        "daily" => loop {
+            cur += Duration::days(1);
+            if cur >= not_before_d {
+                return Some(cur.format("%Y-%m-%d").to_string());
+            }
+        },
+        "weekly" => loop {
+            cur += Duration::days(7);
+            if cur >= not_before_d {
+                return Some(cur.format("%Y-%m-%d").to_string());
+            }
+        },
+        "monthly" => {
+            let day = parse_day(anchor)
+                .map(|a| a.day())
+                .or_else(|| parse_day(from_date).map(|d| d.day()))
+                .unwrap_or(1);
+            loop {
+                // 下个月同日（月末截断：锚点 31 号在 2 月取 28/29）
+                let (y, m) = (cur.year(), cur.month());
+                let (y2, m2) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+                cur = NaiveDate::from_ymd_opt(y2, m2, day.min(days_in_month(y2, m2)))?;
+                if cur >= not_before_d {
+                    return Some(cur.format("%Y-%m-%d").to_string());
+                }
+            }
+        }
+        _ => None,
+    }
 }
 
 /// 摘要截断

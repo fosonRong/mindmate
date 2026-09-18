@@ -324,6 +324,7 @@ mod tests {
                 tags: vec!["工作".into()],
                 remind_offset_min: None,
                 remind_at: None,
+                recur_type: String::new(),
             })
             .unwrap();
         db.complete_todo(t.id, true).unwrap();

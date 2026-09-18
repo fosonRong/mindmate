@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 pub use models::*;
-pub use queries::{classify, compute_remind_at, is_overdue, summarize};
+pub use queries::{classify, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, summarize};
 
 pub struct Db {
     pub(crate) conn: Mutex<Connection>,
@@ -20,11 +20,22 @@ pub struct Db {
 }
 
 /// 当前程序支持的库结构版本。新增表/列时：**追加**一条迁移并把这个数字 +1。
-pub const SCHEMA_VERSION: i64 = 1;
+pub const SCHEMA_VERSION: i64 = 2;
+
+/// V2：循环待办（每周/每月自动生成下一期）
+/// - recur_type      ''|'weekly'|'monthly'，''=普通待办
+/// - recur_anchor    本条循环的锚点日期（首个实例的 due_date），保证每周固定周几/每月固定几号
+/// - recur_source_id 本实例由哪个根实例生成（用户手建的那条是根：NULL）
+const SCHEMA_V2: &str = r#"
+ALTER TABLE todos ADD COLUMN recur_type TEXT NOT NULL DEFAULT '';
+ALTER TABLE todos ADD COLUMN recur_anchor TEXT NOT NULL DEFAULT '';
+ALTER TABLE todos ADD COLUMN recur_source_id INTEGER;
+CREATE INDEX IF NOT EXISTS idx_todos_recur ON todos(recur_source_id, deleted_at, due_date);
+"#;
 
 /// 版本化迁移链：每项为 (目标版本, 该版本的 DDL)。逐级执行，幂等。
 fn migrations() -> Vec<(i64, &'static str)> {
-    vec![(1, SCHEMA_V1)]
+    vec![(1, SCHEMA_V1), (2, SCHEMA_V2)]
 }
 
 impl Db {
@@ -106,7 +117,7 @@ impl Db {
 
     /// 首次启动写入默认设置
     pub fn seed_defaults(&self) -> Result<()> {
-        let defaults: [(&str, &str); 24] = [
+        let defaults: [(&str, &str); 28] = [
             ("daily_goal", "4"),
             ("daily_goal_enabled", "1"),
             ("remind_freq_minutes", "60"),
@@ -129,6 +140,11 @@ impl Db {
             ("ai_max_tokens", "2048"),
             ("theme", "system"),
             ("deploy_mode", "local"),
+            // 今日热点：栏目（JSON 数组）/ 条数 / 自动更新开关 / 更新频率（分钟）
+            ("news_channels", "[\"weibo\"]"),
+            ("news_limit", "10"),
+            ("news_auto_refresh", "0"),
+            ("news_refresh_minutes", "30"),
             // 自动更新（一期）：是否自动检查新版本、用户主动跳过的版本号
             ("auto_update_check", "1"),
             ("skipped_version", ""),
@@ -424,6 +440,7 @@ mod tests {
             tags: vec![],
             remind_offset_min: None,
             remind_at: None,
+            recur_type: String::new(),
         })
         .unwrap();
 

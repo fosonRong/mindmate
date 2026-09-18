@@ -7,6 +7,7 @@ import { useNodesStore } from '@/stores/nodes'
 import { requestNotificationPermission } from '@/stores/app'
 import { openQuickEntry as desktopQuickEntry, isDesktop } from '@/lib/desktop'
 import Icon from '@/components/Icon.vue'
+import { daySubLabel, dayBadge, holidayInfo } from '@/lib/lunar'
 import Onboarding from '@/components/Onboarding.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
 import UpdateBanner from '@/components/UpdateBanner.vue'
@@ -23,11 +24,18 @@ const router = useRouter()
 
 const isBare = computed(() => route.meta.bare === true || !app.loggedIn)
 const pageTitle = computed(() => t((route.meta.title as string) || '智伴'))
+const today = (() => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+})()
+const todayLunar = daySubLabel(today)
+const todayBadge = dayBadge(today)
+const todayHolidayName = holidayInfo(today).name
 const dateLabel = computed(() => {
   const d = new Date()
   const week = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()]
-  const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  return `${day} · ${t('周' + week)}`
+  const day = today
+  return `${day} · ${t('周' + week)}${todayLunar ? ' · ' + todayLunar : ''}`
 })
 
 const showOnboarding = ref(false)
@@ -129,7 +137,11 @@ onUnmounted(() => {
       <header class="top-bar">
         <div>
           <h1>{{ pageTitle }}</h1>
-          <div class="date">{{ dateLabel }}</div>
+          <div class="date">
+            {{ dateLabel }}
+            <span v-if="todayBadge" class="day-badge" :class="todayBadge === '休' ? 'off' : 'work'">{{ todayBadge }}</span>
+            <span v-if="todayHolidayName" class="muted" style="margin-left: 4px">{{ todayHolidayName }}</span>
+          </div>
         </div>
         <div class="spacer"></div>
         <button class="btn btn-sm" @click="openQuickEntry" :title="$t('速记（Alt+Z）')">

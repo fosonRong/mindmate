@@ -3,7 +3,7 @@ import { t } from '@/i18n'
 import type {
   Achievement, AchievementDef, AiConfig, AiTestResult, AppEvent, AuthStatus, ChatMessage, DailyStats,
   MonthlySummary, Node, OllamaProbe, PeriodStats, Preset, PushConfig, PushResult, Report,
-  ScheduleData, Setting, Todo
+  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel
 } from './types'
 
 export class ApiError extends Error {
@@ -118,6 +118,16 @@ export const api = {
   // 系统集成
   /** 用系统默认浏览器打开外链（仅本地模式；桌面端「去申请 Key」用） */
   openUrl: (url: string) => post<{ opened: boolean; url: string }>('/api/v1/system/open-url', { url }),
+
+  // 今日热点（栏目清单自动生成；refresh=1 跳过 30 分钟缓存强制实抓）
+  newsChannels: () => get<{ channels: NewsChannel[] }>('/api/v1/news/channels'),
+  hotNews: (refresh = false, limit?: number) => {
+    const qs = new URLSearchParams()
+    if (refresh) qs.set('refresh', '1')
+    if (limit) qs.set('limit', String(limit))
+    const q = qs.toString()
+    return get<HotNewsResult>(`/api/v1/news/hot${q ? '?' + q : ''}`)
+  },
 
   // 报告
   reports: (type?: string) => get<Report[]>(`/api/v1/reports${type ? `?type=${type}` : ''}`),

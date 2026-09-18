@@ -7,7 +7,7 @@ import { isDesktop } from '@/lib/desktop'
 import { useUpdateStore } from '@/stores/update'
 import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode, t } from '@/i18n'
 import { ref as _ref } from 'vue'
-import type { AiConfig, AiFailKind, AiTestResult, OllamaProbe, Preset, PushConfig } from '@/api/types'
+import type { AiConfig, AiFailKind, AiTestResult, OllamaProbe, Preset, PushConfig, NewsChannel } from '@/api/types'
 
 const app = useAppStore()
 const update = useUpdateStore()
@@ -27,6 +27,12 @@ const todoRemindEnabled = ref(true)
 const todoRemindOffset = ref(30)
 const briefEnabled = ref(true)
 const briefTime = ref('09:00')
+// 今日热点配置：栏目多选（清单由后端 /news/channels 自动生成）+ 显示条数
+const newsChannelList = ref<NewsChannel[]>([])
+const newsSelected = ref<string[]>(['weibo'])
+const newsLimit = ref(10)
+const newsAutoRefresh = ref(false)
+const newsRefreshMinutes = ref(30)
 const goodnightEnabled = ref(true)
 const goodnightTime = ref('21:30')
 const reviewEnabled = ref(true)
@@ -252,6 +258,16 @@ async function load() {
   todoRemindOffset.value = Number(s.todo_remind_offset_min || 30)
   briefEnabled.value = (s.smart_brief_enabled ?? '1') === '1'
   briefTime.value = minutesToHHMM(Number(s.brief_minutes || 540))
+  // 今日热点：条数 + 栏目（多选）+ 自动更新
+  newsLimit.value = Number(s.news_limit || 10)
+  newsAutoRefresh.value = (s.news_auto_refresh ?? '0') === '1'
+  newsRefreshMinutes.value = Number(s.news_refresh_minutes || 30)
+  try {
+    const sel = JSON.parse(s.news_channels || '["weibo"]')
+    newsSelected.value = Array.isArray(sel) && sel.length ? sel : ['weibo']
+  } catch {
+    newsSelected.value = ['weibo']
+  }
   goodnightEnabled.value = (s.goodnight_enabled ?? '1') === '1'
   goodnightTime.value = minutesToHHMM(Number(s.goodnight_minutes || 1290))
   reviewEnabled.value = (s.review_enabled ?? '1') === '1'
@@ -266,20 +282,35 @@ async function load() {
   }
   // 并行拉取：原先 5 次串行往返（预设 → AI 配置 → 推送配置 → 自启状态 → 模板），
   // 每次都要等上一个回来，进设置页要等好几轮；并行后总耗时≈最慢的那一个。
-  const [pres, ai, pushCfg, tpl] = await Promise.all([
+  const [pres, ai, pushCfg, tpl, channels] = await Promise.all([
     api.presets(),
     api.aiConfig(),
     api.pushConfig(),
-    api.templates()
+    api.templates(),
+    api.newsChannels().catch(() => ({ channels: [] as NewsChannel[] }))
   ])
   presets.value = pres
   aiConfig.value = ai
   push.value = pushCfg
   templates.value = tpl.templates
+  newsChannelList.value = channels.channels
   templateDraft.value = tpl.templates[editingTemplate.value] || ''
   // 自启状态不 await：它只影响一个开关，且桌面端要走一次 IPC（内核要读注册表）。
   // 让它在后台填充，页面无需等它。
   loadAutostart()
+}
+
+function toggleNewsChannel(id: string) {
+  const i = newsSelected.value.indexOf(id)
+  if (i >= 0) {
+    if (newsSelected.value.length === 1) {
+      app.toast('warning', t('至少保留一个栏目'))
+      return
+    }
+    newsSelected.value.splice(i, 1)
+  } else {
+    newsSelected.value.push(id)
+  }
 }
 
 async function saveRemind() {
@@ -293,6 +324,10 @@ async function saveRemind() {
     todo_remind_offset_min: String(todoRemindOffset.value),
     smart_brief_enabled: briefEnabled.value ? '1' : '0',
     brief_minutes: String(hhmmToMinutes(briefTime.value)),
+    news_limit: String(newsLimit.value),
+    news_channels: JSON.stringify(newsSelected.value.length ? newsSelected.value : ['weibo']),
+    news_auto_refresh: newsAutoRefresh.value ? '1' : '0',
+    news_refresh_minutes: String(newsRefreshMinutes.value),
     goodnight_enabled: goodnightEnabled.value ? '1' : '0',
     goodnight_minutes: String(hhmmToMinutes(goodnightTime.value)),
     review_enabled: reviewEnabled.value ? '1' : '0',
@@ -624,9 +659,48 @@ onMounted(load)
         <section class="card stack">
           <div class="card-title" style="font-size: 15px">{{ $t('智伴主动问候') }}</div>
           <div class="row">
-            <span style="flex: 1; font-size: 13px">{{ $t('晨间简报') }}</span>
+            <span style="flex: 1; font-size: 13px">{{ $t('我的简报') }}</span>
             <input v-model="briefTime" type="time" class="input" style="width: 120px" />
             <div class="switch" :class="{ on: briefEnabled }" @click="briefEnabled = !briefEnabled"></div>
+          </div>
+          <div class="stack" style="gap: 6px">
+            <div class="row">
+              <span style="flex: 1; font-size: 13px">{{ $t('今日热点') }}</span>
+              <div class="select-wrap" style="width: 130px">
+                <select v-model.number="newsLimit" class="input">
+                  <option :value="5">{{ $t('显示 5 条') }}</option>
+                  <option :value="10">{{ $t('显示 10 条') }}</option>
+                  <option :value="15">{{ $t('显示 15 条') }}</option>
+                  <option :value="20">{{ $t('显示 20 条') }}</option>
+                </select>
+              </div>
+            </div>
+            <div class="row">
+              <span style="flex: 1; font-size: 13px">{{ $t('自动更新热点') }}</span>
+              <div class="select-wrap" v-show="newsAutoRefresh" style="width: 150px">
+                <select v-model.number="newsRefreshMinutes" class="input">
+                  <option :value="5">{{ $t('每 5 分钟') }}</option>
+                  <option :value="10">{{ $t('每 10 分钟') }}</option>
+                  <option :value="15">{{ $t('每 15 分钟') }}</option>
+                  <option :value="30">{{ $t('每 30 分钟') }}</option>
+                  <option :value="60">{{ $t('每 1 小时') }}</option>
+                </select>
+              </div>
+              <div class="switch" :class="{ on: newsAutoRefresh }" @click="newsAutoRefresh = !newsAutoRefresh"></div>
+            </div>
+            <div class="row wrap" style="gap: 6px; padding-left: 2px">
+              <button
+                v-for="c in newsChannelList"
+                :key="c.id"
+                class="tag-pick"
+                :class="{ on: newsSelected.includes(c.id) }"
+                @click="toggleNewsChannel(c.id)"
+              >
+                {{ c.name }}
+              </button>
+              <span v-if="!newsChannelList.length" class="small muted">{{ $t('栏目清单加载失败，保存后将只显示微博热搜') }}</span>
+            </div>
+            <div class="small muted">{{ $t('栏目多选；在「今日」页点简报旁的「今日热点」标签查看，点击新闻用浏览器打开。') }}</div>
           </div>
           <div class="row">
             <span style="flex: 1; font-size: 13px">{{ $t('晚安总结') }}</span>
@@ -1008,7 +1082,7 @@ onMounted(load)
           <div class="card-title" style="font-size: 15px">{{ $t('Prompt 模板（可自定义）') }}</div>
           <div class="seg wrap">
             <button
-              v-for="t in [['daily', '日报'], ['weekly', '周报'], ['monthly', '月报'], ['brief', '晨间简报'], ['goodnight', '晚安总结'], ['review', '复盘'], ['qa', '问答']]"
+              v-for="t in [['daily', '日报'], ['weekly', '周报'], ['monthly', '月报'], ['brief', '我的简报'], ['goodnight', '晚安总结'], ['review', '复盘'], ['qa', '问答']]"
               :key="t[0]"
               :class="{ on: editingTemplate === t[0] }"
               @click="loadTemplate(t[0])"
@@ -1088,7 +1162,7 @@ onMounted(load)
             </div>
           </div>
           <div class="small muted">
-            {{ $t('默认跟随系统语言；AI 报告、晨间简报与提醒文案也会使用该语言生成。') }}
+            {{ $t('默认跟随系统语言；AI 报告、我的简报与提醒文案也会使用该语言生成。') }}
           </div>
         </section>
       </template>

@@ -10,11 +10,15 @@ import ProgressPair from '@/components/ProgressPair.vue'
 import CalendarMonth from '@/components/CalendarMonth.vue'
 import QuickEntry from '@/components/QuickEntry.vue'
 import TodoItem from '@/components/TodoItem.vue'
+import { daySubLabel, dayBadge } from '@/lib/lunar'
 import { t } from '@/i18n'
 
 const app = useAppStore()
 const nodes = useNodesStore()
 const todos = useTodosStore()
+
+const lunarOf = (date: string) => daySubLabel(date)
+const badgeOf = (date: string) => dayBadge(date)
 
 const anchor = ref(todayStr())
 const stats = ref<PeriodStats | null>(null)
@@ -175,7 +179,11 @@ onMounted(load)
         <div class="row" style="margin-bottom: 12px">
           <div>
             <div class="card-title" style="font-size: 15px">{{ drawerDate }}</div>
-            <div class="small muted">{{ $t('{a} · {b} 条记录', { a: weekdayLabel(drawerDate), b: drawerNodes.length }) }}</div>
+            <div class="small muted">
+              {{ $t('{a} · {b} 条记录', { a: weekdayLabel(drawerDate), b: drawerNodes.length }) }}
+              <span v-if="lunarOf(drawerDate)"> · {{ lunarOf(drawerDate) }}</span>
+              <span v-if="badgeOf(drawerDate)" class="day-badge" :class="badgeOf(drawerDate) === '休' ? 'off' : 'work'" style="margin-left: 4px">{{ badgeOf(drawerDate) }}</span>
+            </div>
           </div>
           <div class="spacer"></div>
           <button class="icon-btn" @click="closeDrawer">×</button>

@@ -141,7 +141,7 @@ loadPresets()
       <template v-if="step === 2">
         <div class="card-title" style="font-size: 15px">{{ $t('③ 配置 AI 模型（可跳过）') }}</div>
         <div class="small muted">
-          {{ $t('配置后，晨间简报、日报/周报/月报、周度复盘与问答将由大模型生成； 未配置时会自动使用本地模板，功能同样可用。') }}
+          {{ $t('配置后，我的简报、日报/周报/月报、周度复盘与问答将由大模型生成； 未配置时会自动使用本地模板，功能同样可用。') }}
         </div>
         <div class="preset-grid">
           <div

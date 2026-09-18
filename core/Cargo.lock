@@ -1085,7 +1085,7 @@ dependencies = [
 
 [[package]]
 name = "mindmate-core"
-version = "1.0.17"
+version = "1.0.18"
 dependencies = [
  "anyhow",
  "argon2",

@@ -843,6 +843,61 @@ check("操作不存在资源返回 404", code == 404, f"HTTP {code}")
 
 # ─────────────────────── 汇总 ───────────────────────
 print("\n" + "=" * 60)
+# ─────────────────────── 12. 循环待办与今日热点 ───────────────────────
+section("12. 循环待办与今日热点")
+
+# 循环待办：追溯创建每周循环（due 在过去）→ 应自动补齐不早于今天的一期
+r, _ = call("POST", "/todos", {"title": "E2E每周循环", "dueDate": "2026-01-05", "recurType": "weekly"})
+check("创建每周循环待办成功", r.get("code") == 0 and (r.get("data") or {}).get("recurType") == "weekly",
+      str(r.get("message"))[:60])
+r, _ = call("GET", "/todos")
+weekly = [x for x in (r.get("data") or []) if x.get("title") == "E2E每周循环"]
+check("追溯创建后自动补齐下一期（不早于今天）",
+      any(x.get("dueDate", "") >= today_d.isoformat() for x in weekly),
+      f"chain={[x.get('dueDate') for x in weekly]}")
+root = next((x for x in weekly if x.get("recurSourceId") is None), None)
+check("循环锚点=首个实例截止日期", bool(root) and root.get("recurAnchor") == "2026-01-05")
+
+# 每天循环
+r, _ = call("POST", "/todos", {"title": "E2E每天循环", "dueDate": "2026-06-01", "recurType": "daily"})
+check("创建每天循环待办成功", r.get("code") == 0 and (r.get("data") or {}).get("recurType") == "daily")
+r, _ = call("GET", "/todos")
+daily = [x for x in (r.get("data") or []) if x.get("title") == "E2E每天循环"]
+check("每天循环补齐到今天", any(x.get("dueDate", "") >= today_d.isoformat() for x in daily),
+      f"chain={[x.get('dueDate') for x in daily]}")
+
+# 完成最新一期 → 自动生成下一期
+latest = max((x for x in weekly if x.get("recurSourceId")), key=lambda x: x.get("dueDate", ""), default=None)
+if latest:
+    r, _ = call("POST", f"/todos/{latest['id']}/complete")
+    check("完成循环实例成功", r.get("code") == 0)
+    r, _ = call("GET", "/todos")
+    weekly2 = [x for x in (r.get("data") or []) if x.get("title") == "E2E每周循环"]
+    newer = [x for x in weekly2 if x.get("dueDate", "") > latest.get("dueDate", "")]
+    check("完成后自动生成下一期", bool(newer), f"latest={latest.get('dueDate')} newer={[x.get('dueDate') for x in newer]}")
+else:
+    check("找到循环实例用于完成", False)
+
+# 停止循环
+if root:
+    r, _ = call("PATCH", f"/todos/{root['id']}", {"recurType": ""})
+    check("停止循环成功", r.get("code") == 0 and (r.get("data") or {}).get("recurType") == "")
+
+# 今日热点：栏目清单 + 抓取（离线时也应返回结构完整的降级数据）
+r, _ = call("GET", "/news/channels")
+channels = (r.get("data") or {}).get("channels") or []
+check("热点栏目清单自动生成（≥3 个栏目）", len(channels) >= 3,
+      f"{[c.get('name') for c in channels]}")
+r, _ = call("GET", "/news/hot?refresh=1&limit=10")
+hot = r.get("data") or {}
+check("热点接口返回结构完整", isinstance(hot.get("items"), list) and hot.get("source") in ("live", "cache", "none"),
+      f"source={hot.get('source')} items={len(hot.get('items') or [])}")
+check("热点条数遵守上限", len(hot.get("items") or []) <= 10, f"{len(hot.get('items') or [])}")
+if hot.get("items"):
+    first = hot["items"][0]
+    check("热点条目带标题与栏目", bool(first.get("title")) and bool(first.get("channelName")),
+          str(first.get("title"))[:30])
+
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：")

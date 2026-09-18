@@ -18,9 +18,16 @@ function priClass(p: string) {
   return p === '高' ? 'pri-h' : p === '中' ? 'pri-m' : 'pri-l'
 }
 
+function recurLabel(rt: string) {
+  const map: Record<string, string> = { daily: '每天', weekly: '每周', monthly: '每月' }
+  return map[rt] || rt
+}
+
 async function toggle() {
   try {
     await todos.toggle(props.todo.id)
+    // 循环待办完成后会自动生成下一期，重拉一次让新实例立即可见
+    await todos.load()
     app.refreshStats()
   } catch (e: any) {
     app.toast('error', e?.message || '操作失败')
@@ -70,6 +77,7 @@ async function suggest() {
         <span :class="{ 'due-late': todo.overdue }">
           {{ todo.category === '日程' && todo.dueTime ? friendlyDate(todo.dueDate) : friendlyDate(todo.dueDate) }}
         </span>
+        <span v-if="todo.recurType" class="chip recur" :title="$t('循环待办：完成后自动生成下一期')">🔁 {{ $t(recurLabel(todo.recurType)) }}</span>
         <span v-if="todo.status === '已逾期'" class="badge danger">{{ $t('逾期') }}</span>
         <span v-for="t in todo.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
       </div>
