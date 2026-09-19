@@ -127,7 +127,7 @@ impl Db {
 
     /// 首次启动写入默认设置
     pub fn seed_defaults(&self) -> Result<()> {
-        let defaults: [(&str, &str); 30] = [
+        let defaults: [(&str, &str); 32] = [
             ("daily_goal", "4"),
             ("daily_goal_enabled", "1"),
             ("remind_freq_minutes", "60"),
@@ -160,6 +160,10 @@ impl Db {
             // 自动更新（一期）：是否自动检查新版本、用户主动跳过的版本号
             ("auto_update_check", "1"),
             ("skipped_version", ""),
+            // 自定义标签（v1.1.1）：标签选择器里默认四枚之外的扩展词（JSON 数组）
+            ("custom_tags", "[]"),
+            // AI 自动打标（v1.1.1）：速记输入停顿后自动建议标签；0=只在点「AI 打标」时建议
+            ("ai_autotag", "1"),
         ];
         let conn = self.lock();
         let now = models::now_string();

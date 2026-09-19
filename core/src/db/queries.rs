@@ -660,6 +660,40 @@ impl Db {
         Ok(v.filter(|s| !s.is_empty()))
     }
 
+    /// 全部在用标签（记录 + 待办的 tags JSON 合并统计）：按使用次数降序、次数同则按名称。
+    /// 标签选择器的数据源——「自定义标签」只是把不常碰的词提前放进选项，这里保证删过的、
+    /// 手输过的标签也都能被再次选到。
+    pub fn list_tags(&self) -> Result<Vec<TagStat>> {
+        let conn = self.lock();
+        let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+        for sql in [
+            "SELECT tags FROM nodes WHERE deleted_at IS NULL",
+            "SELECT tags FROM todos WHERE deleted_at IS NULL",
+        ] {
+            let mut stmt = conn.prepare(sql)?;
+            let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+            for row in rows {
+                let raw = row?;
+                let Ok(arr) = serde_json::from_str::<Vec<String>>(&raw) else {
+                    continue;
+                };
+                for tag in arr {
+                    let tag = tag.trim().to_string();
+                    if tag.is_empty() {
+                        continue;
+                    }
+                    *counts.entry(tag).or_insert(0) += 1;
+                }
+            }
+        }
+        let mut out: Vec<TagStat> = counts
+            .into_iter()
+            .map(|(name, count)| TagStat { name, count })
+            .collect();
+        out.sort_by(|a, b| b.count.cmp(&a.count).then(a.name.cmp(&b.name)));
+        Ok(out)
+    }
+
     pub fn get_setting(&self, key: &str) -> Result<Option<String>> {
         let conn = self.lock();
         let v = conn

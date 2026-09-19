@@ -11,6 +11,12 @@ export interface Node {
   todoId: number | null
 }
 
+/** 标签统计（标签选择器数据源：记录 + 待办合并后的使用次数） */
+export interface TagStat {
+  name: string
+  count: number
+}
+
 export interface Todo {
   id: number
   title: string

@@ -4,16 +4,17 @@ import { ref } from 'vue'
 import type { Node } from '@/api/types'
 import { useNodesStore } from '@/stores/nodes'
 import { useAppStore } from '@/stores/app'
+import { useTagsStore } from '@/stores/tags'
 import { t } from '@/i18n'
 
 const props = defineProps<{ node: Node; showLine?: boolean }>()
 const nodes = useNodesStore()
 const app = useAppStore()
+const tagsStore = useTagsStore()
 
 const editing = ref(false)
 const draft = ref('')
 const draftTags = ref<string[]>([])
-const TAG_OPTIONS = ['工作', '生活', '健康', '学习']
 
 function timeOf(s: string) {
   return s.slice(11, 16)
@@ -23,6 +24,7 @@ function startEdit() {
   editing.value = true
   draft.value = props.node.content
   draftTags.value = [...props.node.tags]
+  if (!tagsStore.loaded) tagsStore.load()
 }
 
 async function save() {
@@ -80,7 +82,7 @@ function tagClass(t: string) {
         <textarea v-model="draft" class="textarea" rows="3" @keydown.esc="editing = false"></textarea>
         <div class="row wrap">
           <button
-            v-for="t in TAG_OPTIONS"
+            v-for="t in tagsStore.options"
             :key="t"
             class="tag-pick"
             :class="{ on: draftTags.includes(t) }"

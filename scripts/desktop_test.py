@@ -337,9 +337,30 @@ check("热点：切换到今日热点标签即强制刷新",
       "loadNews(true)" in today_src.split("function toggleNewsPanel")[1].split("}")[0] if "function toggleNewsPanel" in today_src else False)
 check("热点：重点关注过滤接入面板（参数 + 空态 + 摘要）",
       "isFocusFiltering" in today_src and "newsFocusParams" in today_src and "focusSummary" in today_src)
-check("热点：自定义关键词走互联网搜索（必应中国 + 相关度排序），不在热搜榜里过滤",
-      "SEARCH_URL" in news and "parse_bing_results" in news and "relevance_score" in news
+check("热点：自定义关键词走互联网搜索（多源注册表 + 相关度排序），不在热搜榜里过滤",
+      "SEARCH_ENGINES" in news and "parse_bing_results" in news and "relevance_score" in news
       and "search_keywords" in news and "search_keywords" in read("core", "src", "api", "mod.rs"))
+check("v1.1.1 热点：搜索源冗余与失败自动切换（必应→百度→搜狗 + 上次成功源记忆 + 相对链接补全）",
+      all(x in news for x in ("bing", "baidu", "sogou", "parse_h3_results", "absolutize_url", "LAST_GOOD_ENGINE"))
+      and news.count("SearchEngine {") >= 3)
+check("v1.1.1 标签：标签统计接口（记录+待办合并去重按次数排序）",
+      "list_tags" in read("core", "src", "db", "queries.rs") and "/api/v1/tags" in read("core", "src", "api", "mod.rs"))
+check("v1.1.1 标签：AI 打标接口（JSON 数组解析清洗 + AI 未配置降级本地匹配）",
+      "ai_tag" in read("core", "src", "api", "mod.rs") and "parse_tag_array" in read("core", "src", "api", "mod.rs"))
+check("v1.1.1 标签：标签中心 store（内置∪自定义∪在用，设置页可增删）",
+      "DEFAULT_TAGS" in read("apps", "web", "src", "stores", "tags.ts")
+      and "custom_tags" in read("apps", "web", "src", "stores", "tags.ts")
+      and "自定义标签" in read("apps", "web", "src", "views", "Settings.vue"))
+check("v1.1.1 标签：速记/待办弹窗共用动态选项 + AI 打标 + 停顿自动建议（可关）",
+      "tagsStore.options" in read("apps", "web", "src", "components", "QuickEntry.vue")
+      and "suggestTags" in read("apps", "web", "src", "components", "QuickEntry.vue")
+      and "ai_autotag" in read("apps", "web", "src", "components", "QuickEntry.vue")
+      and "tagsStore.options" in read("apps", "web", "src", "components", "TodoEditModal.vue")
+      and "suggestTags" in read("apps", "web", "src", "components", "TodoEditModal.vue"))
+check("v1.1.1 热点：一键转记录/转待办（悬停按钮 + TodoEditModal 预填）",
+      "newsToNode" in today_src and "newsToTodo" in today_src
+      and "news-acts" in read("apps", "web", "src", "styles", "app.css")
+      and "preset" in read("apps", "web", "src", "components", "TodoEditModal.vue"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

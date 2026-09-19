@@ -244,3 +244,11 @@ pub fn now_string() -> String {
 pub fn today_string() -> String {
     today_local()
 }
+
+/// 标签统计（标签选择器数据源：记录 + 待办合并去重后的使用次数）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TagStat {
+    pub name: String,
+    pub count: i64,
+}

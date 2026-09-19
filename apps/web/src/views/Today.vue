@@ -27,6 +27,7 @@ const briefIsAi = ref(true)
 const briefAt = ref('')
 let abortBrief: (() => void) | null = null
 const showTodoModal = ref(false)
+const presetTodo = ref<{ title?: string; description?: string; tags?: string[] } | null>(null)
 const showAchievements = ref(false)
 const badges = ref<AchievementDef[]>([])
 
@@ -185,6 +186,35 @@ async function openNews(n: NewsItem) {
     return
   }
   window.open(n.url, '_blank', 'noopener')
+}
+
+// ── 热点一键转记录 / 转待办（v1.1.1） ──
+const convertingNews = ref<string | null>(null) // 正在转的条目标题（按钮防抖）
+
+/** 转为今日记录：标题 + 链接两行，打「热点」标签 */
+async function newsToNode(n: NewsItem) {
+  if (convertingNews.value) return
+  convertingNews.value = n.title
+  try {
+    const content = n.url ? `${n.title}\n${n.url}` : n.title
+    await nodes.create(content, [t('热点')], today.value)
+    app.toast('success', t('已转为今日记录'))
+    app.refreshStats()
+  } catch (e: any) {
+    app.toast('error', e?.message || t('转换失败，请稍后再试'))
+  } finally {
+    convertingNews.value = null
+  }
+}
+
+/** 转为待办：打开新建弹窗预填标题/链接，用户确认后入库 */
+function newsToTodo(n: NewsItem) {
+  presetTodo.value = {
+    title: n.title,
+    description: n.url || '',
+    tags: [t('热点')]
+  }
+  showTodoModal.value = true
 }
 
 const unlockedBadges = computed(() => badges.value.filter((a) => a.unlocked))
@@ -362,12 +392,23 @@ async function completeTodo(id: number) {
             <div v-if="newsStale" class="hint-bar warn" style="margin-bottom: 8px">
               {{ $t('本次抓取失败，正在展示最近一次成功的数据') }}
             </div>
-            <!-- 下滑到底部自动加载更多 -->
+            <!-- 下滑到底部自动加载更多；条目悬停出现「转记录 / 转待办」 -->
             <ol class="news-list" @scroll.passive="onNewsScroll">
               <li v-for="(n, i) in newsItems" :key="`${n.channel}-${i}`">
                 <span class="news-idx mono">{{ i + 1 }}</span>
                 <a class="news-title" :title="n.title" @click="openNews(n)">{{ n.title }}</a>
                 <span class="chip" style="flex: none">{{ n.channelName }}</span>
+                <span class="news-acts">
+                  <button
+                    class="news-act"
+                    :title="$t('存为今日记录')"
+                    :disabled="convertingNews === n.title"
+                    @click.stop="newsToNode(n)"
+                  >
+                    📝
+                  </button>
+                  <button class="news-act" :title="$t('建为待办')" @click.stop="newsToTodo(n)">✓</button>
+                </span>
               </li>
               <li v-if="newsLoadingMore" class="small muted" style="justify-content: center">
                 {{ $t('加载更多…') }}
@@ -501,8 +542,9 @@ async function completeTodo(id: number) {
     <TodoEditModal
       v-if="showTodoModal"
       :default-date="today"
-      @close="showTodoModal = false"
-      @saved="showTodoModal = false; todos.load(); app.refreshStats()"
+      :preset="presetTodo"
+      @close="showTodoModal = false; presetTodo = null"
+      @saved="showTodoModal = false; presetTodo = null; todos.load(); app.refreshStats()"
     />
   </div>
 </template>

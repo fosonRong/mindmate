@@ -125,6 +125,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/nodes/range", get(list_nodes_range))
         .route("/api/v1/nodes/{id}", patch(update_node).delete(delete_node))
         .route("/api/v1/nodes/search", get(search_nodes))
+        .route("/api/v1/tags", get(list_tags))
         // 统计
         .route("/api/v1/stats/daily", get(stats_daily))
         .route("/api/v1/stats/period", get(stats_period))
@@ -161,6 +162,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/review", post(ai_review))
         .route("/api/v1/ai/chat", post(ai_chat))
         .route("/api/v1/ai/replan", post(ai_replan))
+        .route("/api/v1/ai/tag", post(ai_tag))
         // 报告
         .route("/api/v1/reports", get(list_reports))
         .route("/api/v1/reports/{id}", delete(delete_report))
@@ -724,6 +726,101 @@ async fn suggest_schedule(
     Ok(ApiResp::ok(json!({ "isAi": true, "suggestion": text.trim() })))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AiTagReq {
+    content: String,
+}
+
+/// AI 打标（v1.1.1）：从一段内容里提取 0~3 个标签，供速记/待办一键采纳。
+/// AI 未配置时降级为本地规则：只回填「名字已出现在内容里的用户常用标签」。
+async fn ai_tag(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<AiTagReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let content = req.content.trim().chars().take(2000).collect::<String>();
+    if content.is_empty() {
+        return Err(ApiError::bad_request("内容为空，无从打标"));
+    }
+    let existing = ctx.db.list_tags()?;
+    let mut known: Vec<String> = existing.iter().map(|t| t.name.clone()).collect();
+    // 自定义标签也是候选（AI 未配置时的本地降级全靠它命中：用户加的词就是他的心智词汇）
+    if let Some(raw) = ctx.db.get_setting("custom_tags").ok().flatten() {
+        if let Ok(arr) = serde_json::from_str::<Vec<String>>(&raw) {
+            for t in arr {
+                let t = t.trim().to_string();
+                if !t.is_empty() && !known.contains(&t) {
+                    known.push(t);
+                }
+            }
+        }
+    }
+
+    // 本地降级：已有标签（含自定义）的名字出现在内容里才算命中
+    let local_tags: Vec<String> = known
+        .iter()
+        .filter(|t| !t.is_empty() && content.to_lowercase().contains(&t.to_lowercase()))
+        .take(3)
+        .cloned()
+        .collect();
+
+    let cfg = ai::load_config(&ctx.db)?;
+    if !cfg.has_key && cfg.provider != "ollama" {
+        return Ok(ApiResp::ok(json!({ "isAi": false, "tags": local_tags })));
+    }
+
+    let known_text = if known.is_empty() {
+        "（暂无，可自拟）".to_string()
+    } else {
+        known.iter().take(30).cloned().collect::<Vec<_>>().join("、")
+    };
+    let prompt = format!(
+        "从下面的内容中提取 0～3 个标签。优先从「已有标签」里选；确实没有合适的才新造（每个不超过 6 个字）。\
+         只输出 JSON 字符串数组，例如 [\"工作\",\"AI\"]，不要输出任何解释。\n\n已有标签：{}\n\n内容：{}",
+        known_text,
+        ai::redact(&content)
+    );
+    let key = crate::secrets::load_api_key()?;
+    match ai::chat_once(&cfg, vec![ChatMsg::user(prompt)], key).await {
+        Ok(text) => {
+            let tags = parse_tag_array(&text);
+            if tags.is_empty() {
+                // 模型没按格式给：退回本地规则，用户侧不至于空手而归
+                Ok(ApiResp::ok(json!({ "isAi": false, "tags": local_tags })))
+            } else {
+                Ok(ApiResp::ok(json!({ "isAi": true, "tags": tags })))
+            }
+        }
+        Err(e) => Err(ApiError::ai(e.to_string())),
+    }
+}
+
+/// 从模型回复里抠出 JSON 字符串数组（容忍 ```json 包裹与前后废话），
+/// 清洗：去空白、长度 ≤ 12 字、去重、最多 3 个。
+fn parse_tag_array(text: &str) -> Vec<String> {
+    let raw = match (text.find('['), text.rfind(']')) {
+        (Some(s), Some(e)) if e > s => &text[s..=e],
+        _ => return Vec::new(),
+    };
+    let Ok(arr) = serde_json::from_str::<Vec<String>>(raw) else {
+        return Vec::new();
+    };
+    let mut out: Vec<String> = Vec::new();
+    for t in arr {
+        let t = t.trim().trim_start_matches('#').trim().to_string();
+        if t.is_empty() || t.chars().count() > 12 || out.contains(&t) {
+            continue;
+        }
+        out.push(t);
+        if out.len() >= 3 {
+            break;
+        }
+    }
+    out
+}
+
 // ───────────────────────── 设置 ─────────────────────────
 
 async fn all_settings(
@@ -923,6 +1020,12 @@ struct OpenUrlReq {
 /// 只在本地模式开放：桌面端需要跳出 WebView 打开厂商页面，而局域网/服务器模式
 /// 是别人在远程访问，绝不该能借这台机器调起浏览器进程。
 // ───────────────────────── 今日热点 ─────────────────────────
+
+/// 全部在用标签及使用次数（标签选择器数据源；前端再并上默认标签与用户自定义词）
+async fn list_tags(State(ctx): State<Arc<AppContext>>, headers: HeaderMap) -> ApiResult<Vec<TagStat>> {
+    ensure_auth(&ctx, &headers)?;
+    Ok(ApiResp::ok(ctx.db.list_tags()?))
+}
 
 /// 可用栏目清单（由 news::CHANNELS 注册表自动生成，设置页多选用）
 async fn news_channels(State(ctx): State<Arc<AppContext>>, headers: HeaderMap) -> ApiResult<serde_json::Value> {
@@ -2027,3 +2130,32 @@ async fn stream_events(
     Ok(boxed_sse(stream))
 }
 
+
+#[cfg(test)]
+mod ai_tag_tests {
+    use super::parse_tag_array;
+
+    #[test]
+    fn 解析_标准数组() {
+        assert_eq!(parse_tag_array("[\"工作\",\"AI\"]"), vec!["工作", "AI"]);
+    }
+
+    #[test]
+    fn 解析_容忍代码块包裹与废话() {
+        let text = "好的，标签如下：\n```json\n[\"学习\", \"健康\"]\n```\n希望对你有帮助";
+        assert_eq!(parse_tag_array(text), vec!["学习", "健康"]);
+    }
+
+    #[test]
+    fn 解析_清洗_去重_限长限量() {
+        // 空串剔除 / 井号前缀剥掉 / 超长剔除 / 去重 / 最多 3 个
+        let text = r##"["", "工作", "#生活", "这是一个超过十二个字的超长标签不该被采纳", "学习", "健康", "娱乐"]"##;
+        assert_eq!(parse_tag_array(text), vec!["工作", "生活", "学习"]);
+    }
+
+    #[test]
+    fn 解析_不是数组就为空() {
+        assert!(parse_tag_array("工作、生活").is_empty());
+        assert!(parse_tag_array("").is_empty());
+    }
+}

@@ -299,3 +299,10 @@ input[type='range'] { width: 100%; accent-color: var(--primary); }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-weak); background-clip: content-box; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::selection { background: var(--primary-weak); }
+
+/* ── v1.1.1 热点条目：悬停出现「转记录 / 转待办」 ── */
+.news-acts { flex: none; display: flex; gap: 2px; opacity: 0; transition: opacity 0.12s; }
+.news-list li:hover .news-acts, .news-list li:focus-within .news-acts { opacity: 1; }
+.news-act { border: none; background: none; font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 6px; cursor: pointer; color: var(--text-regular); }
+.news-act:hover { background: var(--bg-hover); color: var(--primary); }
+.news-act:disabled { opacity: 0.5; cursor: default; }

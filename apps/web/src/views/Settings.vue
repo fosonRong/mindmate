@@ -5,12 +5,14 @@ import { api, downloadFile } from '@/api/client'
 import { useAppStore, requestNotificationPermission, type ThemeMode } from '@/stores/app'
 import { isDesktop } from '@/lib/desktop'
 import { useUpdateStore } from '@/stores/update'
+import { useTagsStore, DEFAULT_TAGS } from '@/stores/tags'
 import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode, t } from '@/i18n'
 import { ref as _ref } from 'vue'
 import type { AiConfig, AiFailKind, AiTestResult, OllamaProbe, Preset, PushConfig, NewsChannel, FocusTopic } from '@/api/types'
 
 const app = useAppStore()
 const update = useUpdateStore()
+const tagsStore = useTagsStore()
 
 type Section = 'remind' | 'push' | 'ai' | 'goal' | 'appearance' | 'data' | 'about'
 const section = ref<Section>('remind')
@@ -567,6 +569,31 @@ async function saveGoal() {
   app.toast('success', t('每日目标已保存'))
 }
 
+// ── 自定义标签（v1.1.1） ──
+const newTag = ref('')
+const isBuiltinTag = (t: string) => DEFAULT_TAGS.includes(t)
+
+async function addTag() {
+  const name = newTag.value.trim()
+  if (!name) return
+  try {
+    await tagsStore.addCustom(name)
+    newTag.value = ''
+    app.toast('success', t('已添加标签「{a}」', { a: name }))
+  } catch (e: any) {
+    app.toast('error', e?.message || t('添加失败'))
+  }
+}
+
+async function removeTag(name: string) {
+  try {
+    await tagsStore.removeCustom(name)
+    app.toast('info', t('已删除标签「{a}」', { a: name }))
+  } catch (e: any) {
+    app.toast('error', e?.message || t('删除失败'))
+  }
+}
+
 async function doExport() {
   const data = await api.exportData()
   exportText.value = JSON.stringify(data, null, 2)
@@ -635,7 +662,10 @@ const THEMES: { key: ThemeMode; label: string; desc: string }[] = [
   { key: 'dark', label: '深色', desc: '始终使用深色主题' }
 ]
 
-onMounted(load)
+onMounted(() => {
+  load()
+  tagsStore.load()
+})
 </script>
 
 <template>
@@ -1194,6 +1224,39 @@ onMounted(load)
           <div class="row">
             <div class="spacer"></div>
             <button class="btn btn-primary" @click="saveGoal">{{ $t('保存') }}</button>
+          </div>
+        </section>
+
+        <!-- 自定义标签（v1.1.1）：速记 / 待办弹窗 / 节点编辑共用 -->
+        <section class="card stack">
+          <div class="card-title" style="font-size: 15px">{{ $t('自定义标签') }}</div>
+          <div class="row wrap" style="gap: 6px">
+            <span v-for="t in tagsStore.options" :key="t" class="chip" style="gap: 4px">
+              {{ t }}
+              <small v-if="tagsStore.usageMap[t]" class="muted">×{{ tagsStore.usageMap[t] }}</small>
+              <button
+                v-if="!isBuiltinTag(t)"
+                class="chip-x"
+                :title="$t('删除该自定义标签')"
+                @click="removeTag(t)"
+              >
+                ×
+              </button>
+            </span>
+          </div>
+          <div class="row" style="gap: 8px">
+            <input
+              v-model="newTag"
+              class="input"
+              style="max-width: 220px"
+              maxlength="12"
+              :placeholder="$t('添加标签，如：育儿、健身、项目A')"
+              @keydown.enter.prevent="addTag"
+            />
+            <button class="btn" @click="addTag">{{ $t('添加') }}</button>
+          </div>
+          <div class="hint-bar info">
+            {{ $t('加好的标签会出现在速记、待办和记录编辑的标签栏里；带 × 的可删，内置四个（工作/生活/健康/学习）不可删。') }}
           </div>
         </section>
       </template>

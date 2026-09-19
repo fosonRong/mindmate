@@ -3,7 +3,7 @@ import { t } from '@/i18n'
 import type {
   Achievement, AchievementDef, AiConfig, AiTestResult, AppEvent, AuthStatus, ChatMessage, DailyStats,
   MonthlySummary, Node, OllamaProbe, PeriodStats, Preset, PushConfig, PushResult, Report,
-  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic
+  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic, TagStat
 } from './types'
 
 export class ApiError extends Error {
@@ -71,6 +71,9 @@ export const api = {
   deleteNode: (id: number) => del<{ deleted: boolean }>(`/api/v1/nodes/${id}`),
   searchNodes: (q: string) => get<Node[]>(`/api/v1/nodes/search?q=${encodeURIComponent(q)}`),
 
+  // 标签（v1.1.1）：全部在用标签及使用次数
+  listTags: () => get<TagStat[]>('/api/v1/tags'),
+
   // 统计
   dailyStats: (date: string) => get<DailyStats>(`/api/v1/stats/daily?date=${date}`),
   periodStats: (from: string, to: string) =>
@@ -92,6 +95,9 @@ export const api = {
   schedule: (date: string) => get<ScheduleData>(`/api/v1/todos/schedule?date=${date}`),
   suggestSchedule: (todoId: number) =>
     post<{ isAi: boolean; suggestion: string }>('/api/v1/ai/replan', { todoId }),
+  /** AI 打标：从内容提取 0~3 个标签（AI 未配置时后端降级为本地规则匹配） */
+  aiTag: (content: string) =>
+    post<{ isAi: boolean; tags: string[] }>('/api/v1/ai/tag', { content }),
 
   // 设置
   settings: () => get<Setting[]>('/api/v1/settings'),

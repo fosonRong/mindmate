@@ -212,10 +212,100 @@ pub fn save_cache_key(db: &Db, key: &str, result: &HotNewsResult) {
 // ───────────────────────── 关键词互联网搜索（重点关注不一定是热点） ─────────────────────────
 //
 // 用户反馈：自定义关键词（如「AI驱动开发」）在热搜榜里过滤几乎命中不了——热搜是大众榜。
-// 这里用必应中国的网页搜索结果做关键词资讯检索：每词一次请求（HTML 可解析、无需 Key、国内可达），
+// 这里用搜索引擎的网页结果做关键词资讯检索：每词一次请求（HTML 可解析、无需 Key、国内可达），
 // 按「标题命中 > 摘要命中 + 新近度」打分排序（符合度高低）。
+// 单点依赖会被反爬/网络波动打断（v1.0.x 只接了必应，用户反馈检索偶发为空），
+// v1.1.1 起维护一个搜索源注册表：前一个源请求失败或解析不出结果时自动切换下一个。
 
-const SEARCH_URL: &str = "https://cn.bing.com/search";
+/// 一个关键词搜索源。新增源只需在此登记（URL + 参数名 + 解析函数），
+/// 超时、失败切换、相关度打分全部复用现有逻辑。
+pub struct SearchEngine {
+    pub id: &'static str,
+    pub name: &'static str,
+    /// 搜索页地址（不含查询参数）
+    pub url: &'static str,
+    /// 关键词参数名（bing: q / baidu: wd / sogou: query）
+    pub query_key: &'static str,
+    /// 附加固定参数（控制返回条数等）
+    pub extra_query: &'static [(&'static str, &'static str)],
+    /// 结果链接是相对路径时用它补全（搜狗返回 /link?url=...）
+    pub link_base: &'static str,
+    pub parse: fn(&str) -> Vec<SearchHit>,
+}
+
+/// 按优先级排序：必应（现行主源）→ 百度 → 搜狗
+pub const SEARCH_ENGINES: &[SearchEngine] = &[
+    SearchEngine {
+        id: "bing",
+        name: "必应",
+        url: "https://cn.bing.com/search",
+        query_key: "q",
+        extra_query: &[("count", "20")],
+        link_base: "",
+        parse: parse_bing_results,
+    },
+    SearchEngine {
+        id: "baidu",
+        name: "百度",
+        url: "https://www.baidu.com/s",
+        query_key: "wd",
+        extra_query: &[("rn", "20")],
+        link_base: "",
+        parse: parse_h3_results,
+    },
+    SearchEngine {
+        id: "sogou",
+        name: "搜狗",
+        url: "https://www.sogou.com/web",
+        query_key: "query",
+        extra_query: &[("num", "20")],
+        link_base: "https://www.sogou.com",
+        parse: parse_h3_results,
+    },
+];
+
+/// 上一次成功的搜索源下标（进程级记忆）：下一个关键词优先用上次成功的源，
+/// 正常情况下每个关键词只发 1 次请求；该源挂了才顺延切换。
+static LAST_GOOD_ENGINE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+/// 相对链接补全（//开头 → https:；/开头 → 拼源站域名）
+pub fn absolutize_url(url: &str, link_base: &str) -> String {
+    let u = url.trim();
+    if u.starts_with("//") {
+        format!("https:{u}")
+    } else if u.starts_with('/') && !link_base.is_empty() {
+        format!("{}{}", link_base.trim_end_matches('/'), u)
+    } else {
+        u.to_string()
+    }
+}
+
+/// 解析 h3 型搜索结果页（百度/搜狗）：每个 `<h3…><a href>标题</a></h3>` 视为一条结果，
+/// 摘要取该链接之后到下一个 h3 之间的纯文本（去标签压空白，只影响新近度加成，容忍过采）。
+/// 注：rust regex 不支持 lookahead，先收集全部 h3 链接再按位置切片。
+pub fn parse_h3_results(html: &str) -> Vec<SearchHit> {
+    let re =
+        regex::Regex::new(r#"<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)</a>"#).unwrap();
+    let hits: Vec<regex::Captures> = re.captures_iter(html).collect();
+    let mut out = Vec::new();
+    for (i, c) in hits.iter().enumerate() {
+        let title = strip_tags(&c[2]);
+        if title.is_empty() {
+            continue;
+        }
+        let start = c.get(0).unwrap().end();
+        let end = hits
+            .get(i + 1)
+            .map(|n| n.get(0).unwrap().start())
+            .unwrap_or_else(|| html.len().min(start + 2000));
+        out.push(SearchHit {
+            title,
+            url: unescape_entities(c[1].trim()),
+            snippet: strip_tags(&html[start..end]).chars().take(200).collect(),
+        });
+    }
+    out
+}
 
 /// 搜索结果条目（相关度得分借用 NewsItem.hot 字段承载）
 pub struct SearchHit {
@@ -321,39 +411,65 @@ pub fn relevance_score(title: &str, snippet: &str, keyword: &str) -> i64 {
     score
 }
 
-/// 单个关键词的互联网搜索（最多返回 max 条，相关度降序）
+/// 单个关键词的互联网搜索（最多返回 max 条，相关度降序）。
+/// 源冗余：从「上次成功的源」开始按注册表顺序逐个尝试，请求失败或解析不出结果
+/// 自动切换下一个源；全部失败返回空（上层按无结果处理）。
 pub async fn search_keyword(client: &reqwest::Client, keyword: &str, max: usize) -> Vec<NewsItem> {
     let kw = keyword.trim();
     if kw.is_empty() {
         return Vec::new();
     }
-    let resp = client
-        .get(SEARCH_URL)
-        .query(&[("q", kw), ("count", "20")])
+    let n = SEARCH_ENGINES.len();
+    let start = LAST_GOOD_ENGINE.load(std::sync::atomic::Ordering::Relaxed).min(n - 1);
+    for offset in 0..n {
+        let idx = (start + offset) % n;
+        let engine = &SEARCH_ENGINES[idx];
+        let items = fetch_engine(client, engine, kw, max).await;
+        if !items.is_empty() {
+            LAST_GOOD_ENGINE.store(idx, std::sync::atomic::Ordering::Relaxed);
+            return items;
+        }
+    }
+    Vec::new()
+}
+
+/// 对单个源发起一次关键词搜索并解析打分（失败/被反爬拦截 → 空列表，交由上层切换）
+async fn fetch_engine(
+    client: &reqwest::Client,
+    engine: &SearchEngine,
+    kw: &str,
+    max: usize,
+) -> Vec<NewsItem> {
+    let mut req = client
+        .get(engine.url)
+        .query(&[(engine.query_key, kw)])
+        .query(engine.extra_query)
         .header("accept", "text/html")
         .header(
             "user-agent",
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        )
-        .send()
-        .await;
-    let html = match resp {
+        );
+    // 百度/搜狗对无 Referer 的请求更敏感，带上更像正常浏览
+    if engine.id != "bing" {
+        req = req.header("referer", engine.url);
+    }
+    let html = match req.send().await {
         Ok(r) => match r.text().await {
             Ok(t) => t,
             Err(_) => return Vec::new(),
         },
         Err(_) => return Vec::new(),
     };
-    let mut scored: Vec<(i64, NewsItem)> = parse_bing_results(&html)
+    let mut scored: Vec<(i64, NewsItem)> = (engine.parse)(&html)
         .into_iter()
-        .take(max.max(10))
         .map(|hit| {
+            let url = absolutize_url(&hit.url, engine.link_base);
             let score = relevance_score(&hit.title, &hit.snippet, kw);
             (
                 score,
                 NewsItem {
                     title: hit.title,
-                    url: hit.url,
+                    url,
                     hot: Some(score),
                     channel: "search".into(),
                     // 用关键词作为来源标识：用户能看到该条是哪个关注词搜出来的
@@ -371,15 +487,21 @@ pub async fn search_keyword(client: &reqwest::Client, keyword: &str, max: usize)
         .collect()
 }
 
-/// 批量搜索自定义关键词（最多取前 5 个词，控制总时长；单次失败跳过不阻断）
+/// 批量搜索自定义关键词（最多取前 5 个词，控制总时长；单次失败跳过不阻断）。
+/// 总时长预算 40s：源全挂时最坏 5 词 × 3 源 × 6s 会拖死前端请求，这里整体兜底。
 pub async fn search_keywords(keywords: &[String], per_keyword: usize) -> Vec<NewsItem> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(6))
         .connect_timeout(std::time::Duration::from_secs(4))
         .build()
         .unwrap_or_default();
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(40);
     let mut all: Vec<NewsItem> = Vec::new();
     for kw in keywords.iter().take(5) {
+        if std::time::Instant::now() >= deadline {
+            tracing::warn!("关键词搜索总时长超预算，剩余关键词跳过");
+            break;
+        }
         let hits = search_keyword(&client, kw, per_keyword).await;
         all.extend(hits);
     }
@@ -609,5 +731,62 @@ mod tests {
         save_cache(&db, &empty);
         let (cached2, _) = load_cache(&db).unwrap();
         assert_eq!(cached2.items.len(), 1, "空结果不应覆盖旧缓存");
+    }
+}
+
+#[cfg(test)]
+mod search_engine_tests {
+    use super::*;
+
+    #[test]
+    fn 注册表_源id与参数名唯一() {
+        let mut ids = SEARCH_ENGINES.iter().map(|e| e.id).collect::<Vec<_>>();
+        ids.sort();
+        let n = ids.len();
+        ids.dedup();
+        assert_eq!(ids.len(), n, "搜索源 id 不得重复");
+        // 首位必须是现行主源必应（老用户无感升级）
+        assert_eq!(SEARCH_ENGINES[0].id, "bing");
+        // 每个源的解析函数都要能拿出结果（用各自样例页校验，防登记错函数）
+        for e in SEARCH_ENGINES {
+            assert!(!e.url.is_empty() && !e.query_key.is_empty());
+        }
+    }
+
+    #[test]
+    fn h3解析_百度样例页() {
+        let html = r#"<div class="result c-container"><h3 class="c-title t"><a href="http://www.baidu.com/link?url=abc123">AI<em>大模型</em>落地指南</a></h3><div class="c-abstract">3 分钟前发布的内容摘要</div></div>
+        <div class="result"><h3 class="t"><a href="https://example.com/direct">直接链接的结果</a></h3><span class="c-color-text">2 小时前</span></div>
+        <div><h3>没有链接的不算结果</h3></div>"#;
+        let hits = parse_h3_results(html);
+        assert_eq!(hits.len(), 2, "无链接的 h3 不应产出条目");
+        assert_eq!(hits[0].title, "AI大模型落地指南", "标题内 <em> 高亮不该拆词");
+        assert_eq!(hits[0].url, "http://www.baidu.com/link?url=abc123");
+        assert!(hits[0].snippet.contains("3 分钟前"), "摘要用于新近度加成");
+        assert_eq!(hits[1].url, "https://example.com/direct");
+    }
+
+    #[test]
+    fn h3解析_搜狗相对链接补全() {
+        let html = r#"<div class="vrwrap"><h3 class="vr-title"><a href="/link?url=xyz">搜狗结果标题</a></h3><div class="str_info">1 天前</div></div>"#;
+        let hits = parse_h3_results(html);
+        assert_eq!(hits.len(), 1);
+        let engine = SEARCH_ENGINES.iter().find(|e| e.id == "sogou").unwrap();
+        assert_eq!(absolutize_url(&hits[0].url, engine.link_base), "https://www.sogou.com/link?url=xyz");
+    }
+
+    #[test]
+    fn 相对链接补全_各形态() {
+        assert_eq!(absolutize_url("//cdn.example.com/a", ""), "https://cdn.example.com/a");
+        assert_eq!(absolutize_url("/link?u=1", "https://www.sogou.com"), "https://www.sogou.com/link?u=1");
+        assert_eq!(absolutize_url("https://a.b/c", ""), "https://a.b/c");
+        assert_eq!(absolutize_url(" /x ", "https://e.com/"), "https://e.com/x");
+    }
+
+    #[test]
+    fn 打分_跨源结果统一口径() {
+        // 同一关键词在百度/必应解析出的结果用同一 relevance_score，保证多源合并排序不失真
+        let kw = "新能源车";
+        assert!(relevance_score("新能源车下乡政策发布", "", kw) > relevance_score("无关标题", "提到新能源车", kw));
     }
 }

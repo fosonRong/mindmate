@@ -360,3 +360,18 @@ select.input { appearance: none; }
 .md li { color: var(--text-regular); }
 .md li b { color: var(--text-strong); font-weight: 500; }
 .md .meta { font-size: 12px; color: var(--text-weak); margin-bottom: 14px; }
+/* ── v1.1.1 自定义标签 / AI 打标 ── */
+/* 标签行里的「＋新增」与展开的小输入框 */
+.tag-add { color: var(--text-weak); border-style: dashed; }
+.tag-add:hover { color: var(--primary); border-color: var(--primary); }
+.tag-add-input { width: 130px; height: 24px; font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+
+/* ✨AI 打标按钮（速记行 / 待办弹窗标签区） */
+.tag-pick.ai-tag { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); background: #FFF8EC; }
+.tag-pick.ai-tag:hover:not(:disabled) { background: var(--accent); border-color: var(--accent); color: #fff; }
+.tag-pick.ai-tag:disabled { opacity: 0.6; cursor: default; }
+:root[data-theme="dark"] .tag-pick.ai-tag { background: #2E2415; }
+
+/* 设置页标签 chip 的删除小叉 */
+.chip-x { border: none; background: none; padding: 0 0 0 2px; font-size: 13px; line-height: 1; color: var(--text-weak); cursor: pointer; }
+.chip-x:hover { color: var(--danger); }
