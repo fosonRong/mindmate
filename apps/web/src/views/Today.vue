@@ -269,9 +269,10 @@ watch(
 
 onMounted(async () => {
   window.addEventListener('mindmate:event', onGlobalEvent)
-  // 恢复上次的面板选择：热点面板需要补一次加载与自动更新定时器
+  // 恢复上次的面板选择：只补数据与定时器，**不强制刷新**（用户反馈：从其他页面
+  // 切过来不要重新抓取，直接展示缓存内容）；只有手动从简报切到热点才强刷。
   if (panel.value === 'news') {
-    loadNews(true)
+    loadNews(false)
     syncNewsAutoTimer()
   }
   nodes.date = today.value
