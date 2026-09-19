@@ -11,6 +11,23 @@ export interface Node {
   todoId: number | null
 }
 
+/** 统一检索的报告命中（v1.1.3）：只带片段不带回全文 */
+export interface ReportHit {
+  id: number
+  type: string
+  period: string
+  createdAt: string
+  isAi: boolean
+  snippet: string
+}
+
+/** 统一检索结果（记录 / 待办 / 报告 分组） */
+export interface SearchResults {
+  nodes: Node[]
+  todos: Todo[]
+  reports: ReportHit[]
+}
+
 /** 智能速记拆出的待办（v1.1.2） */
 export interface ExtractedTodo {
   title: string

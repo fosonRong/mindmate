@@ -10,6 +10,7 @@ import Icon from '@/components/Icon.vue'
 import { daySubLabel, dayBadge, holidayInfo } from '@/lib/lunar'
 import Onboarding from '@/components/Onboarding.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
+import CommandPalette from '@/components/CommandPalette.vue'
 import UpdateBanner from '@/components/UpdateBanner.vue'
 import SafeView from '@/components/SafeView.vue'
 import { useUpdateStore } from '@/stores/update'
@@ -53,6 +54,11 @@ const modeLabel = computed(() => {
   const m = app.auth?.mode || 'local'
   return t(m === 'local' ? '本地模式' : m === 'lan' ? '局域网模式' : '服务器模式')
 })
+
+/** 呼出全局命令面板（Ctrl+K / 顶栏搜索按钮） */
+function openPalette() {
+  window.dispatchEvent(new CustomEvent('mindmate:open-palette'))
+}
 
 async function openQuickEntry() {
   // 桌面端：打开独立速记窗口；浏览器端：聚焦今日页速记框
@@ -147,6 +153,9 @@ onUnmounted(() => {
         <button class="btn btn-sm" @click="openQuickEntry" :title="$t('速记（Alt+Z）')">
           {{ $t('⚡ 速记') }} <span class="muted mono" style="font-size: 11px">Alt+Z</span>
         </button>
+        <button class="btn btn-sm" :title="$t('全局搜索与命令（Ctrl+K）')" @click="openPalette">
+          🔍 <span class="muted mono" style="font-size: 11px">Ctrl+K</span>
+        </button>
         <router-link to="/settings" class="icon-btn" :title="$t('设置')"><Icon name="gear" :size="18" /></router-link>
       </header>
 
@@ -173,7 +182,8 @@ onUnmounted(() => {
     <Onboarding v-if="showOnboarding" @done="showOnboarding = false" />
 
     <!-- 成就抽屉 -->
-    <AchievementsDrawer v-if="showAchievements" @close="showAchievements = false" />
+    <CommandPalette />
+      <AchievementsDrawer v-if="showAchievements" @close="showAchievements = false" />
 
     <!-- 新版本提示（桌面端） -->
     <UpdateBanner v-if="app.loggedIn" />

@@ -245,6 +245,27 @@ pub fn today_string() -> String {
     today_local()
 }
 
+/// 统一检索的报告命中（v1.1.3）：不回传全文，只带命中片段
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportHit {
+    pub id: i64,
+    pub r#type: String,
+    pub period: String,
+    pub created_at: String,
+    pub is_ai: bool,
+    pub snippet: String,
+}
+
+/// 统一检索结果（各类各自截断，前端分组展示）
+#[derive(Debug, Clone, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct SearchResults {
+    pub nodes: Vec<Node>,
+    pub todos: Vec<Todo>,
+    pub reports: Vec<ReportHit>,
+}
+
 /// 标签统计（标签选择器数据源：记录 + 待办合并去重后的使用次数）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

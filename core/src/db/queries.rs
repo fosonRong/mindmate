@@ -4,7 +4,7 @@ use super::models::*;
 use super::Db;
 use anyhow::Result;
 use chrono::{Datelike, Duration, Local, NaiveDate};
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, params_from_iter, OptionalExtension};
 
 fn parse_tags(s: &str) -> Vec<String> {
     serde_json::from_str(s).unwrap_or_default()
@@ -166,6 +166,154 @@ impl Db {
         ))?;
         let rows = stmt.query_map(params![format!("%{query}%"), limit], row_to_node)?;
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
+    // ───────────────── 统一检索（v1.1.3：记录+待办+报告，类型/标签/日期过滤） ─────────────────
+
+    /// 报告命中片段：首个命中位置前后各留一段，压成单行（多字节安全）
+    pub fn make_snippet(content: &str, query: &str, before: usize, after: usize) -> String {
+        let lower_content = content.to_lowercase();
+        let lower_query = query.to_lowercase();
+        let Some(pos) = lower_content.find(&lower_query) else {
+            let head: String = content.chars().take(before + after).collect();
+            return head.replace('\n', " ");
+        };
+        let start_byte = pos.saturating_sub(before * 3);
+        let end_byte = (pos + lower_query.len() + after * 3).min(content.len());
+        let mut start = start_byte;
+        while start > 0 && !content.is_char_boundary(start) {
+            start -= 1;
+        }
+        let mut end = end_byte;
+        while end < content.len() && !content.is_char_boundary(end) {
+            end += 1;
+        }
+        let mut out: String = content[start..end].replace(['\n', '\r'], " ");
+        if start > 0 {
+            out = format!("…{out}");
+        }
+        if end < content.len() {
+            out = format!("{out}…");
+        }
+        out.trim().to_string()
+    }
+
+    /// 统一检索：q 必填；kind 限定类型（node/todo/report，空=全部）；
+    /// tag 过滤（JSON 存储用带引号全词 LIKE）；from/to 限定日期范围；limit 每类上限。
+    /// 报告不回传全文只回传片段（报告动辄几千字，列表里只要"它在哪、说了啥"）。
+    pub fn unified_search(
+        &self,
+        query: &str,
+        kind: &str,
+        tag: Option<&str>,
+        from: Option<&str>,
+        to: Option<&str>,
+        limit: i64,
+    ) -> Result<SearchResults> {
+        let like = format!("%{}%", query.trim());
+        let tag_like = tag.map(|t| format!("%\"{}\"%", t.trim().replace('"', "")));
+        let mut out = SearchResults::default();
+        let conn = self.lock();
+
+        if kind.is_empty() || kind == "node" {
+            let mut cond = vec!["deleted_at IS NULL".to_string(), "content LIKE ?".to_string()];
+            if tag_like.is_some() {
+                cond.push("tags LIKE ?".to_string());
+            }
+            if from.is_some() {
+                cond.push("date >= ?".to_string());
+            }
+            if to.is_some() {
+                cond.push("date <= ?".to_string());
+            }
+            let sql = format!(
+                "SELECT {NODE_COLS} FROM nodes WHERE {} ORDER BY date DESC, created_at DESC LIMIT {limit}",
+                cond.join(" AND ")
+            );
+            let mut bind: Vec<String> = vec![like.clone()];
+            if let Some(t) = &tag_like {
+                bind.push(t.clone());
+            }
+            if let Some(f) = from {
+                bind.push(f.to_string());
+            }
+            if let Some(t) = to {
+                bind.push(t.to_string());
+            }
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(bind.iter()), row_to_node)?;
+            out.nodes = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        }
+
+        if kind.is_empty() || kind == "todo" {
+            let mut cond = vec![
+                "deleted_at IS NULL".to_string(),
+                "(title LIKE ? OR description LIKE ?)".to_string(),
+            ];
+            if tag_like.is_some() {
+                cond.push("tags LIKE ?".to_string());
+            }
+            if from.is_some() {
+                cond.push("due_date >= ?".to_string());
+            }
+            if to.is_some() {
+                cond.push("due_date <= ?".to_string());
+            }
+            let sql = format!(
+                "SELECT {} FROM todos WHERE {} ORDER BY due_date DESC, id DESC LIMIT {limit}",
+                Self::TODO_COLS,
+                cond.join(" AND ")
+            );
+            let mut bind: Vec<String> = vec![like.clone(), like.clone()];
+            if let Some(t) = &tag_like {
+                bind.push(t.clone());
+            }
+            if let Some(f) = from {
+                bind.push(f.to_string());
+            }
+            if let Some(t) = to {
+                bind.push(t.to_string());
+            }
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(bind.iter()), Self::row_to_todo)?;
+            out.todos = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        }
+
+        if kind.is_empty() || kind == "report" {
+            let mut cond = vec!["content LIKE ?".to_string()];
+            if from.is_some() {
+                cond.push("created_at >= ?".to_string());
+            }
+            if to.is_some() {
+                cond.push("created_at <= ?".to_string());
+            }
+            let sql = format!(
+                "SELECT id, type, period, created_at, is_ai, content FROM reports WHERE {} ORDER BY created_at DESC LIMIT {limit}",
+                cond.join(" AND ")
+            );
+            let mut bind: Vec<String> = vec![like.clone()];
+            if let Some(f) = from {
+                bind.push(format!("{f} 00:00:00"));
+            }
+            if let Some(t) = to {
+                bind.push(format!("{t} 23:59:59"));
+            }
+            let mut stmt = conn.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(bind.iter()), |r| {
+                let content: String = r.get(5)?;
+                Ok(ReportHit {
+                    id: r.get(0)?,
+                    r#type: r.get(1)?,
+                    period: r.get(2)?,
+                    created_at: r.get(3)?,
+                    is_ai: r.get::<_, i64>(4)? != 0,
+                    snippet: Self::make_snippet(&content, query, 30, 60),
+                })
+            })?;
+            out.reports = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        }
+
+        Ok(out)
     }
 
     // ───────────────────────── 待办 ─────────────────────────
@@ -1444,5 +1592,115 @@ pub fn summarize(s: &str, max_chars: usize) -> String {
         cleaned
     } else {
         format!("{}…", cleaned.chars().take(max_chars).collect::<String>())
+    }
+}
+
+#[cfg(test)]
+mod unified_search_tests {
+    use super::*;
+    use crate::db::models::NewTodo;
+
+    fn db_with_data() -> Db {
+        let db = Db::open_memory().unwrap();
+        db.seed_defaults().unwrap();
+        db.create_node(crate::db::models::NewNode {
+            content: "完成季度总结报告的初稿".into(),
+            date: Some("2026-09-01".into()),
+            tags: vec!["工作".into()],
+            todo_id: None,
+        })
+        .unwrap();
+        db.create_node(crate::db::models::NewNode {
+            content: "带娃去动物园".into(),
+            date: Some("2026-09-10".into()),
+            tags: vec!["生活".into()],
+            todo_id: None,
+        })
+        .unwrap();
+        db.create_todo(NewTodo {
+            title: "交房租".into(),
+            description: "十月底前转账".into(),
+            due_date: Some("2026-10-25".into()),
+            due_time: None,
+            priority: "高".into(),
+            tags: vec!["生活".into()],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: String::new(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
+        })
+        .unwrap();
+        db.create_todo(NewTodo {
+            title: "AI 项目立项".into(),
+            description: "".into(),
+            due_date: Some("2026-09-05".into()),
+            due_time: None,
+            priority: "中".into(),
+            tags: vec!["工作".into()],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: String::new(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
+        })
+        .unwrap();
+        db.save_report("daily", "2026-09-01", "# 日报 今天完成了报告的初稿，进展顺利。", true).unwrap();
+        db
+    }
+
+    #[test]
+    fn 统一检索_跨三类命中() {
+        let db = db_with_data();
+        let r = db.unified_search("报告", "", None, None, None, 20).unwrap();
+        assert_eq!(r.nodes.len(), 1, "记录按内容命中");
+        assert!(r.todos.is_empty());
+        assert_eq!(r.reports.len(), 1, "报告按内容命中");
+        assert!(r.reports[0].snippet.contains("报告"));
+    }
+
+    #[test]
+    fn 统一检索_按类型过滤() {
+        let db = db_with_data();
+        let r = db.unified_search("报告", "node", None, None, None, 20).unwrap();
+        assert_eq!(r.nodes.len(), 1);
+        assert!(r.reports.is_empty(), "kind=node 不应返回报告");
+    }
+
+    #[test]
+    fn 统一检索_按标签过滤() {
+        let db = db_with_data();
+        let r = db.unified_search("AI", "todo", Some("工作"), None, None, 20).unwrap();
+        assert_eq!(r.todos.len(), 1);
+        assert_eq!(r.todos[0].title, "AI 项目立项");
+        let r2 = db.unified_search("房租", "todo", Some("工作"), None, None, 20).unwrap();
+        assert!(r2.todos.is_empty(), "生活标签的待办不应命中工作过滤");
+    }
+
+    #[test]
+    fn 统一检索_按日期范围过滤() {
+        let db = db_with_data();
+        let r = db.unified_search("", "", None, Some("2026-09-10"), Some("2026-09-10"), 20);
+        let _ = r; // q 为空在 handler 层拦截，这里不校验
+        let r = db.unified_search("动物园", "node", None, Some("2026-09-10"), Some("2026-09-10"), 20).unwrap();
+        assert_eq!(r.nodes.len(), 1);
+        let r2 = db.unified_search("动物园", "node", None, Some("2026-09-11"), None, 20).unwrap();
+        assert!(r2.nodes.is_empty(), "范围之外不命中");
+    }
+
+    #[test]
+    fn 片段_中文字节安全与省略号() {
+        let content = "这是一段很长的记录内容，其中包含了关键词，后面还有很多补充说明文字用于验证截断。";
+        let s = Db::make_snippet(content, "关键词", 5, 10);
+        assert!(s.contains("关键词"));
+        assert!(s.starts_with('…') && s.ends_with('…'));
+        // 大小写不敏感
+        let s2 = Db::make_snippet("Meet ALPHA team", "alpha", 3, 5);
+        assert!(s2.contains("ALPHA"));
+        // 未命中退开头
+        let s3 = Db::make_snippet("随便一段话", "不存在", 5, 5);
+        assert!(s3.contains("随便"));
     }
 }

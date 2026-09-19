@@ -1005,6 +1005,52 @@ if len(_todos13b) == 2:
 _r3, _ = call("POST", "/ai/extract-todos", {"content": ""})
 check("空内容返回业务错误", _r3.get("code") != 0, f"code={_r3.get('code')}")
 
+# ─────────────────────── 14. 统一检索（v1.1.3：记录+待办+报告）───────────────────────
+section("14. 统一检索：跨三类 + 类型/标签/日期过滤")
+_uq = f"E2E统一检索标记{int(time.time())}"
+_r, _ = call("POST", "/nodes", {"content": f"{_uq} 记录内容", "tags": ["工作"]})
+check("造检索数据：记录", _r.get("code") == 0, str(_r.get("message"))[:50])
+_r, _ = call("POST", "/todos", {"title": f"{_uq} 待办标题", "dueDate": TOMORROW, "tags": ["工作"]})
+check("造检索数据：待办", _r.get("code") == 0, str(_r.get("message"))[:50])
+_r, _ = call("GET", "/nodes/range?from=2026-01-01&to=2026-12-31")
+_all_nodes = (r_data := (_r.get("data") or []))  # noqa
+_r, _code = call("GET", f"/search?q={_uq}")
+_d = (_r.get("data") or {})
+check("统一检索接口返回结构完整",
+      _r.get("code") == 0 and isinstance(_d.get("nodes"), list) and isinstance(_d.get("todos"), list)
+      and isinstance(_d.get("reports"), list), str(_r.get("message"))[:60])
+check("记录与待办同时命中同一检索词",
+      any(_uq in (n.get("content") or "") for n in _d.get("nodes") or [])
+      and any(_uq in (x.get("title") or "") for x in _d.get("todos") or []),
+      f"nodes={len(_d.get('nodes') or [])} todos={len(_d.get('todos') or [])}")
+_r, _code = call("GET", f"/search?q={_uq}&kind=todo")
+_d2 = (_r.get("data") or {})
+check("kind=todo 只返回待办",
+      _d2.get("todos") and not _d2.get("nodes") and not _d2.get("reports"),
+      f"n={len(_d2.get('nodes') or [])} t={len(_d2.get('todos') or [])} r={len(_d2.get('reports') or [])}")
+_r, _code = call("GET", f"/search?q={_uq}&tag=生活")
+_d3 = (_r.get("data") or {})
+check("标签过滤排除不匹配条目（生活标签下无该数据）",
+      not _d3.get("nodes") and not _d3.get("todos"),
+      f"n={len(_d3.get('nodes') or [])} t={len(_d3.get('todos') or [])}")
+_today_s = date.today().isoformat()
+_r, _code = call("GET", f"/search?q={_uq}&from={TOMORROW}&to={TOMORROW}")
+_d4 = (_r.get("data") or {})
+check("日期过滤命中明日待办、排除今日记录",
+      any(_uq in (x.get("title") or "") for x in _d4.get("todos") or [])
+      and not _d4.get("nodes"),
+      f"t={len(_d4.get('todos') or [])} n={len(_d4.get('nodes') or [])}")
+_r, _code = call("GET", f"/search?q=日报&kind=report&limit=5")
+_d5 = (_r.get("data") or {})
+_reps = _d5.get("reports") or []
+check("报告检索命中且只回片段（snippet 短于全文）",
+      _r.get("code") == 0 and len(_reps) >= 1 and all(len(x.get("snippet") or "") < 300 for x in _reps),
+      f"n={len(_reps)}")
+check("报告片段包含检索词", all("日报" in (x.get("snippet") or "") for x in _reps),
+      str(_reps[0].get("snippet"))[:50] if _reps else "no-hit")
+_r, _code = call("GET", "/search?q=")
+check("缺 q 返回业务错误", _r.get("code") != 0, f"code={_r.get('code')}")
+
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：")

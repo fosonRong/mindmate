@@ -385,6 +385,26 @@ check("v1.1.2 智能速记：速记行「🤖 拆待办」入口 + 核对弹窗�
       and "todos.create" in read("apps", "web", "src", "components", "SmartTodoModal.vue"))
 check("v1.1.2 月视图：记录热力卡片位于日程（日历）下方",
       month_vue.find("<CalendarMonth") < month_vue.find("记录热力") < month_vue.find("<HeatMap"))
+# ── v1.1.3 效率检索：统一搜索 + Ctrl+K 命令面板 ──
+palette_vue = read("apps", "web", "src", "components", "CommandPalette.vue")
+models_rs = read("core", "src", "db", "models.rs")
+queries_rs = read("core", "src", "db", "queries.rs")
+check("v1.1.3 统一检索：后端跨三类（记录/待办/报告）一次查，支持类型/标签/日期过滤",
+      "/api/v1/search" in read("core", "src", "api", "mod.rs")
+      and "unified_search" in queries_rs and "kind" in queries_rs
+      and "tags LIKE ?" in queries_rs and "due_date >= ?" in queries_rs)
+check("v1.1.3 统一检索：报告只回命中片段不回全文（多字节安全的 make_snippet）",
+      "ReportHit" in models_rs and "snippet" in models_rs
+      and "make_snippet" in queries_rs and "is_char_boundary" in queries_rs)
+check("v1.1.3 Ctrl+K 命令面板：全局快捷键 + 防抖统一搜索 + 键盘导航",
+      os.path.exists(os.path.join(ROOT, "apps", "web", "src", "components", "CommandPalette.vue"))
+      and "ctrlKey" in palette_vue and "ArrowDown" in palette_vue
+      and "api.search" in palette_vue and "debounceTimer" in palette_vue)
+check("v1.1.3 命令面板接线：App 全局挂载 + 跳转事件（打开该日抽屉/新建待办）",
+      "CommandPalette" in read("apps", "web", "src", "App.vue")
+      and "mindmate:open-palette" in read("apps", "web", "src", "App.vue")
+      and "mindmate:open-day" in read("apps", "web", "src", "views", "Month.vue")
+      and "mindmate:new-todo" in read("apps", "web", "src", "views", "Todos.vue"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

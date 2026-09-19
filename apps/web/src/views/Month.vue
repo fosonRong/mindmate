@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 月视图：月历网格按日聚合 + 月度进度 + 日详情抽屉（含补录）
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useAppStore, todayStr, addDays, monthRange, fmtDate, monthTitle, weekdayLabel, parseDate } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { useTodosStore } from '@/stores/todos'
@@ -104,7 +104,19 @@ async function onBackfillSaved() {
   await load()
 }
 
-onMounted(load)
+// 命令面板跳转：切到该日所在月份并打开日详情抽屉
+function onOpenDay(e: Event) {
+  const date = (e as CustomEvent).detail?.date as string
+  if (!date) return
+  anchor.value = date
+  load().then(() => openDay(date))
+}
+
+onMounted(() => {
+  load()
+  window.addEventListener('mindmate:open-day', onOpenDay)
+})
+onUnmounted(() => window.removeEventListener('mindmate:open-day', onOpenDay))
 </script>
 
 <template>

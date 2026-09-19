@@ -3,7 +3,7 @@ import { t } from '@/i18n'
 import type {
   Achievement, AchievementDef, AiConfig, AiTestResult, AppEvent, AuthStatus, ChatMessage, DailyStats,
   MonthlySummary, Node, OllamaProbe, PeriodStats, Preset, PushConfig, PushResult, Report,
-  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic, TagStat, ExtractedTodo
+  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic, TagStat, ExtractedTodo, SearchResults
 } from './types'
 
 export class ApiError extends Error {
@@ -70,6 +70,17 @@ export const api = {
     patch<Node>(`/api/v1/nodes/${id}`, data),
   deleteNode: (id: number) => del<{ deleted: boolean }>(`/api/v1/nodes/${id}`),
   searchNodes: (q: string) => get<Node[]>(`/api/v1/nodes/search?q=${encodeURIComponent(q)}`),
+  /** 统一检索（v1.1.3）：记录+待办+报告，kind/tag/from/to 过滤 */
+  search: (params: { q: string; kind?: string; tag?: string; from?: string; to?: string; limit?: number }) => {
+    const qs = new URLSearchParams()
+    qs.set('q', params.q)
+    if (params.kind) qs.set('kind', params.kind)
+    if (params.tag) qs.set('tag', params.tag)
+    if (params.from) qs.set('from', params.from)
+    if (params.to) qs.set('to', params.to)
+    if (params.limit) qs.set('limit', String(params.limit))
+    return get<SearchResults>(`/api/v1/search?${qs.toString()}`)
+  },
 
   // 标签（v1.1.1）：全部在用标签及使用次数
   listTags: () => get<TagStat[]>('/api/v1/tags'),

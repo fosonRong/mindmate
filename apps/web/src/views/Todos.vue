@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 待办中心：左侧分类列表 + 右侧日历与当日【具体日程 / 待办事项】双栏
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useTodosStore } from '@/stores/todos'
 import { useAppStore, todayStr, friendlyDate, fmtDate } from '@/stores/app'
 import TodoItem from '@/components/TodoItem.vue'
@@ -121,7 +121,16 @@ async function onSaved() {
   await loadAll()
 }
 
-onMounted(loadAll)
+// 命令面板「新建待办」：切到待办页后自动打开新建弹窗
+function onNewTodoEvent() {
+  newTodo()
+}
+
+onMounted(() => {
+  loadAll()
+  window.addEventListener('mindmate:new-todo', onNewTodoEvent)
+})
+onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent))
 </script>
 
 <template>

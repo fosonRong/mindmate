@@ -125,6 +125,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/nodes/range", get(list_nodes_range))
         .route("/api/v1/nodes/{id}", patch(update_node).delete(delete_node))
         .route("/api/v1/nodes/search", get(search_nodes))
+        .route("/api/v1/search", get(global_search))
         .route("/api/v1/tags", get(list_tags))
         // 统计
         .route("/api/v1/stats/daily", get(stats_daily))
@@ -1075,6 +1076,30 @@ struct OpenUrlReq {
 /// 只在本地模式开放：桌面端需要跳出 WebView 打开厂商页面，而局域网/服务器模式
 /// 是别人在远程访问，绝不该能借这台机器调起浏览器进程。
 // ───────────────────────── 今日热点 ─────────────────────────
+
+/// 统一检索（v1.1.3）：记录+待办+报告一次查，支持类型/标签/日期过滤。
+/// query：q（必填）/ kind（node|todo|report，缺省=全部）/ tag / from / to / limit（每类上限，默认 20）
+async fn global_search(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<SearchResults> {
+    ensure_auth(&ctx, &headers)?;
+    let query = q.get("q").map(|s| s.trim()).unwrap_or("");
+    if query.is_empty() {
+        return Err(ApiError::bad_request("缺少检索词 q"));
+    }
+    let kind = q.get("kind").map(|s| s.as_str()).unwrap_or("");
+    let tag = q.get("tag").map(|s| s.as_str()).filter(|s| !s.trim().is_empty());
+    let from = q.get("from").map(|s| s.as_str()).filter(|s| !s.trim().is_empty());
+    let to = q.get("to").map(|s| s.as_str()).filter(|s| !s.trim().is_empty());
+    let limit = q
+        .get("limit")
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(20)
+        .clamp(1, 50);
+    Ok(ApiResp::ok(ctx.db.unified_search(query, kind, tag, from, to, limit)?))
+}
 
 /// 全部在用标签及使用次数（标签选择器数据源；前端再并上默认标签与用户自定义词）
 async fn list_tags(State(ctx): State<Arc<AppContext>>, headers: HeaderMap) -> ApiResult<Vec<TagStat>> {
