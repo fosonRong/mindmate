@@ -22,7 +22,12 @@ const remindOffset = ref<number>(30)
 // 循环待办：''=不循环 daily=每天 weekly=每周 monthly=每月。
 // 编辑既有循环实例时显示其类型；修改会写回链的根实例（后端按根重算后续生成）。
 const recurType = ref<string>(props.todo?.recurType || '')
+const recurUntil = ref<string>(props.todo?.recurUntil || '')
+const recurInterval = ref<number>(props.todo?.recurInterval || 1)
+const recurSkipRest = ref<boolean>(props.todo?.recurSkipRest === true)
 const creating = ref(false)
+
+const INTERVAL_UNIT: Record<string, string> = { daily: '天', weekly: '周', monthly: '月' }
 
 const RECUR_OPTIONS = [
   { value: '', label: '不循环' },
@@ -54,7 +59,10 @@ async function save() {
         dueTime: dueTime.value || null,
         priority: priority.value,
         tags: tags.value,
-        recurType: recurType.value
+        recurType: recurType.value,
+        recurUntil: recurUntil.value,
+        recurInterval: recurInterval.value,
+        recurSkipRest: recurSkipRest.value
       })
       app.toast('success', t('已保存'))
     } else {
@@ -66,7 +74,10 @@ async function save() {
         priority: priority.value,
         tags: tags.value,
         remindOffsetMin: dueTime.value ? remindOffset.value : undefined,
-        recurType: recurType.value
+        recurType: recurType.value,
+        recurUntil: recurUntil.value,
+        recurInterval: recurInterval.value,
+        recurSkipRest: recurSkipRest.value
       })
       app.toast('success', t('已添加待办'))
     }
@@ -122,6 +133,22 @@ async function save() {
         <div class="small muted" style="margin-top: 4px">
           {{ recurType ? $t('完成后自动生成下一期（{a}）', { a: $t(RECUR_OPTIONS.find((o) => o.value === recurType)?.label || '') }) : $t('选择周期后，到期完成会自动生成下一期') }}
         </div>
+        <template v-if="recurType">
+          <div class="row" style="gap: 8px; margin-top: 6px">
+            <span class="small muted" style="flex: none">{{ $t('每') }}</span>
+            <select v-model.number="recurInterval" class="input" style="width: 72px; height: 30px">
+              <option v-for="n in 6" :key="n" :value="n">{{ n }}</option>
+            </select>
+            <span class="small muted">{{ $t(INTERVAL_UNIT[recurType] || '') }}</span>
+            <div class="spacer"></div>
+            <label class="small muted" style="flex: none">{{ $t('结束日期') }}</label>
+            <input v-model="recurUntil" type="date" class="input" style="width: 150px; height: 30px" />
+          </div>
+          <div class="row" style="margin-top: 6px">
+            <span class="small muted" style="flex: 1">{{ $t('落在休息日（周末/法定休假）顺延到下一个工作日') }}</span>
+            <div class="switch" :class="{ on: recurSkipRest }" @click="recurSkipRest = !recurSkipRest"></div>
+          </div>
+        </template>
       </div>
 
       <div class="row" style="gap: 12px">

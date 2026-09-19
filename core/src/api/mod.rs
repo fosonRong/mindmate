@@ -579,12 +579,24 @@ async fn update_todo(
     Ok(ApiResp::ok(todo))
 }
 
+/// 删除待办。query scope=series 时删除整条循环链（根 + 已生成实例），
+/// 普通待办或仅删单期用默认（单条）。删除后广播 todo.deleted（循环链广播全部受影响 id）。
 async fn delete_todo(
     State(ctx): State<Arc<AppContext>>,
     headers: HeaderMap,
     Path(id): Path<i64>,
+    Query(q): Query<HashMap<String, String>>,
 ) -> ApiResult<serde_json::Value> {
     ensure_auth(&ctx, &headers)?;
+    let series = q.get("scope").map(|v| v == "series").unwrap_or(false);
+    if series {
+        let removed = ctx.db.delete_todo_series(id)?;
+        ctx.bus.publish(Event::new(
+            "todo.deleted",
+            json!({ "id": id, "scope": "series", "removed": removed }),
+        ));
+        return Ok(ApiResp::ok(json!({ "deleted": removed > 0, "removed": removed })));
+    }
     let ok = ctx.db.delete_todo(id)?;
     ctx.bus.publish(Event::new("todo.deleted", json!({ "id": id })));
     Ok(ApiResp::ok(json!({ "deleted": ok })))
@@ -1863,6 +1875,9 @@ async fn data_import(
                 due_time: t["dueTime"].as_str().map(String::from),
                 priority: t["priority"].as_str().unwrap_or("中").to_string(),
                 recur_type: String::new(),
+                recur_until: String::new(),
+                recur_interval: 1,
+                recur_skip_rest: false,
                 tags: t["tags"]
                     .as_array()
                     .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())

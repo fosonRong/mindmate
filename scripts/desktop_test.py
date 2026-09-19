@@ -271,8 +271,11 @@ check("格内：全部记录交给格子裁剪（后端不再按 28 字预截断
       "summarize(&n.content, 400)" in read("core", "src", "db", "queries.rs")
       and 'v-for="(s, si) in c.stat?.nodeSummaries' in read("apps", "web", "src", "components", "CalendarMonth.vue"))
 
-check("循环待办：库迁移 V2 加 recur 三列", "recur_type" in read("core", "src", "db", "mod.rs")
-      and "SCHEMA_V2" in read("core", "src", "db", "mod.rs") and "SCHEMA_VERSION: i64 = 2" in read("core", "src", "db", "mod.rs"))
+check("循环待办：库迁移 V2+V3 加循环字段（类型/锚点/来源/截止/间隔/跳过休息日）",
+      "recur_type" in read("core", "src", "db", "mod.rs")
+      and "SCHEMA_V2" in read("core", "src", "db", "mod.rs")
+      and "SCHEMA_V3" in read("core", "src", "db", "mod.rs")
+      and "SCHEMA_VERSION: i64 = 3" in read("core", "src", "db", "mod.rs"))
 check("循环待办：补期引擎（每天/每周/每月 + 月末截断）",
       "ensure_recurring" in read("core", "src", "db", "queries.rs")
       and '"daily"' in read("core", "src", "db", "queries.rs")
@@ -345,6 +348,29 @@ check("热点：面板选择持久化（切换后保留，重启保留）",
 check("热点：关注模式有专属缓存（参数签名匹配才命中，跨页切回展示上次记录）",
       "FOCUS_CACHE_KEY" in news and "params == sig" in read("core", "src", "api", "mod.rs")
       and "正在展示最近一次成功的数据" in read("core", "src", "api", "mod.rs"))
+
+# ── v1.1.0：删除循环语义 / 循环增强 / 热力图 / 抽屉速记聚焦 ──
+check("删除待办：支持删除整条循环链（根+实例一并软删，阻止补期再生成）",
+      "delete_todo_series" in read("core", "src", "db", "queries.rs")
+      and 'recur_type=''' in read("core", "src", "db", "queries.rs")
+      and '"scope"' in read("core", "src", "api", "mod.rs"))
+check("删除待办：前端循环待办二选一（删整个循环/仅此一条）+ 普通待办二次确认",
+      "删整个循环" in read("apps", "web", "src", "components", "TodoItem.vue")
+      and "确认删除？" in read("apps", "web", "src", "components", "TodoItem.vue"))
+check("循环增强：迁移 V3（结束日期/间隔/跳过休息日）",
+      "SCHEMA_V3" in read("core", "src", "db", "mod.rs") and "SCHEMA_VERSION: i64 = 3" in read("core", "src", "db", "mod.rs"))
+check("循环增强：生成规则支持间隔/截止/跳过休息日（Rust 侧法定假期表）",
+      "HOLIDAY_OFF" in read("core", "src", "db", "queries.rs")
+      and "is_rest_day" in read("core", "src", "db", "queries.rs"))
+check("循环增强：弹窗可配置 每 N 周期/结束日期/跳过休息日",
+      "recurUntil" in read("apps", "web", "src", "components", "TodoEditModal.vue")
+      and "recurInterval" in read("apps", "web", "src", "components", "TodoEditModal.vue")
+      and "recurSkipRest" in read("apps", "web", "src", "components", "TodoEditModal.vue"))
+check("热力图：近 26 周 GitHub 风格组件存在并接入月视图",
+      os.path.exists(os.path.join(ROOT, "apps", "web", "src", "components", "HeatMap.vue"))
+      and "HeatMap" in read("apps", "web", "src", "views", "Month.vue"))
+check("月视图抽屉：打开即聚焦速记输入",
+      '<QuickEntry :date="drawerDate" compact autofocus' in read("apps", "web", "src", "views", "Month.vue"))
 modal_src = read("apps", "web", "src", "components", "TodoEditModal.vue")
 check("待办弹窗：重复选择独占一行且按钮不换行（修复竖排文字）",
       "white-space: nowrap" in modal_src and "重复独占一行" in modal_src)

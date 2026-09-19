@@ -65,6 +65,12 @@ export const useTodosStore = defineStore('todos', {
       remindOffsetMin?: number
       /** 循环类型：''=不循环 daily=每天 weekly=每周 monthly=每月 */
       recurType?: string
+      /** 循环截止日期（空=无限） */
+      recurUntil?: string
+      /** 周期间隔 N */
+      recurInterval?: number
+      /** 落在休息日顺延 */
+      recurSkipRest?: boolean
     }) {
       const todo = await api.createTodo(data as any)
       // 幂等：SSE 事件可能先于 HTTP 响应到达并已插入同一条待办
@@ -89,10 +95,11 @@ export const useTodosStore = defineStore('todos', {
       if (i >= 0) this.todos[i] = updated
     },
 
-    async remove(id: number) {
-      await api.deleteTodo(id)
-      const i = this.todos.findIndex((t) => t.id === id)
-      if (i >= 0) this.todos.splice(i, 1)
+    async remove(id: number, scope?: 'series') {
+      const todo = await api.deleteTodo(id, scope)
+      // 删除整条循环链时本地可能有多条实例，全部移除
+      this.todos = this.todos.filter((t) => t.id !== id && t.recurSourceId !== id)
+      return todo
     },
 
     /** 改期（拖拽/按钮） */

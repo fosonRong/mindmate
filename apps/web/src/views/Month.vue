@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // 月视图：月历网格按日聚合 + 月度进度 + 日详情抽屉（含补录）
 import { computed, onMounted, ref } from 'vue'
-import { useAppStore, todayStr, addDays, monthRange, fmtDate, monthTitle, weekdayLabel } from '@/stores/app'
+import { useAppStore, todayStr, addDays, monthRange, fmtDate, monthTitle, weekdayLabel, parseDate } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { useTodosStore } from '@/stores/todos'
 import { api } from '@/api/client'
-import type { MonthlySummary, Node, PeriodStats } from '@/api/types'
+import type { DayStat, MonthlySummary, Node, PeriodStats } from '@/api/types'
 import ProgressPair from '@/components/ProgressPair.vue'
 import CalendarMonth from '@/components/CalendarMonth.vue'
+import HeatMap from '@/components/HeatMap.vue'
 import QuickEntry from '@/components/QuickEntry.vue'
 import TodoItem from '@/components/TodoItem.vue'
 import { daySubLabel, dayBadge } from '@/lib/lunar'
@@ -34,15 +35,22 @@ const projectGoal = computed(() => (app.stats?.dailyGoal ?? 4) * daysInMonth.val
 
 async function load() {
   const [from, to] = monthRange(anchor.value)
-  const [period, monthSummary] = await Promise.all([
+  // 热力图需要近 26 周数据：从本月往前推 25 周 + 本周（对齐周一）
+  const heatTo = todayStr()
+  const heatFrom = addDays(heatTo, -((parseDate(heatTo).getDay() + 6) % 7) - 7 * 25)
+  const [period, monthSummary, heat] = await Promise.all([
     api.periodStats(from, to),
     api.monthlySummary(anchor.value).catch(() => null),
+    api.periodStats(heatFrom, heatTo),
     nodes.loadRange(from, to),
     todos.load() // 日历格需要展示待办标题
   ])
   stats.value = period
   summary.value = monthSummary
+  heatDays.value = heat.days
 }
+
+const heatDays = ref<DayStat[]>([])
 
 /** 月份筛选（input[type=month]） */
 function pickMonth(e: Event) {
@@ -159,6 +167,22 @@ onMounted(load)
       </div>
     </section>
 
+    <!-- 近 26 周记录热力：颜色=当日记录数相对每日目标，点击跳转并打开该日 -->
+    <section class="card">
+      <div class="row" style="margin-bottom: 10px">
+        <div class="card-title" style="font-size: 15px">{{ $t('记录热力') }}</div>
+        <span class="card-sub">{{ $t('近 {a} 周', { a: 26 }) }}</span>
+        <div class="spacer"></div>
+        <span class="small muted">{{ $t('点击色块查看当天详情') }}</span>
+      </div>
+      <HeatMap
+        :days="heatDays"
+        :daily-goal="app.stats?.dailyGoal ?? 4"
+        :weeks="26"
+        @pick="openDay"
+      />
+    </section>
+
     <section class="card">
       <CalendarMonth
         :month-date="anchor"
@@ -189,7 +213,7 @@ onMounted(load)
           <button class="icon-btn" @click="closeDrawer">×</button>
         </div>
 
-        <QuickEntry :date="drawerDate" compact @saved="onBackfillSaved" />
+        <QuickEntry :date="drawerDate" compact autofocus @saved="onBackfillSaved" />
 
         <div style="flex: 1; overflow-y: auto; margin-top: 12px">
           <div v-if="drawerNodes.length === 0" class="empty" style="padding: 30px 0">

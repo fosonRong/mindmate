@@ -473,7 +473,7 @@ async function completeTodo(id: number) {
       <section v-if="todos.overdue.length" class="card">
         <div class="card-title" style="font-size: 15px; color: var(--danger)">{{ $t('⚠️ 已逾期 {a}', { a: todos.overdue.length }) }}</div>
         <div style="margin-top: 8px">
-          <TodoItem v-for="t in todos.overdue.slice(0, 5)" :key="t.id" :todo="t" :show-actions="false" />
+          <TodoItem v-for="t in todos.overdue.slice(0, 5)" :key="t.id" :todo="t" />
         </div>
       </section>
 

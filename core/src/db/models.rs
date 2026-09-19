@@ -65,6 +65,12 @@ pub struct Todo {
     pub recur_type: String,
     /// 循环锚点日期（首个实例的 due_date），用于固定周几/几号推算下一期
     pub recur_anchor: String,
+    /// 循环截止日期（空=无限循环）
+    pub recur_until: String,
+    /// 周期间隔 N（每天=N 天、每周=N 周、每月=N 月）
+    pub recur_interval: i64,
+    /// 落在休息日（周末/法定休假）时顺延到下一个工作日
+    pub recur_skip_rest: bool,
     /// 本实例由哪个根实例生成（用户手建的那条是根：NULL）
     pub recur_source_id: Option<i64>,
     /// 是否已逾期（服务端计算，仅展示用）
@@ -87,9 +93,22 @@ pub struct NewTodo {
     pub remind_offset_min: Option<i64>,
     /// 精确提醒时刻
     pub remind_at: Option<String>,
-    /// 循环类型：''=不循环 weekly=每周 monthly=每月
+    /// 循环类型：''=不循环 daily=每天 weekly=每周 monthly=每月
     #[serde(default)]
     pub recur_type: String,
+    /// 循环截止日期（空=无限）
+    #[serde(default)]
+    pub recur_until: String,
+    /// 周期间隔 N（默认 1）
+    #[serde(default = "default_one")]
+    pub recur_interval: i64,
+    /// 落在休息日顺延到下一个工作日
+    #[serde(default)]
+    pub recur_skip_rest: bool,
+}
+
+fn default_one() -> i64 {
+    1
 }
 
 fn default_priority() -> String {
@@ -111,6 +130,9 @@ pub struct TodoPatch {
     pub sort_order: Option<i64>,
     /// 修改循环类型（weekly/monthly/空串=停止循环）。对根实例生效；实例自身的该字段随生成复制。
     pub recur_type: Option<String>,
+    pub recur_until: Option<String>,
+    pub recur_interval: Option<i64>,
+    pub recur_skip_rest: Option<bool>,
 }
 
 /// 报告

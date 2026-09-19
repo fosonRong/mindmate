@@ -402,6 +402,9 @@ fn 数据层_待办完成与撤销流转() {
             remind_offset_min: None,
             remind_at: None,
             recur_type: String::new(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
         })
         .unwrap();
     assert_eq!(t.status, "待处理");
@@ -429,6 +432,9 @@ fn 数据层_逾期刷新标记() {
         remind_offset_min: None,
         remind_at: None,
         recur_type: String::new(),
+        recur_until: String::new(),
+        recur_interval: 1,
+        recur_skip_rest: false,
     })
     .unwrap();
     let overdue = db.refresh_overdue().unwrap();
@@ -450,6 +456,9 @@ fn 数据层_待办改期后重新归类() {
             remind_offset_min: None,
             remind_at: None,
             recur_type: String::new(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
         })
         .unwrap();
     assert_eq!(t.category, "日程");
@@ -464,6 +473,9 @@ fn 数据层_待办改期后重新归类() {
                 due_time: None,
                 remind_at: None,
                 recur_type: None,
+                recur_until: None,
+                recur_interval: None,
+                recur_skip_rest: None,
                 priority: None,
                 tags: None,
                 status: None,
@@ -532,6 +544,9 @@ fn 降级_日报模板拼装含记录与待办() {
         remind_offset_min: None,
         remind_at: None,
         recur_type: String::new(),
+        recur_until: String::new(),
+        recur_interval: 1,
+        recur_skip_rest: false,
     })
     .unwrap();
 
@@ -609,6 +624,9 @@ fn 月度小结_记录天数与完成待办与最长连续() {
                 remind_offset_min: None,
                 remind_at: None,
                 recur_type: String::new(),
+                recur_until: String::new(),
+                recur_interval: 1,
+                recur_skip_rest: false,
             })
             .unwrap();
         if title != "任务C" {
@@ -717,6 +735,93 @@ fn 进度文案_按语言生成() {
 // ───────────────────────── 循环待办（每周/每月自动生成） ─────────────────────────
 
 
+#[test]
+fn 下一步日期_间隔与截止与跳过休息日() {
+    // 每 2 周一次
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-14", 2, "", false).unwrap(),
+        "2026-09-28"
+    );
+    // 每 15 天
+    assert_eq!(
+        next_recur_date("daily", "2026-09-01", "2026-09-01", "2026-09-01", 15, "", false).unwrap(),
+        "2026-09-16"
+    );
+    // 截止日期：下一期超过截止 → None（整条链停止）
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-14", 1, "2026-09-20", false),
+        None
+    );
+    // 截止日期内正常生成
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-14", 1, "2026-09-25", false).unwrap(),
+        "2026-09-21"
+    );
+    // 跳过休息日：锚点 9/26（周六），下一期 10-03 周六且在国庆假期（10-01~10-07）内
+    // → 逐日顺延到假期后第一个工作日 10-08（周四）
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-26", "2026-09-26", "2026-10-02", 1, "", true).unwrap(),
+        "2026-10-08"
+    );
+    // 不跳过：同样起点直接落在 10-03（周六，休）
+    assert_eq!(
+        next_recur_date("weekly", "2026-09-26", "2026-09-26", "2026-10-02", 1, "", false).unwrap(),
+        "2026-10-03"
+    );
+    // 每 2 月：1/31 锚点，3 月取 31
+    assert_eq!(
+        next_recur_date("monthly", "2026-01-31", "2026-01-31", "2026-02-01", 2, "", false).unwrap(),
+        "2026-03-31"
+    );
+    // interval<1 收敛为 1
+    assert_eq!(
+        next_recur_date("daily", "2026-09-14", "2026-09-14", "2026-09-14", 0, "", false).unwrap(),
+        "2026-09-15"
+    );
+}
+
+#[test]
+fn 循环待办_删除整个循环() {
+    let db = recur_db();
+    let root = db
+        .create_todo(NewTodo {
+            title: "要删除的循环".into(),
+            description: String::new(),
+            due_date: Some("2026-09-01".into()),
+            due_time: None,
+            priority: "中".into(),
+            tags: vec![],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: "weekly".into(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
+        })
+        .unwrap();
+    let _ = db.ensure_recurring().unwrap();
+    let chain: Vec<_> = db
+        .list_todos(Some("全部"), Some("全部"), None, None, None)
+        .unwrap()
+        .into_iter()
+        .filter(|t| t.title == "要删除的循环")
+        .collect();
+    assert!(chain.len() >= 2, "应已有根 + 补期实例");
+
+    // 删除任一实例 → 整条链移除
+    let removed = db.delete_todo_series(chain[0].id).unwrap();
+    assert!(removed >= 2, "应删除根与全部实例：{removed}");
+    let left: Vec<_> = db
+        .list_todos(Some("全部"), Some("全部"), None, None, None)
+        .unwrap()
+        .into_iter()
+        .filter(|t| t.title == "要删除的循环")
+        .collect();
+    assert!(left.is_empty(), "删除后不应残留");
+    // 补期引擎不再为已删除的链生成
+    assert!(db.ensure_recurring().unwrap().is_empty());
+}
+
 fn recur_db() -> mindmate_core::db::Db {
     let db = mindmate_core::db::Db::open_memory().unwrap();
     db
@@ -734,17 +839,17 @@ fn 循环类型_只认每天每周与每月() {
 #[test]
 fn 下一步日期_每天逐日推进() {
     assert_eq!(
-        next_recur_date("daily", "2026-09-14", "2026-09-14", "2026-09-15").unwrap(),
+        next_recur_date("daily", "2026-09-14", "2026-09-14", "2026-09-15", 1, "", false).unwrap(),
         "2026-09-15"
     );
     // 追溯创建：连推到不早于 not_before
     assert_eq!(
-        next_recur_date("daily", "2026-09-10", "2026-09-10", "2026-09-15").unwrap(),
+        next_recur_date("daily", "2026-09-10", "2026-09-10", "2026-09-15", 1, "", false).unwrap(),
         "2026-09-15"
     );
     // 恰好等于今天：下一期是明天
     assert_eq!(
-        next_recur_date("daily", "2026-09-14", "2026-09-14", "2026-09-14").unwrap(),
+        next_recur_date("daily", "2026-09-14", "2026-09-14", "2026-09-14", 1, "", false).unwrap(),
         "2026-09-15"
     );
 }
@@ -753,17 +858,17 @@ fn 下一步日期_每天逐日推进() {
 fn 下一步日期_每周保持周几并推进到不早于今天() {
     // 周一 → 下一个周一
     assert_eq!(
-        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-15").unwrap(),
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-15", 1, "", false).unwrap(),
         "2026-09-21"
     );
     // 已过期很久：连续推进到不早于 not_before
     assert_eq!(
-        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-10-05").unwrap(),
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-10-05", 1, "", false).unwrap(),
         "2026-10-05"
     );
     // 恰好等于今天：+7 天（下一期在未来）
     assert_eq!(
-        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-14").unwrap(),
+        next_recur_date("weekly", "2026-09-14", "2026-09-14", "2026-09-14", 1, "", false).unwrap(),
         "2026-09-21"
     );
 }
@@ -772,25 +877,25 @@ fn 下一步日期_每周保持周几并推进到不早于今天() {
 fn 下一步日期_每月保持几号且月末截断() {
     // 31 号在 9 月截断为 9/30（取当月最后一天）
     assert_eq!(
-        next_recur_date("monthly", "2026-08-31", "2026-08-31", "2026-09-01").unwrap(),
+        next_recur_date("monthly", "2026-08-31", "2026-08-31", "2026-09-01", 1, "", false).unwrap(),
         "2026-09-30"
     );
     // 下一轮回到 10/31（锚点的几号不因截断漂移）
     assert_eq!(
-        next_recur_date("monthly", "2026-08-31", "2026-09-30", "2026-10-01").unwrap(),
+        next_recur_date("monthly", "2026-08-31", "2026-09-30", "2026-10-01", 1, "", false).unwrap(),
         "2026-10-31"
     );
     // 普通日期：下月同日
     assert_eq!(
-        next_recur_date("monthly", "2026-01-15", "2026-01-15", "2026-01-20").unwrap(),
+        next_recur_date("monthly", "2026-01-15", "2026-01-15", "2026-01-20", 1, "", false).unwrap(),
         "2026-02-15"
     );
     // 2 月末：1 月 30 → 2 月 28（2026 非闰年）
     assert_eq!(
-        next_recur_date("monthly", "2026-01-30", "2026-01-30", "2026-02-01").unwrap(),
+        next_recur_date("monthly", "2026-01-30", "2026-01-30", "2026-02-01", 1, "", false).unwrap(),
         "2026-02-28"
     );
-    assert_eq!(next_recur_date("none", "2026-09-14", "2026-09-14", "2026-09-15"), None);
+    assert_eq!(next_recur_date("none", "2026-09-14", "2026-09-14", "2026-09-15", 1, "", false), None);
 }
 
 #[test]
@@ -808,6 +913,9 @@ fn 循环待办_创建根实例即补齐下一期() {
             remind_offset_min: None,
             remind_at: None,
             recur_type: "weekly".into(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
         })
         .unwrap();
     assert_eq!(root.recur_type, "weekly");
@@ -843,6 +951,9 @@ fn 循环待办_完成最后一期后生成下一期() {
             remind_offset_min: None,
             remind_at: None,
             recur_type: "monthly".into(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
         })
         .unwrap();
     let today = mindmate_core::db::today_string();
@@ -881,6 +992,9 @@ fn 循环待办_停止循环后不再生成() {
             remind_offset_min: None,
             remind_at: None,
             recur_type: "weekly".into(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
         })
         .unwrap();
     let _ = db.ensure_recurring().unwrap();

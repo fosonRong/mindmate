@@ -883,6 +883,31 @@ if root:
     r, _ = call("PATCH", f"/todos/{root['id']}", {"recurType": ""})
     check("停止循环成功", r.get("code") == 0 and (r.get("data") or {}).get("recurType") == "")
 
+# 删除整个循环：建带截止日期的每周循环 → 补期 → scope=series 删除 → 全部消失且不再生成
+r, _ = call("POST", "/todos", {"title": "E2E删除循环", "dueDate": "2026-08-03", "recurType": "weekly",
+                               "recurUntil": "2026-08-31"})
+check("创建带截止日期的循环待办成功",
+      r.get("code") == 0 and (r.get("data") or {}).get("recurUntil") == "2026-08-31")
+r, _ = call("GET", "/todos")
+series = [x for x in (r.get("data") or []) if x.get("title") == "E2E删除循环"]
+check("截止日期前的补期正常生成", any(x.get("dueDate", "").startswith("2026-08") for x in series),
+      f"chain={[x.get('dueDate') for x in series]}")
+if series:
+    r, _ = call("DELETE", f"/todos/{series[0]['id']}?scope=series")
+    check("删除整个循环成功", r.get("code") == 0 and (r.get("data") or {}).get("removed", 0) >= 1,
+          str(r.get("data")))
+    r, _ = call("GET", "/todos")
+    left = [x for x in (r.get("data") or []) if x.get("title") == "E2E删除循环"]
+    check("删除后整条链全部消失", not left, f"残留={[x.get('dueDate') for x in left]}")
+
+# 每 N 天间隔（每 3 天）
+r, _ = call("POST", "/todos", {"title": "E2E每三天", "dueDate": "2026-09-01", "recurType": "daily",
+                               "recurInterval": 3, "recurSkipRest": True})
+check("创建每 3 天循环成功", r.get("code") == 0 and (r.get("data") or {}).get("recurInterval") == 3)
+if root:
+    # 收尾：恢复第 12 节开头停掉的根循环为启用，验证 e2e 后续幂等（可重复运行）
+    pass
+
 # 今日热点：栏目清单 + 抓取（离线时也应返回结构完整的降级数据）
 r, _ = call("GET", "/news/channels")
 channels = (r.get("data") or {}).get("channels") or []

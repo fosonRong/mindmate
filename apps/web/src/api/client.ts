@@ -85,7 +85,8 @@ export const api = {
   createTodo: (data: Partial<Todo> & { title: string; remindOffsetMin?: number }) =>
     post<Todo>('/api/v1/todos', data),
   updateTodo: (id: number, data: Record<string, unknown>) => patch<Todo>(`/api/v1/todos/${id}`, data),
-  deleteTodo: (id: number) => del<{ deleted: boolean }>(`/api/v1/todos/${id}`),
+  deleteTodo: (id: number, scope?: 'series') =>
+    del<{ deleted: boolean; removed?: number }>(`/api/v1/todos/${id}${scope ? `?scope=${scope}` : ''}`),
   completeTodo: (id: number) => post<Todo>(`/api/v1/todos/${id}/complete`),
   reopenTodo: (id: number) => post<Todo>(`/api/v1/todos/${id}/reopen`),
   schedule: (date: string) => get<ScheduleData>(`/api/v1/todos/schedule?date=${date}`),

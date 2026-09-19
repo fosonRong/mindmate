@@ -192,11 +192,14 @@ impl Db {
             recur_type: row.get(14)?,
             recur_anchor: row.get(15)?,
             recur_source_id: row.get(16)?,
+            recur_until: row.get(17)?,
+            recur_interval: row.get(18)?,
+            recur_skip_rest: row.get::<_, i64>(19)? != 0,
             overdue: is_overdue(&due_date, due_time.as_deref(), &status),
         })
     }
 
-    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id";
+    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest";
 
     pub fn create_todo(&self, input: NewTodo) -> Result<Todo> {
         let now = now_string();
@@ -222,10 +225,12 @@ impl Db {
         // 循环待办：recur_type 合法性收敛（只认 weekly/monthly），锚点=首个实例的截止日期
         let recur_type = normalize_recur_type(&input.recur_type);
         let conn = self.lock();
+        let recur_until = normalize_date_opt(&input.recur_until);
+        let recur_interval = if input.recur_interval < 1 { 1 } else { input.recur_interval };
         conn.execute(
-            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?3)",
-            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now, recur_type],
+            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_until, recur_interval, recur_skip_rest)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?3,?11,?12,?13)",
+            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now, recur_type, recur_until, recur_interval, input.recur_skip_rest as i64],
         )?;
         let id = conn.last_insert_rowid();
         let todo = conn.query_row(
@@ -341,6 +346,15 @@ impl Db {
         if let Some(v) = patch.recur_type {
             t.recur_type = normalize_recur_type(&v);
         }
+        if let Some(v) = patch.recur_until {
+            t.recur_until = normalize_date_opt(&v);
+        }
+        if let Some(v) = patch.recur_interval {
+            t.recur_interval = if v < 1 { 1 } else { v };
+        }
+        if let Some(v) = patch.recur_skip_rest {
+            t.recur_skip_rest = v;
+        }
         let today = today_string();
         // 归类：显式指定优先，否则按截止日期重算
         t.category = patch
@@ -351,8 +365,8 @@ impl Db {
         conn.execute(
             "UPDATE todos SET title=?1, description=?2, due_date=?3, due_time=?4, remind_at=?5,
                     priority=?6, tags=?7, status=?8, category=?9, sort_order=?10, updated_at=?11,
-                    recur_type=?12
-             WHERE id=?13",
+                    recur_type=?12, recur_until=?13, recur_interval=?14, recur_skip_rest=?15
+             WHERE id=?16",
             params![
                 t.title,
                 t.description,
@@ -366,6 +380,9 @@ impl Db {
                 t.sort_order,
                 now,
                 t.recur_type,
+                t.recur_until,
+                t.recur_interval,
+                t.recur_skip_rest as i64,
                 id
             ],
         )?;
@@ -413,6 +430,29 @@ impl Db {
             params![now_string(), id],
         )?;
         Ok(n > 0)
+    }
+
+    /// 删除整条循环链（根 + 已生成的全部实例），并物理阻止补期引擎再生成：
+    /// 软删后把 recur_type 置空，确保即使有漏网判断也不会再补期。
+    /// 返回删除的条数；对非循环待办等价于删除单条。
+    pub fn delete_todo_series(&self, id: i64) -> Result<usize> {
+        let now = now_string();
+        let conn = self.lock();
+        let root: Option<i64> = conn
+            .query_row(
+                "SELECT CASE WHEN recur_source_id IS NULL THEN id ELSE recur_source_id END
+                 FROM todos WHERE id=?1 AND deleted_at IS NULL",
+                params![id],
+                |r| r.get(0),
+            )
+            .optional()?;
+        let Some(root) = root else { return Ok(0) };
+        let n = conn.execute(
+            "UPDATE todos SET deleted_at=?1, updated_at=?1, recur_type=''
+             WHERE deleted_at IS NULL AND (id=?2 OR recur_source_id=?2)",
+            params![now, root],
+        )?;
+        Ok(n)
     }
 
     /// 刷新逾期状态：把已过截止时间且未完成的待办标记为「已逾期」
@@ -533,7 +573,15 @@ impl Db {
                 continue;
             }
             // 下一期从链上最新一条之后推（已完成的那条也算「最新」）
-            let Some(next_date) = next_recur_date(&root.recur_type, &root.recur_anchor, &latest_due, &today) else {
+            let Some(next_date) = next_recur_date(
+                &root.recur_type,
+                &root.recur_anchor,
+                &latest_due,
+                &today,
+                root.recur_interval,
+                &root.recur_until,
+                root.recur_skip_rest,
+            ) else {
                 continue;
             };
             // 同根同日已有实例（用户手动补建等）：跳过，避免重复
@@ -565,8 +613,8 @@ impl Db {
             let id = {
                 let conn = self.lock();
                 conn.execute(
-                    "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_source_id)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?11,?12)",
+                    "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?11,?12,?13,?14,?15)",
                     params![
                         root.title,
                         root.description,
@@ -579,7 +627,10 @@ impl Db {
                         now,
                         root.recur_type,
                         root.recur_anchor,
-                        root.id
+                        root.id,
+                        root.recur_until,
+                        root.recur_interval,
+                        root.recur_skip_rest as i64
                     ],
                 )?;
                 conn.last_insert_rowid()
@@ -1208,9 +1259,6 @@ pub fn normalize_recur_type(v: &str) -> String {
     }
 }
 
-/// 循环待办的下一期日期：从 `from_date` 起按周期推进，直到不早于 `not_before`。
-/// - weekly：按周步进（保持星期几）
-/// - monthly：保持锚点的「几号」，月内无该日则取月末（如 31 号在 2 月取 28/29）
 fn parse_day(s: &str) -> Option<NaiveDate> {
     NaiveDate::parse_from_str(s, "%Y-%m-%d").ok()
 }
@@ -1230,45 +1278,129 @@ fn days_in_month(y: i32, m: u32) -> u32 {
     }
 }
 
+/// 法定休假/补班表（与前端 lunar.ts 的 HOLIDAY_DATA 同源维护；国务院公报公布后更新）。
+/// 只用于循环待办「跳过休息日」的顺延判断。
+const HOLIDAY_OFF: &[(i32, &str, u32)] = &[
+    (2025, "01-01", 1),
+    (2025, "01-28", 8),
+    (2025, "04-04", 3),
+    (2025, "05-01", 5),
+    (2025, "05-31", 3),
+    (2025, "10-01", 8),
+    (2026, "01-01", 3),
+    (2026, "02-15", 8),
+    (2026, "04-04", 3),
+    (2026, "05-01", 5),
+    (2026, "06-19", 3),
+    (2026, "09-25", 3),
+    (2026, "10-01", 7),
+];
+
+const HOLIDAY_WORK: &[(i32, &str)] = &[
+    (2025, "01-26"),
+    (2025, "02-08"),
+    (2025, "04-27"),
+    (2025, "09-28"),
+    (2025, "10-11"),
+    (2026, "02-14"),
+    (2026, "02-28"),
+    (2026, "04-26"),
+    (2026, "09-20"),
+    (2026, "10-10"),
+];
+
+/// 休息日 = 周末或法定休假（补班日算工作日）；表外年份只看周末
+fn is_rest_day(d: NaiveDate) -> bool {
+    use chrono::Datelike;
+    let md = d.format("%m-%d").to_string();
+    let y = d.year();
+    if HOLIDAY_WORK
+        .iter()
+        .any(|(yy, md2)| *yy == y && *md2 == md)
+    {
+        return false; // 补班日=工作日
+    }
+    if matches!(d.weekday(), chrono::Weekday::Sat | chrono::Weekday::Sun) {
+        return true;
+    }
+    HOLIDAY_OFF.iter().any(|(yy, start, n)| {
+        if *yy != y {
+            return false;
+        }
+        parse_day(&format!("{y}-{start}"))
+            .map(|s| {
+                let end = s + Duration::days((*n - 1) as i64);
+                d >= s && d <= end
+            })
+            .unwrap_or(false)
+    })
+}
+
+/// 空串/非法日期统一为空（循环截止等可选日期字段）
+fn normalize_date_opt(s: &str) -> String {
+    let s = s.trim();
+    if s.is_empty() {
+        return String::new();
+    }
+    parse_day(s)
+        .map(|d| d.format("%Y-%m-%d").to_string())
+        .unwrap_or_default()
+}
+
+/// 循环待办的下一期日期：从 `from_date` 起按周期推进，直到不早于 `not_before`。
+/// - daily：每 interval 天；weekly：每 interval 周（保持星期几）；monthly：每 interval 月（锚点几号，月末截断）
+/// - skip_rest：落点若为休息日（周末/法定休假），顺延到下一个工作日
+/// - until 非空且下一期晚于它：返回 None（整条链到点停止）
 pub fn next_recur_date(
     recur_type: &str,
     anchor: &str,
     from_date: &str,
     not_before: &str,
+    interval: i64,
+    until: &str,
+    skip_rest: bool,
 ) -> Option<String> {
+    let step = if interval < 1 { 1 } else { interval };
     let mut cur = parse_day(from_date)?;
     let not_before_d = parse_day(not_before).unwrap_or(cur);
-    match recur_type {
-        // 每天：逐日推进
-        "daily" => loop {
-            cur += Duration::days(1);
-            if cur >= not_before_d {
-                return Some(cur.format("%Y-%m-%d").to_string());
-            }
-        },
-        "weekly" => loop {
-            cur += Duration::days(7);
-            if cur >= not_before_d {
-                return Some(cur.format("%Y-%m-%d").to_string());
-            }
-        },
-        "monthly" => {
-            let day = parse_day(anchor)
-                .map(|a| a.day())
-                .or_else(|| parse_day(from_date).map(|d| d.day()))
-                .unwrap_or(1);
-            loop {
-                // 下个月同日（月末截断：锚点 31 号在 2 月取 28/29）
-                let (y, m) = (cur.year(), cur.month());
-                let (y2, m2) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
-                cur = NaiveDate::from_ymd_opt(y2, m2, day.min(days_in_month(y2, m2)))?;
-                if cur >= not_before_d {
-                    return Some(cur.format("%Y-%m-%d").to_string());
+    let until_d = parse_day(until);
+    let candidate = |mut cur: NaiveDate| -> Option<NaiveDate> {
+        loop {
+            match recur_type {
+                "daily" => cur += Duration::days(step),
+                "weekly" => cur += Duration::days(7 * step),
+                "monthly" => {
+                    let (y, m) = (cur.year(), cur.month());
+                    let (y2, m2) = if m == 12 { (y + 1, 1) } else { (y, m + 1) };
+                    // 间隔 N 月：直接推进 N 个月（月末截断）
+                    let total = (y2 * 12 + m2 as i32 - 1) + (step as i32 - 1);
+                    let y3 = total / 12;
+                    let m3 = (total % 12) as u32 + 1;
+                    let day = parse_day(anchor)
+                        .map(|a| a.day())
+                        .or_else(|| parse_day(from_date).map(|d| d.day()))
+                        .unwrap_or(1);
+                    cur = NaiveDate::from_ymd_opt(y3, m3, day.min(days_in_month(y3, m3)))?;
                 }
+                _ => return None,
+            }
+            if cur >= not_before_d {
+                return Some(cur);
             }
         }
-        _ => None,
+    };
+    let mut next = candidate(cur)?;
+    if skip_rest {
+        while is_rest_day(next) {
+            next += Duration::days(1);
+        }
     }
+    if let Some(u) = until_d {
+        if next > u {
+            return None; // 超过循环截止：整条链停止生成
+        }
+    }
+    Some(next.format("%Y-%m-%d").to_string())
 }
 
 /// 摘要截断

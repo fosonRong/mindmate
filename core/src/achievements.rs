@@ -300,6 +300,9 @@ mod tests {
                 remind_offset_min: None,
                 remind_at: None,
                 recur_type: String::new(),
+                recur_until: String::new(),
+                recur_interval: 1,
+                recur_skip_rest: false,
             })
             .unwrap();
         let bus = EventBus::new();

@@ -177,6 +177,26 @@
 /* 循环待办徽标 */
 .chip.recur { color: var(--accent); background: #FFF8EC; }
 :root[data-theme="dark"] .chip.recur { background: #2E2415; }
+/* 删除二次确认态 */
+.actions .danger.confirm-del { color: #fff; background: var(--danger); white-space: nowrap; }
+
+/* 记录热力图（GitHub 贡献图风格） */
+.heat-scroll { overflow-x: auto; padding-bottom: 4px; }
+.heat-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 12px); gap: 3px; width: max-content; }
+.heat-cell { width: 12px; height: 12px; border-radius: 3px; background: var(--bg-hover); cursor: pointer; }
+.heat-cell:hover { outline: 1px solid var(--primary); }
+.heat-cell.l1 { background: var(--primary-weak); }
+.heat-cell.l2 { background: #B9A8F5; }
+.heat-cell.l3 { background: var(--primary); }
+.heat-cell.l4 { background: #4B3A9E; }
+:root[data-theme="dark"] .heat-cell.l4 { background: #CFC6FF; }
+.heat-legend { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--text-weak); }
+.heat-legend i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; background: var(--bg-hover); }
+.heat-legend i.l1 { background: var(--primary-weak); }
+.heat-legend i.l2 { background: #B9A8F5; }
+.heat-legend i.l3 { background: var(--primary); }
+.heat-legend i.l4 { background: #4B3A9E; }
+:root[data-theme="dark"] .heat-legend i.l4 { background: #CFC6FF; }
 
 /* 进度条 */
 .progress { height: 5px; }

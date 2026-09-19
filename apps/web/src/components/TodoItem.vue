@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // 待办项：复选框、优先级、逾期徽标、悬停操作、拖拽
 import type { Todo } from '@/api/types'
+import { ref } from 'vue'
 import { useTodosStore } from '@/stores/todos'
 import { useAppStore, friendlyDate } from '@/stores/app'
 import { t } from '@/i18n'
@@ -23,6 +24,13 @@ function recurLabel(rt: string) {
   return map[rt] || rt
 }
 
+function recurTip(todo: Todo) {
+  const base = t('循环待办：完成后自动生成下一期')
+  const skip = todo.recurSkipRest ? ' · ' + t('休息日顺延') : ''
+  const until = todo.recurUntil ? ' · ' + t('截止 {a}', { a: todo.recurUntil }) : ''
+  return base + skip + until
+}
+
 async function toggle() {
   try {
     await todos.toggle(props.todo.id)
@@ -34,10 +42,34 @@ async function toggle() {
   }
 }
 
-async function remove() {
+// 删除流程：普通待办点一次变「确认删除」再点才删（防误删）；
+// 循环待办弹出两种语义（删除整个循环 / 仅删除这一条）
+const confirmDelete = ref(false)
+const askSeries = ref(false)
+let confirmTimer: ReturnType<typeof setTimeout> | null = null
+
+function onRequestDelete() {
+  if (props.todo.recurType) {
+    askSeries.value = true
+    return
+  }
+  if (confirmDelete.value) {
+    doRemove()
+    return
+  }
+  confirmDelete.value = true
+  if (confirmTimer) clearTimeout(confirmTimer)
+  confirmTimer = setTimeout(() => (confirmDelete.value = false), 3000)
+}
+
+async function doRemove(scope?: 'series') {
+  if (confirmTimer) clearTimeout(confirmTimer)
+  confirmDelete.value = false
+  askSeries.value = false
   try {
-    await todos.remove(props.todo.id)
-    app.toast('info', t('已删除待办'))
+    await todos.remove(props.todo.id, scope)
+    await todos.load()
+    app.toast('info', t(scope === 'series' ? '已删除整个循环' : '已删除待办'))
   } catch (e: any) {
     app.toast('error', e?.message || '删除失败')
   }
@@ -77,14 +109,24 @@ async function suggest() {
         <span :class="{ 'due-late': todo.overdue }">
           {{ todo.category === '日程' && todo.dueTime ? friendlyDate(todo.dueDate) : friendlyDate(todo.dueDate) }}
         </span>
-        <span v-if="todo.recurType" class="chip recur" :title="$t('循环待办：完成后自动生成下一期')">🔁 {{ $t(recurLabel(todo.recurType)) }}</span>
+        <span
+          v-if="todo.recurType"
+          class="chip recur"
+          :title="recurTip(todo)"
+        >🔁 {{ $t(recurLabel(todo.recurType)) }}{{ todo.recurInterval > 1 ? '×' + todo.recurInterval : '' }}{{ todo.recurUntil ? ' → ' + todo.recurUntil : '' }}</span>
         <span v-if="todo.status === '已逾期'" class="badge danger">{{ $t('逾期') }}</span>
         <span v-for="t in todo.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
       </div>
     </div>
     <div v-if="showActions !== false" class="actions">
       <button v-if="todo.status !== '已完成'" :title="$t('智伴排期建议')" @click="suggest">✨</button>
-      <button class="danger" @click="remove">{{ $t('删除') }}</button>
+      <template v-if="askSeries">
+        <button class="danger" :title="$t('已生成的后续一期也会一并删除')" @click="doRemove('series')">{{ $t('删整个循环') }}</button>
+        <button @click="doRemove()">{{ $t('仅此一条') }}</button>
+      </template>
+      <button v-else class="danger" :class="{ 'confirm-del': confirmDelete }" @click="onRequestDelete">
+        {{ confirmDelete ? $t('确认删除？') : $t('删除') }}
+      </button>
     </div>
   </div>
 </template>

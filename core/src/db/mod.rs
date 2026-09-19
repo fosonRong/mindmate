@@ -20,7 +20,7 @@ pub struct Db {
 }
 
 /// 当前程序支持的库结构版本。新增表/列时：**追加**一条迁移并把这个数字 +1。
-pub const SCHEMA_VERSION: i64 = 2;
+pub const SCHEMA_VERSION: i64 = 3;
 
 /// V2：循环待办（每周/每月自动生成下一期）
 /// - recur_type      ''|'weekly'|'monthly'，''=普通待办
@@ -33,9 +33,19 @@ ALTER TABLE todos ADD COLUMN recur_source_id INTEGER;
 CREATE INDEX IF NOT EXISTS idx_todos_recur ON todos(recur_source_id, deleted_at, due_date);
 "#;
 
+/// V3：循环待办增强——结束日期 / 每 N 周期 / 跳过休息日
+/// - recur_until       循环截止日期（空=无限）；下一期晚于该日期则整条链停止生成
+/// - recur_interval    周期间隔 N（每天=N 天、每周=N 周、每月=N 月），默认 1
+/// - recur_skip_rest   落在休息日（周末/法定休假）时顺延到下一个工作日
+const SCHEMA_V3: &str = r#"
+ALTER TABLE todos ADD COLUMN recur_until TEXT NOT NULL DEFAULT '';
+ALTER TABLE todos ADD COLUMN recur_interval INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE todos ADD COLUMN recur_skip_rest INTEGER NOT NULL DEFAULT 0;
+"#;
+
 /// 版本化迁移链：每项为 (目标版本, 该版本的 DDL)。逐级执行，幂等。
 fn migrations() -> Vec<(i64, &'static str)> {
-    vec![(1, SCHEMA_V1), (2, SCHEMA_V2)]
+    vec![(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3)]
 }
 
 impl Db {
@@ -443,6 +453,9 @@ mod tests {
             remind_offset_min: None,
             remind_at: None,
             recur_type: String::new(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
         })
         .unwrap();
 

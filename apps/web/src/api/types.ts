@@ -31,6 +31,12 @@ export interface Todo {
   recurType: string
   /** 循环锚点日期（首个实例的 dueDate） */
   recurAnchor: string
+  /** 循环截止日期（空=无限） */
+  recurUntil: string
+  /** 周期间隔 N（每天=N 天、每周=N 周、每月=N 月） */
+  recurInterval: number
+  /** 落在休息日顺延到下一个工作日 */
+  recurSkipRest: boolean
   /** 本实例由哪个根实例生成（用户手建的是根：null） */
   recurSourceId: number | null
   overdue: boolean
