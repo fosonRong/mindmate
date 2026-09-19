@@ -7,7 +7,7 @@ import { isDesktop } from '@/lib/desktop'
 import { useUpdateStore } from '@/stores/update'
 import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode, t } from '@/i18n'
 import { ref as _ref } from 'vue'
-import type { AiConfig, AiFailKind, AiTestResult, OllamaProbe, Preset, PushConfig, NewsChannel } from '@/api/types'
+import type { AiConfig, AiFailKind, AiTestResult, OllamaProbe, Preset, PushConfig, NewsChannel, FocusTopic } from '@/api/types'
 
 const app = useAppStore()
 const update = useUpdateStore()
@@ -33,6 +33,10 @@ const newsSelected = ref<string[]>(['weibo'])
 const newsLimit = ref(10)
 const newsAutoRefresh = ref(false)
 const newsRefreshMinutes = ref(30)
+// 重点关注：预设行业多选 + 自定义关键词（顿号/逗号/空格分隔）
+const newsFocusList = ref<FocusTopic[]>([])
+const newsFocusSelected = ref<string[]>([])
+const newsKeywordsText = ref('')
 const goodnightEnabled = ref(true)
 const goodnightTime = ref('21:30')
 const reviewEnabled = ref(true)
@@ -263,6 +267,18 @@ async function load() {
   newsAutoRefresh.value = (s.news_auto_refresh ?? '0') === '1'
   newsRefreshMinutes.value = Number(s.news_refresh_minutes || 30)
   try {
+    const f = JSON.parse(s.news_focus || '[]')
+    newsFocusSelected.value = Array.isArray(f) ? f : []
+  } catch {
+    newsFocusSelected.value = []
+  }
+  try {
+    const kws = JSON.parse(s.news_focus_keywords || '[]')
+    newsKeywordsText.value = Array.isArray(kws) ? kws.join('，') : ''
+  } catch {
+    newsKeywordsText.value = ''
+  }
+  try {
     const sel = JSON.parse(s.news_channels || '["weibo"]')
     newsSelected.value = Array.isArray(sel) && sel.length ? sel : ['weibo']
   } catch {
@@ -287,13 +303,14 @@ async function load() {
     api.aiConfig(),
     api.pushConfig(),
     api.templates(),
-    api.newsChannels().catch(() => ({ channels: [] as NewsChannel[] }))
+    api.newsChannels().catch(() => ({ channels: [] as NewsChannel[], focus: [] as FocusTopic[] }))
   ])
   presets.value = pres
   aiConfig.value = ai
   push.value = pushCfg
   templates.value = tpl.templates
   newsChannelList.value = channels.channels
+  newsFocusList.value = channels.focus
   templateDraft.value = tpl.templates[editingTemplate.value] || ''
   // 自启状态不 await：它只影响一个开关，且桌面端要走一次 IPC（内核要读注册表）。
   // 让它在后台填充，页面无需等它。
@@ -310,6 +327,38 @@ function toggleNewsChannel(id: string) {
     newsSelected.value.splice(i, 1)
   } else {
     newsSelected.value.push(id)
+  }
+  saveNewsSettings()
+}
+
+/** 解析自定义关键词输入：顿号/逗号/分号/空格分隔 */
+function parseKeywordsText(): string[] {
+  return newsKeywordsText.value
+    .split(/[、，,;；\s]+/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+}
+
+function toggleNewsFocus(id: string) {
+  const i = newsFocusSelected.value.indexOf(id)
+  if (i >= 0) newsFocusSelected.value.splice(i, 1)
+  else newsFocusSelected.value.push(id)
+  saveNewsSettings()
+}
+
+/** 热点设置即时保存（不等「保存」按钮；改完即生效） */
+async function saveNewsSettings() {
+  try {
+    await app.saveSettings({
+      news_limit: String(newsLimit.value),
+      news_channels: JSON.stringify(newsSelected.value.length ? newsSelected.value : ['weibo']),
+      news_auto_refresh: newsAutoRefresh.value ? '1' : '0',
+      news_refresh_minutes: String(newsRefreshMinutes.value),
+      news_focus: JSON.stringify(newsFocusSelected.value),
+      news_focus_keywords: JSON.stringify(parseKeywordsText())
+    })
+  } catch (e: any) {
+    app.toast('error', e?.message || t('保存设置失败'))
   }
 }
 
@@ -700,7 +749,32 @@ onMounted(load)
               </button>
               <span v-if="!newsChannelList.length" class="small muted">{{ $t('栏目清单加载失败，保存后将只显示微博热搜') }}</span>
             </div>
-            <div class="small muted">{{ $t('栏目多选；在「今日」页点简报旁的「今日热点」标签查看，点击新闻用浏览器打开。') }}</div>
+            <div class="stack" style="gap: 6px; padding-left: 2px">
+              <div class="row">
+                <span style="font-size: 13px">{{ $t('重点关注') }}</span>
+                <span class="small muted">{{ $t('选择行业或填自定义关键词，热点只展示命中内容') }}</span>
+              </div>
+              <div class="row wrap" style="gap: 6px">
+                <button
+                  v-for="f in newsFocusList"
+                  :key="f.id"
+                  class="tag-pick"
+                  :class="{ on: newsFocusSelected.includes(f.id) }"
+                  @click="toggleNewsFocus(f.id)"
+                >
+                  {{ f.name }}
+                </button>
+                <span v-if="!newsFocusList.length" class="small muted">{{ $t('行业清单加载失败') }}</span>
+              </div>
+              <input
+                v-model="newsKeywordsText"
+                class="input"
+                :placeholder="$t('自定义关键词，用逗号分隔，如：AI驱动开发、鸿蒙')"
+                @change="saveNewsSettings"
+                @keydown.enter="saveNewsSettings"
+              />
+            </div>
+            <div class="small muted">{{ $t('以上修改即时保存生效；在「今日」页点简报旁的「今日热点」标签查看，点击新闻用浏览器打开。') }}</div>
           </div>
           <div class="row">
             <span style="flex: 1; font-size: 13px">{{ $t('晚安总结') }}</span>

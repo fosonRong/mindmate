@@ -122,27 +122,31 @@ function onDrop(e: DragEvent, date: string) {
         @dragover="c.inMonth ? onDragOver($event) : null"
         @drop="c.inMonth ? onDrop($event, c.date) : null"
       >
+        <!-- 日期 + 农历同一行（横向布局），徽标/计数靠右 -->
         <div class="num">
           <span>{{ c.day }}</span>
+          <span class="lunar" :title="c.lunar">{{ c.lunar }}</span>
           <span v-if="c.badge" class="day-badge" :class="c.badge === '休' ? 'off' : 'work'">{{ c.badge }}</span>
           <span v-if="c.stat && c.stat.nodeCount > 0" class="cnt">{{ c.stat.nodeCount }}</span>
         </div>
-        <div v-if="c.lunar" class="lunar">{{ c.lunar }}</div>
-        <div v-if="c.stat?.nodeSummaries?.length" class="sum">{{ c.stat.nodeSummaries[0] }}</div>
-        <!-- 待办标题（日程）：最多显示 maxTodoTitles 条，其余以 +n 归纳 -->
-        <div
-          v-for="(t, i) in c.todoTitles.slice(0, maxTodoTitles ?? 2)"
-          :key="i"
-          class="sum todo-title"
-          :title="t"
-        >
-          · {{ t }}
-        </div>
-        <div v-if="c.todoTitles.length > (maxTodoTitles ?? 2)" class="sum muted">
-          {{ $t('+{a} 项待办', { a: c.todoTitles.length - (maxTodoTitles ?? 2) }) }}
-        </div>
-        <div v-if="!c.todoTitles.length && c.todoCount" class="todo-dots">
-          <span v-for="i in Math.min(c.todoCount, 3)" :key="i"></span>
+        <!-- 日程文字区：填满格子剩余高宽，随格子伸缩，显示不下自动隐藏 -->
+        <div class="sum-wrap">
+          <div v-if="c.stat?.nodeSummaries?.length" class="sum">{{ c.stat.nodeSummaries[0] }}</div>
+          <!-- 待办标题（日程）：最多显示 maxTodoTitles 条，其余以 +n 归纳 -->
+          <div
+            v-for="(t, i) in c.todoTitles.slice(0, maxTodoTitles ?? 2)"
+            :key="i"
+            class="sum todo-title"
+            :title="t"
+          >
+            · {{ t }}
+          </div>
+          <div v-if="c.todoTitles.length > (maxTodoTitles ?? 2)" class="sum muted">
+            {{ $t('+{a} 项待办', { a: c.todoTitles.length - (maxTodoTitles ?? 2) }) }}
+          </div>
+          <div v-if="!c.todoTitles.length && c.todoCount" class="todo-dots">
+            <span v-for="i in Math.min(c.todoCount, 3)" :key="i"></span>
+          </div>
         </div>
       </div>
     </div>

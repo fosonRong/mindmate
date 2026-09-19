@@ -3,7 +3,7 @@ import { t } from '@/i18n'
 import type {
   Achievement, AchievementDef, AiConfig, AiTestResult, AppEvent, AuthStatus, ChatMessage, DailyStats,
   MonthlySummary, Node, OllamaProbe, PeriodStats, Preset, PushConfig, PushResult, Report,
-  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel
+  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic
 } from './types'
 
 export class ApiError extends Error {
@@ -120,11 +120,13 @@ export const api = {
   openUrl: (url: string) => post<{ opened: boolean; url: string }>('/api/v1/system/open-url', { url }),
 
   // 今日热点（栏目清单自动生成；refresh=1 跳过 30 分钟缓存强制实抓）
-  newsChannels: () => get<{ channels: NewsChannel[] }>('/api/v1/news/channels'),
-  hotNews: (refresh = false, limit?: number) => {
+  newsChannels: () => get<{ channels: NewsChannel[]; focus: FocusTopic[] }>('/api/v1/news/channels'),
+  hotNews: (refresh = false, limit?: number, focus?: { topics: string[]; keywords: string[] }) => {
     const qs = new URLSearchParams()
     if (refresh) qs.set('refresh', '1')
     if (limit) qs.set('limit', String(limit))
+    if (focus && focus.topics.length) qs.set('focus', focus.topics.join(','))
+    if (focus && focus.keywords.length) qs.set('kw', focus.keywords.join(','))
     const q = qs.toString()
     return get<HotNewsResult>(`/api/v1/news/hot${q ? '?' + q : ''}`)
   },

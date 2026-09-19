@@ -59,6 +59,12 @@ export interface NewsChannel {
   name: string
 }
 
+/** 重点关注行业（预设，关键词由后端注册表维护） */
+export interface FocusTopic {
+  id: string
+  name: string
+}
+
 export interface DailyStats {
   date: string
   nodeCount: number

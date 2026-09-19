@@ -105,24 +105,26 @@ async function save() {
         </div>
       </div>
 
-      <div class="row" style="gap: 12px">
-        <div class="form-row" style="flex: 1">
-          <label class="form-label">{{ $t('重复') }}</label>
-          <div class="seg" style="width: 100%">
-            <button
-              v-for="o in RECUR_OPTIONS"
-              :key="o.value"
-              :class="{ on: recurType === o.value }"
-              style="flex: 1; font-size: 12px"
-              @click="recurType = o.value"
-            >
-              {{ $t(o.label) }}
-            </button>
-          </div>
-          <div v-if="recurType" class="small muted" style="margin-top: 4px">
-            {{ $t('完成后自动生成下一期（{a}）', { a: $t(RECUR_OPTIONS.find((o) => o.value === recurType)?.label || '') }) }}
-          </div>
+      <!-- 重复独占一行：四个选项完整展示（此前与优先级挤一行，「不循环」被压成竖排） -->
+      <div class="form-row">
+        <label class="form-label">{{ $t('重复') }}</label>
+        <div class="seg" style="width: 100%">
+          <button
+            v-for="o in RECUR_OPTIONS"
+            :key="o.value"
+            :class="{ on: recurType === o.value }"
+            style="flex: 1; white-space: nowrap"
+            @click="recurType = o.value"
+          >
+            {{ $t(o.label) }}
+          </button>
         </div>
+        <div class="small muted" style="margin-top: 4px">
+          {{ recurType ? $t('完成后自动生成下一期（{a}）', { a: $t(RECUR_OPTIONS.find((o) => o.value === recurType)?.label || '') }) : $t('选择周期后，到期完成会自动生成下一期') }}
+        </div>
+      </div>
+
+      <div class="row" style="gap: 12px">
         <div class="form-row" style="flex: 1">
           <label class="form-label">{{ $t('优先级') }}</label>
           <div class="seg" style="width: 100%">

@@ -888,6 +888,9 @@ r, _ = call("GET", "/news/channels")
 channels = (r.get("data") or {}).get("channels") or []
 check("热点栏目清单自动生成（≥3 个栏目）", len(channels) >= 3,
       f"{[c.get('name') for c in channels]}")
+focus_list = (r.get("data") or {}).get("focus") or []
+check("重点关注行业清单自动生成（≥5 个行业）", len(focus_list) >= 5,
+      f"{[f.get('name') for f in focus_list]}")
 r, _ = call("GET", "/news/hot?refresh=1&limit=10")
 hot = r.get("data") or {}
 check("热点接口返回结构完整", isinstance(hot.get("items"), list) and hot.get("source") in ("live", "cache", "none"),
@@ -897,6 +900,32 @@ if hot.get("items"):
     first = hot["items"][0]
     check("热点条目带标题与栏目", bool(first.get("title")) and bool(first.get("channelName")),
           str(first.get("title"))[:30])
+
+# 重点关注：行业走热搜池过滤（focus），自定义关键词走互联网搜索（kw，相关度降序）
+r, _ = call("GET", "/news/hot?refresh=1&limit=20&focus=ai,edu")
+hot2 = r.get("data") or {}
+check("行业关注过滤接口返回结构完整",
+      isinstance(hot2.get("items"), list) and len(hot2.get("items") or []) <= 20,
+      f"items={len(hot2.get('items') or [])} source={hot2.get('source')}")
+if hot2.get("items"):
+    kws = ["ai", "人工智能", "大模型", "教育", "高考", "高校", "考试", "留学"]
+    bad = [i["title"] for i in hot2["items"]
+           if not any(k in i.get("title", "").lower() for k in kws)]
+    check("行业过滤后条目均命中行业关键词", not bad, f"未命中示例：{bad[:2]}")
+
+# 自定义关键词：互联网搜索（离线时也返回结构完整的降级数据；来源标识=关键词本身）
+r, _ = call("GET", "/news/hot?refresh=1&limit=15&kw=" + urllib.parse.quote("AI驱动开发"))
+hot3 = r.get("data") or {}
+check("自定义关键词搜索接口返回结构完整",
+      isinstance(hot3.get("items"), list) and len(hot3.get("items") or []) <= 15,
+      f"items={len(hot3.get('items') or [])} source={hot3.get('source')}")
+if hot3.get("items"):
+    check("搜索条目来源标识为关键词本身",
+          all(i.get("channel") == "search" for i in hot3["items"]),
+          str({i.get("channelName") for i in hot3["items"]}))
+    scores = [i.get("hot") or 0 for i in hot3["items"]]
+    check("搜索条目按相关度降序排列", scores == sorted(scores, reverse=True),
+          f"scores={scores[:6]}")
 
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:

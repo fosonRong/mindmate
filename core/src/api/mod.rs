@@ -919,13 +919,21 @@ async fn news_channels(State(ctx): State<Arc<AppContext>>, headers: HeaderMap) -
         .iter()
         .map(|(id, name)| json!({ "id": id, "name": name }))
         .collect();
-    Ok(ApiResp::ok(json!({ "channels": channels })))
+    let focus: Vec<serde_json::Value> = crate::news::FOCUS_TOPICS
+        .iter()
+        .map(|(id, name, _)| json!({ "id": id, "name": name }))
+        .collect();
+    Ok(ApiResp::ok(json!({ "channels": channels, "focus": focus })))
 }
 
 /// 抓取热点新闻。query：
 /// - refresh=1  跳过缓存强制实抓
 /// - channels   逗号分隔栏目 id（缺省读设置 news_channels，默认 weibo）
 /// - limit      条数上限（缺省读设置 news_limit，默认 10）
+/// - focus      逗号分隔重点关注行业 id（缺省读设置 news_focus）
+/// - kw         逗号分隔自定义关注关键词（缺省读设置 news_focus_keywords）
+///   focus（行业）非空：抓 200 条热搜大池子按行业关键词过滤；
+///   kw（自定义关键词）非空：直接搜索互联网（必应中国），按相关度降序，条目来源标识为该关键词
 async fn news_hot(
     State(ctx): State<Arc<AppContext>>,
     headers: HeaderMap,
@@ -951,10 +959,38 @@ async fn news_hot(
     };
     let channels: Vec<String> = if channels.is_empty() { vec!["weibo".to_string()] } else { channels };
 
-    // 未强制刷新且有未过期的缓存（30 分钟）→ 直接回缓存，避免每次进页面都打源站。
-    // 缓存条数必须覆盖请求条数：下滑加载更多会带着更大的 limit 回来，
-    // 小缓存直接命中会让翻页永远拿不到新条目（此时应走实抓补足）。
-    if !refresh {
+    // 重点关注：请求参数优先，其次读用户设置
+    let parse_list = |raw: Option<&String>| -> Vec<String> {
+        raw.map(|s| s.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect::<Vec<_>>())
+            .unwrap_or_default()
+    };
+    let focus_ids: Vec<String> = match q.get("focus") {
+        Some(raw) if !raw.trim().is_empty() => parse_list(Some(raw)),
+        _ => ctx
+            .db
+            .get_setting("news_focus")
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+            .unwrap_or_default(),
+    }
+    .into_iter()
+    .filter(|id| crate::news::valid_focus(id))
+    .collect();
+    let custom_keywords: Vec<String> = match q.get("kw") {
+        Some(raw) if !raw.trim().is_empty() => parse_list(Some(raw)),
+        _ => ctx
+            .db
+            .get_setting("news_focus_keywords")
+            .ok()
+            .flatten()
+            .and_then(|v| serde_json::from_str::<Vec<String>>(&v).ok())
+            .unwrap_or_default(),
+    };
+    let focusing = !focus_ids.is_empty() || !custom_keywords.is_empty();
+
+    // 重点关注模式下缓存不适用（过滤后的条数不能反映池子大小），始终走实抓逻辑
+    if !refresh && !focusing {
         if let Some((cached, at)) = crate::news::load_cache(&ctx.db) {
             if cached.items.len() >= limit {
                 if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(&at, "%Y-%m-%d %H:%M:%S") {
@@ -971,8 +1007,29 @@ async fn news_hot(
             }
         }
     }
-    let mut result = crate::news::fetch_hot_news(&ctx.db, &channels, limit).await;
-    result.items.truncate(limit);
+    // 重点关注模式：行业走热搜大池子过滤；自定义关键词走互联网搜索（热搜榜覆盖不了小众词）
+    if focusing {
+        let fetched_at = crate::db::now_string();
+        let mut items: Vec<crate::news::NewsItem> = Vec::new();
+        if !focus_ids.is_empty() {
+            let (groups, _errors) = crate::news::fetch_channels(&channels, 200).await;
+            let pool = crate::news::merge_items(groups, 200);
+            items.extend(crate::news::filter_focus(pool, &focus_ids, &[]));
+        }
+        if !custom_keywords.is_empty() {
+            items.extend(crate::news::search_keywords(&custom_keywords, 8).await);
+        }
+        items.truncate(limit);
+        return Ok(ApiResp::ok(crate::news::HotNewsResult {
+            items,
+            source: "live".into(),
+            fetched_at,
+            errors: Vec::new(),
+            stale: false,
+        }));
+    }
+
+    let result = crate::news::fetch_hot_news(&ctx.db, &channels, limit).await;
     Ok(ApiResp::ok(result))
 }
 

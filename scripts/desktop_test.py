@@ -262,7 +262,11 @@ check("农历测试用真实锚点校验（历年春节）", os.path.exists(os.p
 check("日历格等额自适应（minmax(0,1fr) 列 + 行 + 视口高度）",
       "grid-template-columns: repeat(7, minmax(0, 1fr))" in read("apps", "web", "src", "styles", "app.css")
       and "grid-auto-rows: minmax(0, 1fr)" in read("apps", "web", "src", "styles", "app.css"))
-check("格内摘要自动换行且溢出隐藏（line-clamp）", "-webkit-line-clamp" in read("apps", "web", "src", "styles", "app.css"))
+check("格内：日期与农历同一行（横向布局，农历可省略）",
+      ".cal-cell .num .lunar" in read("apps", "web", "src", "styles", "app.css")
+      and '<span class="lunar"' in read("apps", "web", "src", "components", "CalendarMonth.vue"))
+check("格内：日程文字区填满剩余高宽并溢出隐藏（跟随方块自适应）",
+      ".cal-cell .sum-wrap { flex: 1 1 0; min-height: 0; min-width: 0; overflow: hidden;" in read("apps", "web", "src", "styles", "app.css"))
 
 check("循环待办：库迁移 V2 加 recur 三列", "recur_type" in read("core", "src", "db", "mod.rs")
       and "SCHEMA_V2" in read("core", "src", "db", "mod.rs") and "SCHEMA_VERSION: i64 = 2" in read("core", "src", "db", "mod.rs"))
@@ -307,6 +311,37 @@ check("今日热点：点击新闻用系统浏览器打开（桌面走 openUrl�
       "openNews" in read("apps", "web", "src", "views", "Today.vue")
       and "api.openUrl" in read("apps", "web", "src", "views", "Today.vue"))
 check("全量验收纳入农历/节假日专项", "lunar_test.mjs" in read("scripts", "run_all_tests.py"))
+
+# ── v1.0.19 反馈迭代：热点设置即时保存 / 切换即刷新 / 重点关注 / 重复按钮布局 ──
+check("热点：重点关注注册表（行业 + 关键词）与过滤纯函数",
+      "FOCUS_TOPICS" in news and "filter_focus" in news and "title_matches" in news)
+check("热点：过滤有确定性单测（大小写/空关键词/预设+自定义合并）",
+      "重点关注_标题命中大小写不敏感" in news and "重点关注_预设与自定义关键词合并过滤" in news)
+check("热点：接口支持 focus/kw 参数（预设+自定义关键词过滤）",
+      '"kw"' in read("core", "src", "api", "mod.rs") and 'q.get("focus")' in read("core", "src", "api", "mod.rs"))
+check("热点：channels 接口带行业清单（自动生成）",
+      "FOCUS_TOPICS" in read("core", "src", "api", "mod.rs"))
+settings_src = read("apps", "web", "src", "views", "Settings.vue")
+check("热点：设置全部控件即时保存（修复「设置了没保存」）",
+      "saveNewsSettings" in settings_src
+      and "@change=\"saveNewsSettings\"" in settings_src
+      and "news_focus" in settings_src and "news_focus_keywords" in settings_src)
+today_src = read("apps", "web", "src", "views", "Today.vue")
+check("热点：切换到今日热点标签即强制刷新",
+      "loadNews(true)" in today_src.split("function toggleNewsPanel")[1].split("}")[0] if "function toggleNewsPanel" in today_src else False)
+check("热点：重点关注过滤接入面板（参数 + 空态 + 摘要）",
+      "isFocusFiltering" in today_src and "newsFocusParams" in today_src and "focusSummary" in today_src)
+check("热点：自定义关键词走互联网搜索（必应中国 + 相关度排序），不在热搜榜里过滤",
+      "SEARCH_URL" in news and "parse_bing_results" in news and "relevance_score" in news
+      and "search_keywords" in news and "search_keywords" in read("core", "src", "api", "mod.rs"))
+check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
+      "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
+      and "重点关注_标题命中大小写不敏感" in news)
+check("热点：面板选择持久化（切换后保留，重启保留）",
+      "mindmate_today_panel" in today_src and "localStorage.setItem(PANEL_KEY" in today_src)
+modal_src = read("apps", "web", "src", "components", "TodoEditModal.vue")
+check("待办弹窗：重复选择独占一行且按钮不换行（修复竖排文字）",
+      "white-space: nowrap" in modal_src and "重复独占一行" in modal_src)
 
 # 版本号一致性：core 与应用同时发布，版本号必须相同（否则 /install 诊断信息会误导）
 core_toml = read("core", "Cargo.toml")

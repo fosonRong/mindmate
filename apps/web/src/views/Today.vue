@@ -30,8 +30,12 @@ const showTodoModal = ref(false)
 const showAchievements = ref(false)
 const badges = ref<AchievementDef[]>([])
 
-// ── 今日热点（我的简报旁的 tag，点击切换面板） ──
-const panel = ref<'brief' | 'news'>('brief')
+// ── 今日热点（我的简报旁的 tag，点击切换面板）──
+// 面板选择持久化：切走再回来 / 重启应用都保留上次的选择
+const PANEL_KEY = 'mindmate_today_panel'
+const panel = ref<'brief' | 'news'>(
+  localStorage.getItem(PANEL_KEY) === 'news' ? 'news' : 'brief'
+)
 const newsItems = ref<NewsItem[]>([])
 const newsLoading = ref(false)
 const newsSource = ref('')
@@ -45,6 +49,27 @@ const newsNoMore = ref(false)
 const newsUpdatedAt = ref('')
 // 自动更新：设置里开启后，热点面板打开期间按频率自动重新抓取
 let newsAutoTimer: ReturnType<typeof setInterval> | null = null
+
+/** 重点关注配置（设置里选的行业 + 自定义关键词），空 = 不过滤 */
+function newsFocusParams(): { topics: string[]; keywords: string[] } {
+  const topics = (() => {
+    try {
+      const f = JSON.parse(app.settings.news_focus || '[]')
+      return Array.isArray(f) ? f : []
+    } catch {
+      return []
+    }
+  })()
+  const keywords = (() => {
+    try {
+      const k = JSON.parse(app.settings.news_focus_keywords || '[]')
+      return Array.isArray(k) ? k : []
+    } catch {
+      return []
+    }
+  })()
+  return { topics, keywords }
+}
 
 function newsPageSize(): number {
   const n = Number(app.settings.news_limit || PAGE_SIZE_FALLBACK)
@@ -66,15 +91,17 @@ async function loadNews(refresh = false, limit?: number) {
   if (refresh) newsLoading.value = true
   else newsLoadingMore.value = true
   const want = Math.min(limit ?? newsDisplayLimit.value, 200)
+  const focus = newsFocusParams()
+  const filtering = focus.topics.length > 0 || focus.keywords.length > 0
   try {
-    const r = await api.hotNews(refresh, want)
+    const r = await api.hotNews(refresh, want, filtering ? focus : undefined)
     const merged = dedupeNews([...(r.items || [])])
     newsItems.value = merged
     newsSource.value = r.source
     newsStale.value = r.stale === true
     newsErrors.value = r.errors || []
     newsUpdatedAt.value = (r.fetchedAt || '').slice(11, 16)
-    newsNoMore.value = merged.length < want
+    newsNoMore.value = !filtering && merged.length < want
     if (refresh) app.toast('success', t('已更新 {a} 条热点', { a: merged.length }))
   } catch (e: any) {
     app.toast('error', e?.message || t('热点获取失败，请稍后再试'))
@@ -96,6 +123,24 @@ function onNewsScroll(e: Event) {
   })
 }
 
+function isFocusFiltering(): boolean {
+  const f = newsFocusParams()
+  return f.topics.length > 0 || f.keywords.length > 0
+}
+
+function focusSummary(): string {
+  const f = newsFocusParams()
+  const names = f.topics
+    .map((id) => FOCUS_NAME[id] || id)
+    .concat(f.keywords.length ? [t('自定义 {a} 个', { a: f.keywords.length })] : [])
+  return names.join('、')
+}
+
+const FOCUS_NAME: Record<string, string> = {
+  ai: 'AI', edu: t('教育'), agri: t('农业'), med: t('医疗'),
+  fin: t('财经'), auto: t('汽车'), tech: t('科技'), sport: t('体育'),
+}
+
 /** 自动更新：按设置频率定时重抓（仅热点面板打开期间挂定时器） */
 function syncNewsAutoTimer() {
   const enabled = app.settings.news_auto_refresh === '1'
@@ -112,11 +157,12 @@ function settingsChanged() {
   syncNewsAutoTimer()
 }
 
-/** 点击 tag 切换简报/热点面板；首次打开热点自动抓取，并挂自动更新定时器 */
+/** 点击 tag 切换简报/热点面板；选择持久化 + 切到热点即自动刷新（强制实抓） */
 function toggleNewsPanel() {
   panel.value = panel.value === 'news' ? 'brief' : 'news'
+  localStorage.setItem(PANEL_KEY, panel.value)
   if (panel.value === 'news') {
-    if (!newsItems.value.length) loadNews(false)
+    loadNews(true)
     syncNewsAutoTimer()
   } else if (newsAutoTimer) {
     clearInterval(newsAutoTimer)
@@ -223,6 +269,11 @@ watch(
 
 onMounted(async () => {
   window.addEventListener('mindmate:event', onGlobalEvent)
+  // 恢复上次的面板选择：热点面板需要补一次加载与自动更新定时器
+  if (panel.value === 'news') {
+    loadNews(true)
+    syncNewsAutoTimer()
+  }
   nodes.date = today.value
   await Promise.all([
     nodes.load(today.value),
@@ -296,6 +347,11 @@ async function completeTodo(id: number) {
         <!-- 今日热点面板：点击条目用系统浏览器打开 -->
         <div v-if="panel === 'news'" style="margin-top: 12px">
           <div v-if="!newsItems.length && newsLoading" class="small muted" style="padding: 12px 0">{{ $t('正在抓取互联网热点…') }}</div>
+          <div v-else-if="!newsItems.length && isFocusFiltering()" class="empty" style="padding: 18px 0">
+            <div class="ill">🎯</div>
+            <div class="t">{{ $t('当前重点关注下暂时没有匹配的热点') }}</div>
+            <div class="d">{{ $t('可到设置调整行业与自定义关键词') }}</div>
+          </div>
           <div v-else-if="!newsItems.length" class="empty" style="padding: 18px 0">
             <div class="ill">📡</div>
             <div class="t">{{ $t('暂时拉不到热点') }}</div>
@@ -320,7 +376,12 @@ async function completeTodo(id: number) {
               </li>
             </ol>
             <div class="small muted" style="margin-top: 8px">
-              {{ $t('栏目与条数可在设置中调整 · 点击条目用浏览器打开') }}
+              <template v-if="isFocusFiltering()">
+                {{ $t('已按重点关注过滤：{a}', { a: focusSummary() }) }}
+              </template>
+              <template v-else>
+                {{ $t('栏目与条数可在设置中调整 · 点击条目用浏览器打开') }}
+              </template>
               <span v-if="newsUpdatedAt"> · {{ $t('更新于 {a}', { a: newsUpdatedAt }) }}</span>
             </div>
           </template>
