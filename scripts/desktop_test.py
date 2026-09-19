@@ -342,6 +342,9 @@ check("热点：搜索有确定性单测（实体还原/结果解析/相关度�
       and "重点关注_标题命中大小写不敏感" in news)
 check("热点：面板选择持久化（切换后保留，重启保留）",
       "mindmate_today_panel" in today_src and "localStorage.setItem(PANEL_KEY" in today_src)
+check("热点：关注模式有专属缓存（参数签名匹配才命中，跨页切回展示上次记录）",
+      "FOCUS_CACHE_KEY" in news and "params == sig" in read("core", "src", "api", "mod.rs")
+      and "正在展示最近一次成功的数据" in read("core", "src", "api", "mod.rs"))
 modal_src = read("apps", "web", "src", "components", "TodoEditModal.vue")
 check("待办弹窗：重复选择独占一行且按钮不换行（修复竖排文字）",
       "white-space: nowrap" in modal_src and "重复独占一行" in modal_src)

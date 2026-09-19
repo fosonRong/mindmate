@@ -23,7 +23,7 @@ import time
 import urllib.request
 import urllib.error
 import urllib.parse
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 BASE = (sys.argv[1] if len(sys.argv) > 1 else "http://127.0.0.1:17801") + "/api/v1"
 
@@ -914,7 +914,7 @@ if hot2.get("items"):
     check("行业过滤后条目均命中行业关键词", not bad, f"未命中示例：{bad[:2]}")
 
 # 自定义关键词：互联网搜索（离线时也返回结构完整的降级数据；来源标识=关键词本身）
-r, _ = call("GET", "/news/hot?refresh=1&limit=15&kw=" + urllib.parse.quote("AI驱动开发"))
+r, _ = call("GET", "/news/hot?refresh=1&limit=15&kw=AI驱动开发")
 hot3 = r.get("data") or {}
 check("自定义关键词搜索接口返回结构完整",
       isinstance(hot3.get("items"), list) and len(hot3.get("items") or []) <= 15,
@@ -926,6 +926,33 @@ if hot3.get("items"):
     scores = [i.get("hot") or 0 for i in hot3["items"]]
     check("搜索条目按相关度降序排列", scores == sorted(scores, reverse=True),
           f"scores={scores[:6]}")
+
+# 跨页面切回（不带 refresh）：相同关注参数 30 分钟内直接回缓存（展示上次记录，不重新抓取）。
+# 用确定性方式验证：注入一份带参数签名 ("|AI驱动开发") 的关注缓存，再以相同参数请求，应原样命中。
+focus_cache = {
+    "items": [
+        {"title": f"重点关注缓存条目{i}", "url": f"https://example.com/{i}",
+         "hot": 100 - i, "channel": "search", "channelName": "AI驱动开发"}
+        for i in range(1, 12)
+    ],
+    "source": "live",
+    # 缓存时间取 5 分钟前：30 分钟新鲜期内才会命中（写死历史时刻会被判过期）
+    "fetchedAt": (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S"),
+    "errors": [], "stale": False,
+    "params": "|AI驱动开发",
+}
+_injected_at = (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+call("PUT", "/settings", {"values": {
+    "news_cache_focus": json.dumps(focus_cache, ensure_ascii=False),
+    "news_cache_focus_at": _injected_at,
+}})
+r, _ = call("GET", "/news/hot?limit=15&kw=AI驱动开发")
+hot4 = r.get("data") or {}
+check("关注模式跨页切回使用缓存（不重新抓取）",
+      hot4.get("source") == "cache" and (hot4.get("fetchedAt") or "") == _injected_at,
+      f"source={hot4.get('source')} at={hot4.get('fetchedAt')} want={_injected_at}")
+check("缓存条目非空（不是什么都不展示）", len(hot4.get("items") or []) == 11,
+      f"items={len(hot4.get('items') or [])}")
 
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:

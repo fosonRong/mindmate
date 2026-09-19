@@ -100,6 +100,9 @@ pub struct HotNewsResult {
     /// true=源站抓取失败后回退的历史数据（UI 据此提示「非实时」）
     #[serde(default)]
     pub stale: bool,
+    /// 生成该结果的关注参数签名（行业id+自定义关键词），用于缓存命中判断
+    #[serde(default)]
+    pub params: String,
 }
 
 /// 解析单栏目响应（60s API：`{code:200, data:[{title, link, hot_value|hot_value_desc?}]}`）
@@ -177,22 +180,32 @@ pub fn merge_items(groups: Vec<Vec<NewsItem>>, limit: usize) -> Vec<NewsItem> {
 
 const CACHE_KEY: &str = "news_cache";
 const CACHE_AT_KEY: &str = "news_cache_at";
+/// 重点关注模式的专属缓存（存的是过滤/搜索后的最终视图 + 参数签名）
+pub const FOCUS_CACHE_KEY: &str = "news_cache_focus";
 
 /// 读取缓存（离线兜底）
 pub fn load_cache(db: &Db) -> Option<(HotNewsResult, String)> {
-    let raw = db.get_setting(CACHE_KEY).ok().flatten()?;
-    let at = db.get_setting(CACHE_AT_KEY).ok().flatten().unwrap_or_default();
+    load_cache_key(db, CACHE_KEY)
+}
+
+pub fn load_cache_key(db: &Db, key: &str) -> Option<(HotNewsResult, String)> {
+    let raw = db.get_setting(key).ok().flatten()?;
+    let at = db.get_setting(format!("{key}_at").as_str()).ok().flatten().unwrap_or_default();
     serde_json::from_str::<HotNewsResult>(&raw).ok().map(|r| (r, at))
 }
 
 /// 写缓存
 pub fn save_cache(db: &Db, result: &HotNewsResult) {
+    save_cache_key(db, CACHE_KEY, result)
+}
+
+pub fn save_cache_key(db: &Db, key: &str, result: &HotNewsResult) {
     if result.items.is_empty() {
         return; // 空结果不覆盖旧缓存
     }
     if let Ok(json) = serde_json::to_string(result) {
-        let _ = db.set_setting(CACHE_KEY, &json);
-        let _ = db.set_setting(CACHE_AT_KEY, &result.fetched_at);
+        let _ = db.set_setting(key, &json);
+        let _ = db.set_setting(format!("{key}_at").as_str(), &result.fetched_at);
     }
 }
 
@@ -421,6 +434,7 @@ pub async fn fetch_hot_news(db: &Db, channels: &[String], limit: usize) -> HotNe
             fetched_at,
             errors,
             stale: false,
+            params: String::new(),
         };
         save_cache(db, &result);
         return result;
@@ -443,6 +457,7 @@ pub async fn fetch_hot_news(db: &Db, channels: &[String], limit: usize) -> HotNe
         fetched_at,
         errors,
         stale: false,
+        params: String::new(),
     }
 }
 
@@ -583,13 +598,14 @@ mod tests {
             fetched_at: "2026-09-19 10:00:00".into(),
             errors: vec![],
             stale: false,
+            params: String::new(),
         };
         save_cache(&db, &result);
         let (cached, at) = load_cache(&db).unwrap();
         assert_eq!(cached.items.len(), 1);
         assert_eq!(at, "2026-09-19 10:00:00");
 
-        let empty = HotNewsResult { items: vec![], source: "live".into(), fetched_at: "x".into(), errors: vec![], stale: false };
+        let empty = HotNewsResult { items: vec![], source: "live".into(), fetched_at: "x".into(), errors: vec![], stale: false, params: String::new() };
         save_cache(&db, &empty);
         let (cached2, _) = load_cache(&db).unwrap();
         assert_eq!(cached2.items.len(), 1, "空结果不应覆盖旧缓存");

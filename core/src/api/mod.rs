@@ -1007,12 +1007,34 @@ async fn news_hot(
             }
         }
     }
-    // 重点关注模式：行业走热搜大池子过滤；自定义关键词走互联网搜索（热搜榜覆盖不了小众词）
+    // 重点关注模式：行业走热搜大池子过滤；自定义关键词走互联网搜索（热搜榜覆盖不了小众词）。
+    // 结果连同关注参数签名一起缓存：跨页面切回（非 refresh）时直接展示上次记录，
+    // 不重复打源站；实抓失败/无命中时回退上次缓存记录（stale 标记），绝不让面板全空。
     if focusing {
+        let sig = format!("{}|{}", focus_ids.join(","), custom_keywords.join(","));
+        if !refresh {
+            if let Some((cached, at)) = crate::news::load_cache_key(&ctx.db, crate::news::FOCUS_CACHE_KEY) {
+                if cached.params == sig {
+                    if let Ok(ts) = chrono::NaiveDateTime::parse_from_str(&at, "%Y-%m-%d %H:%M:%S") {
+                        let age = chrono::Local::now().naive_local() - ts;
+                        if age.num_minutes() < 30 {
+                            let mut r = cached;
+                            r.source = "cache".into();
+                            r.stale = false;
+                            r.errors.clear();
+                            r.items.truncate(limit);
+                            return Ok(ApiResp::ok(r));
+                        }
+                    }
+                }
+            }
+        }
         let fetched_at = crate::db::now_string();
         let mut items: Vec<crate::news::NewsItem> = Vec::new();
+        let mut errors: Vec<String> = Vec::new();
         if !focus_ids.is_empty() {
-            let (groups, _errors) = crate::news::fetch_channels(&channels, 200).await;
+            let (groups, errs) = crate::news::fetch_channels(&channels, 200).await;
+            errors.extend(errs);
             let pool = crate::news::merge_items(groups, 200);
             items.extend(crate::news::filter_focus(pool, &focus_ids, &[]));
         }
@@ -1020,12 +1042,36 @@ async fn news_hot(
             items.extend(crate::news::search_keywords(&custom_keywords, 8).await);
         }
         items.truncate(limit);
+        if !items.is_empty() {
+            // 成功：连同参数签名写入专属缓存，供跨页面切回时展示
+            let result = crate::news::HotNewsResult {
+                items,
+                source: "live".into(),
+                fetched_at,
+                errors,
+                stale: false,
+                params: sig,
+            };
+            crate::news::save_cache_key(&ctx.db, crate::news::FOCUS_CACHE_KEY, &result);
+            return Ok(ApiResp::ok(result));
+        }
+        // 实抓失败/无命中：回退上次缓存记录（任何参数的），绝不让面板全空
+        if let Some((mut cached, at)) = crate::news::load_cache_key(&ctx.db, crate::news::FOCUS_CACHE_KEY) {
+            cached.source = "cache".into();
+            cached.stale = true;
+            cached.fetched_at = at;
+            cached.errors = vec!["本次抓取失败，正在展示最近一次成功的数据".to_string()];
+            cached.items.truncate(limit);
+            return Ok(ApiResp::ok(cached));
+        }
+        // 连缓存都没有（首次使用即失败）：空结果
         return Ok(ApiResp::ok(crate::news::HotNewsResult {
-            items,
-            source: "live".into(),
+            items: Vec::new(),
+            source: "none".into(),
             fetched_at,
-            errors: Vec::new(),
+            errors,
             stale: false,
+            params: sig,
         }));
     }
 
