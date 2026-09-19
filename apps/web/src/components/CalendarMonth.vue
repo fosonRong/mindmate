@@ -131,7 +131,7 @@ function onDrop(e: DragEvent, date: string) {
         </div>
         <!-- 日程文字区：填满格子剩余高宽，随格子伸缩，显示不下自动隐藏 -->
         <div class="sum-wrap">
-          <div v-if="c.stat?.nodeSummaries?.length" class="sum">{{ c.stat.nodeSummaries[0] }}</div>
+          <div v-for="(s, si) in c.stat?.nodeSummaries || []" :key="`s${si}`" class="sum" :title="s">{{ s }}</div>
           <!-- 待办标题（日程）：最多显示 maxTodoTitles 条，其余以 +n 归纳 -->
           <div
             v-for="(t, i) in c.todoTitles.slice(0, maxTodoTitles ?? 2)"

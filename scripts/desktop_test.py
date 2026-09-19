@@ -267,6 +267,9 @@ check("格内：日期与农历同一行（横向布局，农历可省略）",
       and '<span class="lunar"' in read("apps", "web", "src", "components", "CalendarMonth.vue"))
 check("格内：日程文字区填满剩余高宽并溢出隐藏（跟随方块自适应）",
       ".cal-cell .sum-wrap { flex: 1 1 0; min-height: 0; min-width: 0; overflow: hidden;" in read("apps", "web", "src", "styles", "app.css"))
+check("格内：全部记录交给格子裁剪（后端不再按 28 字预截断，前端渲染多条）",
+      "summarize(&n.content, 400)" in read("core", "src", "db", "queries.rs")
+      and 'v-for="(s, si) in c.stat?.nodeSummaries' in read("apps", "web", "src", "components", "CalendarMonth.vue"))
 
 check("循环待办：库迁移 V2 加 recur 三列", "recur_type" in read("core", "src", "db", "mod.rs")
       and "SCHEMA_V2" in read("core", "src", "db", "mod.rs") and "SCHEMA_VERSION: i64 = 2" in read("core", "src", "db", "mod.rs"))

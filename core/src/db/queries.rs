@@ -969,10 +969,13 @@ impl Db {
             days.push(DayStat {
                 date: key.clone(),
                 node_count: day_nodes.len() as i64,
+                // 摘要不再按 28 字预截断（用户反馈：文字没有随格子空间增减）——
+                // 把足够完整的文本交给前端，由格子剩余空间决定显示多少（放不下自动隐藏）。
+                // 400 字上限只为防超长单条记录撑大载荷，正常记录等于全文。
                 node_summaries: day_nodes
                     .iter()
-                    .take(3)
-                    .map(|n| summarize(&n.content, 28))
+                    .take(6)
+                    .map(|n| summarize(&n.content, 400))
                     .collect(),
                 total_todos: day_todos.len() as i64,
                 done_todos: day_todos.iter().filter(|t| t.status == "已完成").count() as i64,
