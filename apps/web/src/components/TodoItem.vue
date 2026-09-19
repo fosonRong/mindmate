@@ -102,7 +102,7 @@ async function suggest() {
     :draggable="draggable"
     @dragstart="onDragStart"
   >
-    <div class="check" :class="{ done: todo.status === '已完成' }" @click="toggle">
+    <div class="check" :class="{ done: todo.status === '已完成' }" @click.stop="toggle">
       <span v-if="todo.status === '已完成'">✓</span>
     </div>
     <div class="body">
@@ -123,7 +123,8 @@ async function suggest() {
         <span v-for="t in todo.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
       </div>
     </div>
-    <div v-if="showActions !== false" class="actions">
+    <!-- .stop：删除/建议按钮的点击不能冒泡到外层（待办页在行上绑了「点击=编辑」，否则点删除会弹出编辑框） -->
+    <div v-if="showActions !== false" class="actions" @click.stop>
       <button v-if="todo.status !== '已完成'" :title="$t('智伴排期建议')" @click="suggest">✨</button>
       <template v-if="askSeries">
         <button class="danger" :title="$t('已生成的后续一期也会一并删除')" @click="doRemove('series')">{{ $t('删整个循环') }}</button>
