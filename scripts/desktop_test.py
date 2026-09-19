@@ -354,6 +354,9 @@ check("删除待办：支持删除整条循环链（根+实例一并软删，阻
       "delete_todo_series" in read("core", "src", "db", "queries.rs")
       and 'recur_type=''' in read("core", "src", "db", "queries.rs")
       and '"scope"' in read("core", "src", "api", "mod.rs"))
+check("删除按钮可见性：TodoItem 的 showActions 必须显式默认 true（Vue3 Boolean 属性缺省即 false，曾致所有页面渲染不出删除按钮）",
+      "withDefaults" in read("apps", "web", "src", "components", "TodoItem.vue")
+      and "showActions: true" in read("apps", "web", "src", "components", "TodoItem.vue"))
 check("删除待办：前端循环待办二选一（删整个循环/仅此一条）+ 普通待办二次确认",
       "删整个循环" in read("apps", "web", "src", "components", "TodoItem.vue")
       and "确认删除？" in read("apps", "web", "src", "components", "TodoItem.vue"))

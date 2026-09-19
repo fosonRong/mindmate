@@ -6,7 +6,12 @@ import { useTodosStore } from '@/stores/todos'
 import { useAppStore, friendlyDate } from '@/stores/app'
 import { t } from '@/i18n'
 
-const props = defineProps<{ todo: Todo; draggable?: boolean; showActions?: boolean }>()
+// ⚠️ Vue 3 的 Boolean 属性「缺省即 false」：showActions 不传时是 false 而不是 undefined，
+// 曾导致所有页面的待办都渲染不出删除按钮（长期 bug）。这里显式给默认值。
+const props = withDefaults(
+  defineProps<{ todo: Todo; draggable?: boolean; showActions?: boolean }>(),
+  { draggable: false, showActions: true }
+)
 const todos = useTodosStore()
 const app = useAppStore()
 

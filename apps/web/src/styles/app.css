@@ -124,6 +124,7 @@
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
 }
 .todo-row .meta { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-weak); flex-wrap: wrap; }
+/* 操作按钮（删除/建议）：悬停待办条目时浮现 */
 .todo-row .actions { display: flex; gap: 2px; opacity: 0; }
 .todo-row:hover .actions { opacity: 1; }
 .todo-row .actions button { font-size: 12px; color: var(--text-weak); padding: 2px 6px; border-radius: 6px; }
