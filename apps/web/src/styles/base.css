@@ -375,3 +375,8 @@ select.input { appearance: none; }
 /* 设置页标签 chip 的删除小叉 */
 .chip-x { border: none; background: none; padding: 0 0 0 2px; font-size: 13px; line-height: 1; color: var(--text-weak); cursor: pointer; }
 .chip-x:hover { color: var(--danger); }
+
+/* 🤖 拆待办按钮（与 ✨AI 打标同排，换一个色相区分） */
+.tag-pick.smart-todo { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); background: var(--primary-weak); }
+.tag-pick.smart-todo:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: #fff; }
+.tag-pick.smart-todo:disabled { opacity: 0.6; cursor: default; }

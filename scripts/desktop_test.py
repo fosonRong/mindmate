@@ -135,8 +135,15 @@ _has_more_button = "btn-more" in week_vue and "@click.stop=\"toggleExpand(d.date
 check("周视图「＋N 更多」是按钮且绑定了展开事件", _has_more_button,
       "纯文本提示会让用户以为是可点击的")
 check("周视图支持展开后收起（不只有展开）", "toggleExpand" in week_vue and "收起 ▴" in week_vue)
-check("展开后显示记录全文（截断只在折叠态）",
-      "displayText" in week_vue and "isExpanded(date)" in week_vue)
+# v1.1.2 自适应重做：用户反馈"还有大片空间却只显示 3 条"——废弃固定 FOLD_LIMIT/22 字截断，
+# 改为全量渲染 + 测量真实溢出才出「＋N 更多」
+check("周视图内容自适应：全量渲染，无固定条数/字数截断",
+      "FOLD_LIMIT" not in week_vue and "displayText" not in week_vue
+      and "v-for=\"n in nodesOf(d.date)\"" in week_vue)
+check("周视图内容自适应：测量溢出条数驱动按钮（含窗口尺寸变化重测与渐隐遮罩）",
+      "hiddenCount" in week_vue and "measureAll" in week_vue
+      and "ResizeObserver" in week_vue
+      and "week-body.folded" in read("apps", "web", "src", "styles", "app.css"))
 run_all = read("scripts", "run_all_tests.py")
 check("全量验收自行拉起独立数据目录的临时服务（不再打真实数据目录）",
       "--data-dir" in run_all and "--mode" in run_all and "MINDMATE_ALLOW_WIPE" in run_all,
@@ -361,6 +368,23 @@ check("v1.1.1 热点：一键转记录/转待办（悬停按钮 + TodoEditModal 
       "newsToNode" in today_src and "newsToTodo" in today_src
       and "news-acts" in read("apps", "web", "src", "styles", "app.css")
       and "preset" in read("apps", "web", "src", "components", "TodoEditModal.vue"))
+# ── v1.1.2 智能速记（自然语言拆待办）+ 空状态引导 ──
+extract_rs = read("core", "src", "todo_extract.rs")
+quickentry_vue = read("apps", "web", "src", "components", "QuickEntry.vue")
+month_vue = read("apps", "web", "src", "views", "Month.vue")
+check("v1.1.2 智能速记：后端拆解接口（AI 优先，未配置/失败/格式跑偏一律本地兜底）",
+      "ai_extract_todos" in read("core", "src", "api", "mod.rs")
+      and "/api/v1/ai/extract-todos" in read("core", "src", "api", "mod.rs")
+      and "extract_todos_local" in extract_rs and "parse_todo_array" in extract_rs)
+check("v1.1.2 智能速记：本地规则覆盖相对日期/周几/时刻/多句拆分（确定性单测兜底）",
+      all(x in extract_rs for x in ("大后天", "下周", "点半", "下午", "split_then"))
+      and "#[cfg(test)]" in extract_rs)
+check("v1.1.2 智能速记：速记行「🤖 拆待办」入口 + 核对弹窗（逐条可改、勾选入库，不直接写库）",
+      "拆待办" in quickentry_vue and "extractTodos" in quickentry_vue
+      and os.path.exists(os.path.join(ROOT, "apps", "web", "src", "components", "SmartTodoModal.vue"))
+      and "todos.create" in read("apps", "web", "src", "components", "SmartTodoModal.vue"))
+check("v1.1.2 月视图：记录热力卡片位于日程（日历）下方",
+      month_vue.find("<CalendarMonth") < month_vue.find("记录热力") < month_vue.find("<HeatMap"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

@@ -11,6 +11,15 @@ export interface Node {
   todoId: number | null
 }
 
+/** 智能速记拆出的待办（v1.1.2） */
+export interface ExtractedTodo {
+  title: string
+  /** YYYY-MM-DD */
+  date: string
+  /** HH:MM 或 null（全天） */
+  time: string | null
+}
+
 /** 标签统计（标签选择器数据源：记录 + 待办合并后的使用次数） */
 export interface TagStat {
   name: string

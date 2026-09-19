@@ -163,6 +163,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/chat", post(ai_chat))
         .route("/api/v1/ai/replan", post(ai_replan))
         .route("/api/v1/ai/tag", post(ai_tag))
+        .route("/api/v1/ai/extract-todos", post(ai_extract_todos))
         // 报告
         .route("/api/v1/reports", get(list_reports))
         .route("/api/v1/reports/{id}", delete(delete_report))
@@ -795,6 +796,60 @@ async fn ai_tag(
         }
         Err(e) => Err(ApiError::ai(e.to_string())),
     }
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ExtractTodosReq {
+    content: String,
+}
+
+/// 智能速记（v1.1.2）：把一句话拆解成待办（标题/日期/时间）。
+/// AI 配置了就走模型（严格 JSON，parse_todo_array 清洗）；模型没按格式给、调用失败
+/// 或压根没配 AI，一律降级本地规则（todo_extract::extract_todos_local）——
+/// 拆解是「尽力而为」的功能，报错比给个粗略结果更伤体验。
+async fn ai_extract_todos(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<ExtractTodosReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let content = req.content.trim().chars().take(1000).collect::<String>();
+    if content.is_empty() {
+        return Err(ApiError::bad_request("内容为空，无从拆解"));
+    }
+    let today = chrono::NaiveDate::parse_from_str(&crate::db::today_string(), "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::Local::now().date_naive());
+
+    let cfg = ai::load_config(&ctx.db)?;
+    if cfg.has_key || cfg.provider == "ollama" {
+        let weekday = match today.weekday() {
+            chrono::Weekday::Mon => "周一",
+            chrono::Weekday::Tue => "周二",
+            chrono::Weekday::Wed => "周三",
+            chrono::Weekday::Thu => "周四",
+            chrono::Weekday::Fri => "周五",
+            chrono::Weekday::Sat => "周六",
+            chrono::Weekday::Sun => "周日",
+        };
+        let prompt = format!(
+            "今天是 {}（{}）。请把下面的文字拆解成待办事项：逐条提取待办、截止日期和时刻。             「今天/明天/后天/周X/下周X」等相对说法按今天换算成具体日期；             日期用 YYYY-MM-DD，时刻用 HH:MM（没有明确时刻填 null）。             只输出 JSON 数组，格式：[{{\"title\":\"简短标题\",\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM\"}}]，不要输出任何解释。
+
+文字：{}",
+            today.format("%Y-%m-%d"),
+            weekday,
+            ai::redact(&content)
+        );
+        let key = crate::secrets::load_api_key()?;
+        if let Ok(text) = ai::chat_once(&cfg, vec![ChatMsg::user(prompt)], key).await {
+            let todos = crate::todo_extract::parse_todo_array(&text);
+            if !todos.is_empty() {
+                return Ok(ApiResp::ok(json!({ "isAi": true, "todos": todos })));
+            }
+        }
+    }
+    let todos = crate::todo_extract::extract_todos_local(&content, today);
+    Ok(ApiResp::ok(json!({ "isAi": false, "todos": todos })))
 }
 
 /// 从模型回复里抠出 JSON 字符串数组（容忍 ```json 包裹与前后废话），

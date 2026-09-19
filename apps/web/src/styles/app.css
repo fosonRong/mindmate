@@ -46,6 +46,11 @@
 .week-card { min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
 .week-card .week-body { flex: 1 1 0; min-height: 0; overflow: hidden; }
 .week-card .week-body.open { overflow-y: auto; }
+/* 折叠且有内容被裁掉时底部渐隐，提示下面还有（比硬切一条半截文本自然） */
+.week-card .week-body.folded {
+  -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent 100%);
+  mask-image: linear-gradient(180deg, #000 80%, transparent 100%);
+}
 .week-card .week-node-line { color: var(--text-regular); margin-bottom: 2px; white-space: normal; word-break: break-all; }
 .week-card .week-lunar { min-width: 0; }
 .week-card .week-lunar .lunar-text { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

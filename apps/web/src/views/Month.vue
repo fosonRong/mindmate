@@ -167,6 +167,19 @@ onMounted(load)
       </div>
     </section>
 
+    <section class="card">
+      <CalendarMonth
+        :month-date="anchor"
+        :days="stats?.days || []"
+        :selected="drawerDate || undefined"
+        :todo-counts="todoCounts"
+        :todo-titles="todoTitles"
+        :max-todo-titles="2"
+        @select="openDay"
+        @drop-todo="(p) => todos.reschedule(p.id, p.date).then(() => app.toast('success', t('已改期至 {a}', { a: p.date })))"
+      />
+    </section>
+
     <!-- 近 26 周记录热力：颜色=当日记录数相对每日目标，点击跳转并打开该日 -->
     <section class="card">
       <div class="row" style="margin-bottom: 10px">
@@ -180,19 +193,6 @@ onMounted(load)
         :daily-goal="app.stats?.dailyGoal ?? 4"
         :weeks="26"
         @pick="openDay"
-      />
-    </section>
-
-    <section class="card">
-      <CalendarMonth
-        :month-date="anchor"
-        :days="stats?.days || []"
-        :selected="drawerDate || undefined"
-        :todo-counts="todoCounts"
-        :todo-titles="todoTitles"
-        :max-todo-titles="2"
-        @select="openDay"
-        @drop-todo="(p) => todos.reschedule(p.id, p.date).then(() => app.toast('success', t('已改期至 {a}', { a: p.date })))"
       />
     </section>
 

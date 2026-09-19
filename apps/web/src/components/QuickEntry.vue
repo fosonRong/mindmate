@@ -2,11 +2,14 @@
 // 速记输入框：页面常驻入口 —— 一次提交 = 一个节点
 // v1.1.1：标签选项改为「内置 ∪ 自定义 ∪ 在用」（stores/tags），支持 AI 打标：
 // 内容停顿 2.5s 自动建议（设置 ai_autotag 可关），或点 ✨ 立即建议，建议直接选中可再改。
+// v1.1.2：🤖 拆待办 —— 一句话智能拆成待办（标题/日期/时间），弹窗核对后入库。
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useNodesStore } from '@/stores/nodes'
 import { useAppStore } from '@/stores/app'
 import { useTagsStore } from '@/stores/tags'
 import { api } from '@/api/client'
+import type { ExtractedTodo } from '@/api/types'
+import SmartTodoModal from '@/components/SmartTodoModal.vue'
 import { t } from '@/i18n'
 
 const props = defineProps<{ date?: string; autofocus?: boolean; compact?: boolean }>()
@@ -94,6 +97,36 @@ watch(
   }
 )
 
+// ── 🤖 智能拆待办（v1.1.2） ──
+const extracting = ref(false)
+const showExtract = ref(false)
+const extractResult = ref<{ isAi: boolean; todos: ExtractedTodo[] } | null>(null)
+
+/** 把当前输入的一句话拆成待办（后端 AI 优先、本地规则兜底），弹窗核对后入库 */
+async function extractTodos() {
+  const text = content.value.trim()
+  if (!text || extracting.value) return
+  if (suggestTimer) { clearTimeout(suggestTimer); suggestTimer = null }
+  extracting.value = true
+  try {
+    extractResult.value = await api.aiExtractTodos(text)
+    showExtract.value = true
+  } catch (e: any) {
+    app.toast('error', e?.message || t('拆解失败，请稍后再试'))
+  } finally {
+    extracting.value = false
+  }
+}
+
+/** 弹窗里确认入库：清空速记框（原句已在弹窗里用掉了） */
+function onExtractSaved() {
+  showExtract.value = false
+  content.value = ''
+  lastSuggestedFor = ''
+  app.refreshStats()
+  emit('saved')
+}
+
 async function submit() {
   if (!content.value.trim() || saving.value) return
   if (suggestTimer) { clearTimeout(suggestTimer); suggestTimer = null }
@@ -165,7 +198,7 @@ defineExpose({ focus })
         />
       </template>
       <button v-else class="tag-pick tag-add" :title="$t('新增自定义标签')" @click="addingTag = true">＋</button>
-      <span class="hotkey">{{ $t('Enter 保存') }}</span>
+      <span class="hotkey" :title="$t('输入内容后可一键打标，或把一句话拆成待办')">{{ $t('Enter 保存') }}</span>
       <button
         v-if="content.trim()"
         class="tag-pick ai-tag"
@@ -175,6 +208,24 @@ defineExpose({ focus })
       >
         {{ tagSuggesting ? $t('思考中…') : $t('✨ AI 打标') }}
       </button>
+      <button
+        v-if="content.trim()"
+        class="tag-pick smart-todo"
+        :disabled="extracting"
+        :title="app.aiReady ? $t('AI 把这句话拆成待办（日期/时间）') : $t('按本地规则拆出日期时间（配置 AI 更准）')"
+        @click="extractTodos"
+      >
+        {{ extracting ? $t('拆解中…') : $t('🤖 拆待办') }}
+      </button>
     </div>
+
+    <SmartTodoModal
+      v-if="showExtract && extractResult"
+      :items="extractResult.todos"
+      :is-ai="extractResult.isAi"
+      :source="content"
+      @close="showExtract = false"
+      @saved="onExtractSaved"
+    />
   </div>
 </template>

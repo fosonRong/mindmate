@@ -979,6 +979,32 @@ check("关注模式跨页切回使用缓存（不重新抓取）",
 check("缓存条目非空（不是什么都不展示）", len(hot4.get("items") or []) == 11,
       f"items={len(hot4.get('items') or [])}")
 
+# ─────────────────────── 13. 智能速记（v1.1.2：自然语言拆待办）───────────────────────
+section("13. 智能速记：自然语言拆待办（AI 未配置 → 本地规则兜底）")
+_tomorrow = (date.today() + timedelta(days=1)).isoformat()
+_r, _code = call("POST", "/ai/extract-todos", {"content": "明天下午3点开产品评审会"})
+_d = (_r.get("data") or {})
+_todos13 = _d.get("todos") or []
+check("拆解接口返回成功", _r.get("code") == 0, str(_r.get("message"))[:60])
+check("未配置 AI → 标记 isAi=false（本地规则路径）", _d.get("isAi") is False, f"isAi={_d.get('isAi')}")
+check("拆出 1 条待办", len(_todos13) == 1, f"n={len(_todos13)}")
+if _todos13:
+    check("相对日期「明天」按今天换算", _todos13[0].get("date") == _tomorrow,
+          f"date={_todos13[0].get('date')} want={_tomorrow}")
+    check("「下午3点」规整为 15:00", _todos13[0].get("time") == "15:00",
+          f"time={_todos13[0].get('time')}")
+    check("标题剥掉日期时间只剩事件", _todos13[0].get("title") == "开产品评审会",
+          f"title={_todos13[0].get('title')}")
+_r2, _ = call("POST", "/ai/extract-todos", {"content": "记得周三早上8点半跑步，然后大后天交房租"})
+_todos13b = ((_r2.get("data") or {}).get("todos") or [])
+check("一句话多意图拆成多条", len(_todos13b) == 2, f"n={len(_todos13b)}")
+if len(_todos13b) == 2:
+    check("「8点半」规整为 08:30", _todos13b[0].get("time") == "08:30", f"time={_todos13b[0].get('time')}")
+    check("「大后天」按今天换算", _todos13b[1].get("date") == (date.today() + timedelta(days=3)).isoformat(),
+          f"date={_todos13b[1].get('date')}")
+_r3, _ = call("POST", "/ai/extract-todos", {"content": ""})
+check("空内容返回业务错误", _r3.get("code") != 0, f"code={_r3.get('code')}")
+
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：")

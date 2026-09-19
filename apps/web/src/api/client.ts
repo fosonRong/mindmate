@@ -3,7 +3,7 @@ import { t } from '@/i18n'
 import type {
   Achievement, AchievementDef, AiConfig, AiTestResult, AppEvent, AuthStatus, ChatMessage, DailyStats,
   MonthlySummary, Node, OllamaProbe, PeriodStats, Preset, PushConfig, PushResult, Report,
-  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic, TagStat
+  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic, TagStat, ExtractedTodo
 } from './types'
 
 export class ApiError extends Error {
@@ -98,6 +98,9 @@ export const api = {
   /** AI 打标：从内容提取 0~3 个标签（AI 未配置时后端降级为本地规则匹配） */
   aiTag: (content: string) =>
     post<{ isAi: boolean; tags: string[] }>('/api/v1/ai/tag', { content }),
+  /** 智能速记：一句话拆成待办（标题/日期/时间；AI 未配置时后端走本地规则） */
+  aiExtractTodos: (content: string) =>
+    post<{ isAi: boolean; todos: ExtractedTodo[] }>('/api/v1/ai/extract-todos', { content }),
 
   // 设置
   settings: () => get<Setting[]>('/api/v1/settings'),

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 周视图：周一~周日按日聚合 + 周进度 + 农历/节假日（休/班）
-import { computed, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useAppStore, weekStart, addDays, fmtDate, weekdayLabel, parseDate } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { api } from '@/api/client'
@@ -49,10 +49,18 @@ function isRedDay(date: string) {
   return dow === 0 || dow === 6
 }
 
-// 每天默认只列 3 条；「＋N 更多」可点击展开全部（再点收起）。
-// 真机踩过：这里原来只是一行纯文本提示，点击没反应——用户看到"更多"就会去点。
-const FOLD_LIMIT = 3
+// 内容自适应（用户反馈：明明还有大片空间却只显示 3 条，不合适）：
+// 默认**全量渲染**完整文本（CSS overflow 裁剪兜底），用测量判断「真放不下」
+// 才出「＋N 更多」；放得下就全部展示、不出按钮。展开态走卡内滚动。
+// 测量时机会踩坑：初次渲染的某一帧卡片高度还没被网格撑开，量出「全折叠」的假结果，
+// 所以除了数据加载后量一次，还逐格挂 ResizeObserver（初始回调 + 尺寸变化都会触发）、
+// 字体就绪后再量一次，保证自愈。
 const expanded = ref<Record<string, boolean>>({})
+const hiddenCount = ref<Record<string, number>>({})
+const bodyEls: Record<string, HTMLElement | null> = {}
+const bodyResize: Record<string, ResizeObserver> = {}
+let raf1 = 0
+let raf2 = 0
 
 function isExpanded(date: string) {
   return expanded.value[date] === true
@@ -60,18 +68,44 @@ function isExpanded(date: string) {
 
 function toggleExpand(date: string) {
   expanded.value[date] = !isExpanded(date)
+  nextTick(measureAll)
 }
 
-/** 折叠时取前 N 条，展开时取全部 */
-function visibleNodes(date: string) {
-  const list = nodesOf(date)
-  return isExpanded(date) ? list : list.slice(0, FOLD_LIMIT)
+function setBodyRef(date: string) {
+  return (el: unknown) => {
+    bodyEls[date] = (el as HTMLElement) || null
+  }
 }
 
-/** 折叠时截断长文本，展开后显示完整内容（否则"展开"看不到更多信息） */
-function displayText(content: string, date: string) {
-  if (isExpanded(date)) return content
-  return content.length > 22 ? `${content.slice(0, 22)}…` : content
+/** 量单格：数出被裁掉（底边超出可视区，含 4px 容差）的条数 */
+function measureOne(date: string) {
+  const el = bodyEls[date]
+  if (!el || isExpanded(date)) {
+    hiddenCount.value[date] = 0
+    return
+  }
+  const bodyTop = el.getBoundingClientRect().top
+  const limit = el.clientHeight + 4
+  let hidden = 0
+  for (const child of Array.from(el.children)) {
+    const r = (child as HTMLElement).getBoundingClientRect()
+    if (r.height > 0 && r.bottom - bodyTop > limit) hidden++
+  }
+  hiddenCount.value[date] = hidden
+}
+
+function measureAll() {
+  for (const d of days.value) measureOne(d.date)
+}
+
+/** 布局稳定后重测：连两帧 rAF + 字体就绪各兜一次（首帧测量过早的假溢出会被覆盖） */
+function remeasureSettled() {
+  cancelAnimationFrame(raf1)
+  cancelAnimationFrame(raf2)
+  raf1 = requestAnimationFrame(() => {
+    measureAll()
+    raf2 = requestAnimationFrame(measureAll)
+  })
 }
 
 async function load() {
@@ -86,10 +120,14 @@ async function load() {
   } finally {
     loading.value = false
   }
+  await nextTick()
+  measureAll()
+  remeasureSettled()
 }
 
 function shiftWeek(n: number) {
   anchor.value = addDays(anchor.value, n * 7)
+  expanded.value = {}
   load()
 }
 
@@ -112,7 +150,27 @@ function recordLabel() {
   return t('{a}/{b} 条', { a: stats.value.nodeCount, b: goal })
 }
 
-onMounted(load)
+onMounted(async () => {
+  await load()
+  // 逐格观察：格子尺寸随窗口/网格变化时重测（观察本身也会触发一次初始回调）
+  if (typeof ResizeObserver !== 'undefined') {
+    for (const d of days.value) {
+      const el = bodyEls[d.date]
+      if (!el) continue
+      const ro = new ResizeObserver(() => measureOne(d.date))
+      ro.observe(el)
+      bodyResize[d.date] = ro
+    }
+  }
+  // 中文字体晚于首帧就绪会让换行变化，就绪后补测一次
+  if (document.fonts?.ready) document.fonts.ready.then(() => measureAll()).catch(() => {})
+})
+
+onUnmounted(() => {
+  Object.values(bodyResize).forEach((ro) => ro.disconnect())
+  cancelAnimationFrame(raf1)
+  cancelAnimationFrame(raf2)
+})
 </script>
 
 <template>
@@ -180,23 +238,23 @@ onMounted(load)
               <span class="num">{{ statOf(d.date)!.doneTodos }}/{{ statOf(d.date)!.totalTodos }}</span>
             </div>
           </div>
-          <div class="week-body" :class="{ open: isExpanded(d.date) }">
+          <div class="week-body" :class="{ open: isExpanded(d.date), folded: !isExpanded(d.date) && hiddenCount[d.date] > 0 }" :ref="setBodyRef(d.date)">
             <div
-              v-for="n in visibleNodes(d.date)"
+              v-for="n in nodesOf(d.date)"
               :key="n.id"
               class="small week-node-line"
             >
               <span class="mono muted">{{ n.createdAt.slice(11, 16) }}</span>
-              {{ displayText(n.content, d.date) }}
+              {{ n.content }}
             </div>
           </div>
           <button
-            v-if="nodesOf(d.date).length > FOLD_LIMIT"
+            v-if="isExpanded(d.date) || hiddenCount[d.date] > 0"
             class="btn-more"
             :title="isExpanded(d.date) ? $t('收起 ▴') : $t('展开当天全部记录')"
             @click.stop="toggleExpand(d.date)"
           >
-            {{ isExpanded(d.date) ? $t('收起 ▴') : $t('＋{a} 更多', { a: nodesOf(d.date).length - FOLD_LIMIT }) }}
+            {{ isExpanded(d.date) ? $t('收起 ▴') : $t('＋{a} 更多', { a: hiddenCount[d.date] }) }}
           </button>
         </template>
 
@@ -204,7 +262,8 @@ onMounted(load)
           <div class="small muted">{{ $t('未来') }}</div>
         </template>
         <template v-else>
-          <div class="small muted">{{ $t('未记录') }}</div>
+          <div class="small muted">{{ $t('这天还没有记录') }}</div>
+          <div class="small muted" style="margin-top: 2px; opacity: 0.75">{{ $t('月视图点这天可补录') }}</div>
         </template>
       </div>
     </div>
