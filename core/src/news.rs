@@ -100,6 +100,9 @@ pub struct HotNewsResult {
     /// true=源站抓取失败后回退的历史数据（UI 据此提示「非实时」）
     #[serde(default)]
     pub stale: bool,
+    /// 缓存结构版本：读到的缓存版本不符（如 v1.1.4 直连源上线前写入的坏链接缓存）直接作废
+    #[serde(default)]
+    pub cache_version: u32,
     /// 生成该结果的关注参数签名（行业id+自定义关键词），用于缓存命中判断
     #[serde(default)]
     pub params: String,
@@ -179,6 +182,9 @@ pub fn merge_items(groups: Vec<Vec<NewsItem>>, limit: usize) -> Vec<NewsItem> {
 }
 
 const CACHE_KEY: &str = "news_cache";
+/// 缓存结构版本。v2（1.1.5）：直连源链接规范化——旧缓存里的坏链接（知乎 api 域名、
+/// 头条 800 字埋点 URL）必须作废重新抓，否则升级后用户点到的还是老条目（用户反馈「和以前一样」）。
+pub const CACHE_VERSION: u32 = 2;
 const CACHE_AT_KEY: &str = "news_cache_at";
 /// 重点关注模式的专属缓存（存的是过滤/搜索后的最终视图 + 参数签名）
 pub const FOCUS_CACHE_KEY: &str = "news_cache_focus";
@@ -191,7 +197,10 @@ pub fn load_cache(db: &Db) -> Option<(HotNewsResult, String)> {
 pub fn load_cache_key(db: &Db, key: &str) -> Option<(HotNewsResult, String)> {
     let raw = db.get_setting(key).ok().flatten()?;
     let at = db.get_setting(format!("{key}_at").as_str()).ok().flatten().unwrap_or_default();
-    serde_json::from_str::<HotNewsResult>(&raw).ok().map(|r| (r, at))
+    serde_json::from_str::<HotNewsResult>(&raw)
+        .ok()
+        .filter(|r| r.cache_version == CACHE_VERSION)
+        .map(|r| (r, at))
 }
 
 /// 写缓存
@@ -203,7 +212,9 @@ pub fn save_cache_key(db: &Db, key: &str, result: &HotNewsResult) {
     if result.items.is_empty() {
         return; // 空结果不覆盖旧缓存
     }
-    if let Ok(json) = serde_json::to_string(result) {
+    let mut stamped = result.clone();
+    stamped.cache_version = CACHE_VERSION;
+    if let Ok(json) = serde_json::to_string(&stamped) {
         let _ = db.set_setting(key, &json);
         let _ = db.set_setting(format!("{key}_at").as_str(), &result.fetched_at);
     }
@@ -573,8 +584,13 @@ fn parse_zhihu(v: &serde_json::Value) -> Vec<(String, String, Option<i64>)> {
                     if title.is_empty() {
                         return None;
                     }
-                    // api.zhihu.com 域名在浏览器打开会跳到对应问题页
-                    let url = it["target"]["url"].as_str().unwrap_or_default().to_string();
+                    // App 接口给的是 api.zhihu.com 域名：浏览器直接打开会渲染 JSON 而不是问题页，
+                    // 统一转成 www.zhihu.com/question/{id}（用户反馈：点开跳到 API 地址）
+                    let raw = it["target"]["url"].as_str().unwrap_or_default();
+                    let url = raw
+                        .strip_prefix("https://api.zhihu.com/questions/")
+                        .map(|id| format!("https://www.zhihu.com/question/{id}"))
+                        .unwrap_or_else(|| raw.to_string());
                     Some((title, url, None))
                 })
                 .collect()
@@ -592,7 +608,18 @@ fn parse_toutiao(v: &serde_json::Value) -> Vec<(String, String, Option<i64>)> {
                     if title.is_empty() {
                         return None;
                     }
-                    let url = it["Url"].as_str().unwrap_or_default().to_string();
+                    // 原始 Url 带约 800 字的埋点参数（超出 open-url 校验的 512 上限会被拒，
+                    // 用户反馈「打开链接失败」）：用 ClusterIdStr 构造干净的 trending 短链
+                    let url = match it["ClusterIdStr"].as_str().filter(|s| !s.is_empty()) {
+                        Some(id) => format!("https://www.toutiao.com/trending/{id}/"),
+                        None => it["Url"]
+                            .as_str()
+                            .unwrap_or_default()
+                            .split('?')
+                            .next()
+                            .unwrap_or_default()
+                            .to_string(),
+                    };
                     let hot = it["HotValue"].as_str().and_then(|s| s.parse::<i64>().ok());
                     Some((title, url, hot))
                 })
@@ -759,6 +786,7 @@ pub async fn fetch_hot_news(db: &Db, channels: &[String], limit: usize) -> HotNe
     let fetched_at = crate::db::now_string();
     if !merged.is_empty() {
         let result = HotNewsResult {
+            cache_version: CACHE_VERSION,
             items: merged,
             source: "live".into(),
             fetched_at,
@@ -782,6 +810,7 @@ pub async fn fetch_hot_news(db: &Db, channels: &[String], limit: usize) -> HotNe
         return cached;
     }
     HotNewsResult {
+        cache_version: CACHE_VERSION,
         items: Vec::new(),
         source: "none".into(),
         fetched_at,
@@ -923,6 +952,7 @@ mod tests {
     fn 缓存_空结果不覆盖旧缓存() {
         let db = Db::open_memory().unwrap();
         let result = HotNewsResult {
+            cache_version: CACHE_VERSION,
             items: vec![NewsItem { title: "t".into(), url: String::new(), hot: None, channel: "weibo".into(), channel_name: "微博热搜".into() }],
             source: "live".into(),
             fetched_at: "2026-09-19 10:00:00".into(),
@@ -935,7 +965,8 @@ mod tests {
         assert_eq!(cached.items.len(), 1);
         assert_eq!(at, "2026-09-19 10:00:00");
 
-        let empty = HotNewsResult { items: vec![], source: "live".into(), fetched_at: "x".into(), errors: vec![], stale: false, params: String::new() };
+        let empty = HotNewsResult {
+            cache_version: CACHE_VERSION, items: vec![], source: "live".into(), fetched_at: "x".into(), errors: vec![], stale: false, params: String::new() };
         save_cache(&db, &empty);
         let (cached2, _) = load_cache(&db).unwrap();
         assert_eq!(cached2.items.len(), 1, "空结果不应覆盖旧缓存");
@@ -1039,22 +1070,32 @@ mod direct_source_tests {
         let items = parse_zhihu(&v);
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].0, "字节跳动将飞书并入豆包意味着什么？");
-        assert_eq!(items[0].1, "https://api.zhihu.com/questions/123");
+        // api 域名必须转 www 问题页（用户反馈：点开跳到 API 地址）
+        assert_eq!(items[0].1, "https://www.zhihu.com/question/123");
     }
 
     #[test]
-    fn 头条解析_标题链接与热度字符串() {
+    fn 头条解析_标题短链与热度字符串() {
+        let long_tracking = format!("https://www.toutiao.com/trending/123/?x={}", "a".repeat(900));
         let v = serde_json::json!({
             "data": [
-                {"Title": "北大复旦校长接连发出警告", "Url": "https://www.toutiao.com/trending/123/", "HotValue": "9863351"},
+                {"Title": "北大复旦校长接连发出警告", "ClusterIdStr": "123", "Url": long_tracking, "HotValue": "9863351"},
+                {"Title": "没有ClusterId的条目", "Url": "https://www.toutiao.com/trending/456/?log_pb=%7B%22a%22%3A1%7D"},
                 {"Title": " "},
-                {"Title": "无热度值条目"}
+                {"Title": "无热度值条目", "ClusterIdStr": "789"}
             ]
         });
         let items = parse_toutiao(&v);
-        assert_eq!(items.len(), 2);
+        assert_eq!(items.len(), 3);
         assert_eq!(items[0].2, Some(9863351), "HotValue 字符串转数字");
-        assert_eq!(items[1].2, None);
+        // 短链 + 必须低于 open-url 校验的 512 上限（用户反馈：800 字埋点链接打不开）
+        assert_eq!(items[0].1, "https://www.toutiao.com/trending/123/");
+        for it in &items {
+            assert!(it.1.chars().count() <= 512, "链接超长: {}", it.1);
+            assert!(!it.1.contains('?') || it.1.len() < 100, "不应保留埋点参数");
+        }
+        assert_eq!(items[1].1, "https://www.toutiao.com/trending/456/", "无 ClusterIdStr 时截掉查询参数");
+        assert_eq!(items[2].2, None);
     }
 
     #[test]
@@ -1091,5 +1132,31 @@ mod direct_source_tests {
     fn 解析_非法JSON不炸返回空() {
         assert!(parse_weibo(&serde_json::Value::Null).is_empty());
         assert!(parse_toutiao(&serde_json::json!({"data": "不是数组"})).is_empty());
+    }
+
+    #[test]
+    fn 缓存版本_旧版缓存作废新版可用() {
+        let db = Db::open_memory().unwrap();
+        // 模拟 v1.1.4 写入的旧缓存（无 cacheVersion 字段 → 反序列化为 0）
+        let old = r#"{"items":[{"title":"旧条目","url":"https://api.zhihu.com/questions/1","hot":null,"channel":"zhihu","channelName":"知乎热榜"}],"source":"live","fetched_at":"2026-09-20 08:00:00","errors":[],"stale":false,"params":""}"#;
+        db.set_setting("news_cache", old).unwrap();
+        db.set_setting("news_cache_at", "2026-09-20 08:00:00").unwrap();
+        assert!(load_cache(&db).is_none(), "旧版缓存必须作废（坏链接一直被展示的根因）");
+
+        // 新版保存后可读，且写入时自动盖版本戳
+        let result = HotNewsResult {
+            cache_version: 0,
+            items: vec![NewsItem { title: "新条目".into(), url: "https://www.zhihu.com/question/1".into(), hot: None, channel: "zhihu".into(), channel_name: "知乎热榜".into() }],
+            source: "live".into(),
+            fetched_at: "2026-09-20 09:00:00".into(),
+            errors: vec![],
+            stale: false,
+            params: String::new(),
+        };
+        save_cache(&db, &result);
+        let (r, at) = load_cache(&db).expect("新版缓存应可读");
+        assert_eq!(r.cache_version, CACHE_VERSION, "写入时盖版本戳");
+        assert_eq!(r.items[0].url, "https://www.zhihu.com/question/1");
+        assert_eq!(at, "2026-09-20 09:00:00");
     }
 }

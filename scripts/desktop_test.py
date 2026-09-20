@@ -414,6 +414,10 @@ check("v1.1.4 热点源冗余：五栏目直连上游注册表，直连优先、
 check("v1.1.4 热点源冗余：直连请求头按源实测配置（微博 Referer/知乎 App UA/B站 Referer）",
       "H_WEIBO" in news_rs and "osee2unifiedRelease" in news_rs
       and "H_BILI" in news_rs)
+check("v1.1.5 热点链接规范化：知乎转 www 问题页、头条构造短链（原始链接 800 字埋点超 open-url 上限）",
+      "www.zhihu.com/question/{id}" in news_rs
+      and "trending/{id}" in news_rs
+      and "ClusterIdStr" in news_rs)
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

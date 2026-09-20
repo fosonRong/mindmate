@@ -1,6 +1,6 @@
 [package]
 name = "mindmate-core"
-version = "1.1.4"
+version = "1.1.5"
 edition = "2021"
 description = "智伴 Mindmate 核心：数据层 + REST/SSE 服务 + AI 接入 + 提醒调度"
 

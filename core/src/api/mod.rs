@@ -1240,6 +1240,7 @@ async fn news_hot(
         if !items.is_empty() {
             // 成功：连同参数签名写入专属缓存，供跨页面切回时展示
             let result = crate::news::HotNewsResult {
+                cache_version: crate::news::CACHE_VERSION,
                 items,
                 source: "live".into(),
                 fetched_at,
@@ -1261,6 +1262,7 @@ async fn news_hot(
         }
         // 连缓存都没有（首次使用即失败）：空结果
         return Ok(ApiResp::ok(crate::news::HotNewsResult {
+                cache_version: crate::news::CACHE_VERSION,
             items: Vec::new(),
             source: "none".into(),
             fetched_at,

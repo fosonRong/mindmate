@@ -965,6 +965,7 @@ focus_cache = {
     "fetchedAt": (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S"),
     "errors": [], "stale": False,
     "params": "|AI驱动开发",
+    "cacheVersion": 2,
 }
 _injected_at = (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
 call("PUT", "/settings", {"values": {
