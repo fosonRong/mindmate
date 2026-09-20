@@ -511,6 +511,203 @@ pub async fn search_keywords(keywords: &[String], per_keyword: usize) -> Vec<New
 }
 
 /// 抓取全部配置栏目（4s 超时，栏目间互不影响）
+// ───────────────── 源冗余（v1.1.4）：60s 公共实例被限流（HTTP 429/CF 1027）后的兜底 ─────────────────
+// 实测（2026-09-20）：60s.viki.moe 全量 429，任何抓取都失败只能吃缓存（用户反馈「一直显示本次抓取失败」）。
+// 方案：每个栏目配置一个**直连上游**端点（各平台自家热搜接口，实测均可用、字段结构见 parse），
+// 直连优先、60s 聚合实例降级兜底——它恢复后自动回到双保险。
+
+/// 直连上游源：一个栏目一条。headers 是该源实测必需的请求头（微博对 Referer 敏感、
+/// 知乎要用 App UA、B 站要 Referer），parse 从 JSON 里抠出 (标题, 链接, 热度)。
+pub struct DirectSource {
+    pub url: &'static str,
+    pub headers: &'static [(&'static str, &'static str)],
+    pub parse: fn(&serde_json::Value) -> Vec<(String, String, Option<i64>)>,
+}
+
+const BROWSER_UA: &str = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
+
+type ParseFn = fn(&serde_json::Value) -> Vec<(String, String, Option<i64>)>;
+
+const H_WEIBO: &[(&str, &str)] = &[
+    ("user-agent", BROWSER_UA),
+    ("referer", "https://weibo.com"),
+    ("accept", "application/json"),
+];
+const H_ZHIHU: &[(&str, &str)] = &[("user-agent", "osee2unifiedRelease/8.20.0")];
+const H_TOUTIAO: &[(&str, &str)] = &[("user-agent", BROWSER_UA)];
+const H_BILI: &[(&str, &str)] = &[
+    ("user-agent", BROWSER_UA),
+    ("referer", "https://www.bilibili.com"),
+];
+const H_DOUYIN: &[(&str, &str)] = &[("user-agent", BROWSER_UA)];
+
+/// 微博热搜搜索页（直连源只给热词，链接按词构造到微博搜索）
+fn weibo_link(word: &str) -> String {
+    format!("https://s.weibo.com/weibo?q={}", urlencoding::encode(word))
+}
+
+fn parse_weibo(v: &serde_json::Value) -> Vec<(String, String, Option<i64>)> {
+    v["data"]["realtime"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|it| {
+                    let word = it["word"].as_str()?.trim().to_string();
+                    if word.is_empty() {
+                        return None;
+                    }
+                    Some((word, weibo_link(it["word"].as_str().unwrap_or("")), it["num"].as_i64()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_zhihu(v: &serde_json::Value) -> Vec<(String, String, Option<i64>)> {
+    v["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|it| {
+                    let title = it["target"]["title"].as_str()?.trim().to_string();
+                    if title.is_empty() {
+                        return None;
+                    }
+                    // api.zhihu.com 域名在浏览器打开会跳到对应问题页
+                    let url = it["target"]["url"].as_str().unwrap_or_default().to_string();
+                    Some((title, url, None))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_toutiao(v: &serde_json::Value) -> Vec<(String, String, Option<i64>)> {
+    v["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|it| {
+                    let title = it["Title"].as_str()?.trim().to_string();
+                    if title.is_empty() {
+                        return None;
+                    }
+                    let url = it["Url"].as_str().unwrap_or_default().to_string();
+                    let hot = it["HotValue"].as_str().and_then(|s| s.parse::<i64>().ok());
+                    Some((title, url, hot))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_bili(v: &serde_json::Value) -> Vec<(String, String, Option<i64>)> {
+    v["data"]["trending"]["list"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|it| {
+                    let kw = it["show_name"]
+                        .as_str()
+                        .filter(|s| !s.trim().is_empty())
+                        .or_else(|| it["keyword"].as_str())?
+                        .trim()
+                        .to_string();
+                    if kw.is_empty() {
+                        return None;
+                    }
+                    let url = format!(
+                        "https://search.bilibili.com/all?keyword={}",
+                        urlencoding::encode(&kw)
+                    );
+                    Some((kw, url, it["heat_score"].as_i64()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn parse_douyin(v: &serde_json::Value) -> Vec<(String, String, Option<i64>)> {
+    v["word_list"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|it| {
+                    let word = it["word"].as_str()?.trim().to_string();
+                    if word.is_empty() {
+                        return None;
+                    }
+                    let url = format!(
+                        "https://www.douyin.com/search/{}",
+                        urlencoding::encode(&word)
+                    );
+                    Some((word, url, it["hot_value"].as_i64()))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 栏目 → 直连源注册表（与 CHANNELS 栏目 id 对应；新增栏目只改这里）
+pub fn direct_source_for(channel: &str) -> Option<DirectSource> {
+    let (url, headers, parse): (&str, &'static [(&'static str, &'static str)], ParseFn) = match channel {
+        "weibo" => ("https://weibo.com/ajax/side/hotSearch", H_WEIBO, parse_weibo),
+        "zhihu" => ("https://api.zhihu.com/topstory/hot-list?limit=50", H_ZHIHU, parse_zhihu),
+        "toutiao" => (
+            "https://www.toutiao.com/hot-event/hot-board/?origin=toutiao_pc",
+            H_TOUTIAO,
+            parse_toutiao,
+        ),
+        "bili" => (
+            "https://api.bilibili.com/x/web-interface/search/square?limit=50",
+            H_BILI,
+            parse_bili,
+        ),
+        "douyin" => (
+            "https://www.iesdouyin.com/web/api/v2/hotsearch/billboard/word/",
+            H_DOUYIN,
+            parse_douyin,
+        ),
+        _ => return None,
+    };
+    Some(DirectSource { url, headers, parse })
+}
+
+/// 抓一个栏目的直连上游：JSON 解析 + 字段清洗在 parse 里，这里只管请求与装配
+async fn fetch_direct(
+    client: &reqwest::Client,
+    channel: &str,
+    channel_name: &str,
+    limit: usize,
+) -> Option<Vec<NewsItem>> {
+    let src = direct_source_for(channel)?;
+    let mut req = client.get(src.url);
+    for (k, v) in src.headers {
+        req = req.header(*k, *v);
+    }
+    let text = match req.send().await {
+        Ok(r) => r.text().await.ok()?,
+        Err(_) => return None,
+    };
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let items: Vec<NewsItem> = (src.parse)(&v)
+        .into_iter()
+        .take(limit)
+        .map(|(title, url, hot)| NewsItem {
+            title,
+            url,
+            hot,
+            channel: channel.to_string(),
+            channel_name: channel_name.to_string(),
+        })
+        .collect();
+    if items.is_empty() {
+        None
+    } else {
+        Some(items)
+    }
+}
+
 pub async fn fetch_channels(channels: &[String], limit: usize) -> (Vec<Vec<NewsItem>>, Vec<String>) {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(4))
@@ -520,13 +717,24 @@ pub async fn fetch_channels(channels: &[String], limit: usize) -> (Vec<Vec<NewsI
     let mut groups = Vec::new();
     let mut errors = Vec::new();
     for ch in channels {
+        let name = CHANNELS
+            .iter()
+            .find(|(k, _)| k == ch)
+            .map(|(_, n)| n.to_string())
+            .unwrap_or_else(|| ch.to_string());
+        // 直连上游优先（60s 公共实例 2026-09 起限流，见模块注释）
+        if let Some(items) = fetch_direct(&client, ch, &name, limit).await {
+            groups.push(items);
+            continue;
+        }
+        // 60s 聚合实例兜底
         let url = format!("{SOURCE_BASE}/{ch}");
         match client.get(&url).header("accept", "application/json").send().await {
             Ok(resp) => match resp.text().await {
                 Ok(text) => {
                     let items = parse_channel(ch, &text);
                     if items.is_empty() {
-                        errors.push(format!("{ch}: 响应解析为空"));
+                        errors.push(format!("{ch}: 直连与聚合源均为空"));
                     }
                     groups.push(items);
                 }
@@ -788,5 +996,100 @@ mod search_engine_tests {
         // 同一关键词在百度/必应解析出的结果用同一 relevance_score，保证多源合并排序不失真
         let kw = "新能源车";
         assert!(relevance_score("新能源车下乡政策发布", "", kw) > relevance_score("无关标题", "提到新能源车", kw));
+    }
+}
+
+#[cfg(test)]
+mod direct_source_tests {
+    use super::*;
+
+    #[test]
+    fn 注册表_五个栏目全有直连源() {
+        for (id, _) in CHANNELS {
+            assert!(direct_source_for(id).is_some(), "栏目 {id} 缺直连源");
+        }
+        assert!(direct_source_for("不存在").is_none());
+    }
+
+    #[test]
+    fn 微博解析_词与热度() {
+        let v = serde_json::json!({
+            "ok": 1,
+            "data": {"realtime": [
+                {"word": "长期不工作的人会失去什么", "num": 2126399},
+                {"word": "传统豪车集体降价续命", "num": 1892222},
+                {"word": "", "num": 1}
+            ]}
+        });
+        let items = parse_weibo(&v);
+        assert_eq!(items.len(), 2, "空词过滤");
+        assert_eq!(items[0].0, "长期不工作的人会失去什么");
+        assert_eq!(items[0].2, Some(2126399));
+        assert!(items[0].1.starts_with("https://s.weibo.com/weibo?q="), "按词构造搜索链接");
+    }
+
+    #[test]
+    fn 知乎解析_标题与问题链接() {
+        let v = serde_json::json!({
+            "data": [
+                {"target": {"title": "字节跳动将飞书并入豆包意味着什么？", "url": "https://api.zhihu.com/questions/123"}, "detail_text": "521 万热度"},
+                {"target": {"title": "", "url": ""}}
+            ]
+        });
+        let items = parse_zhihu(&v);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].0, "字节跳动将飞书并入豆包意味着什么？");
+        assert_eq!(items[0].1, "https://api.zhihu.com/questions/123");
+    }
+
+    #[test]
+    fn 头条解析_标题链接与热度字符串() {
+        let v = serde_json::json!({
+            "data": [
+                {"Title": "北大复旦校长接连发出警告", "Url": "https://www.toutiao.com/trending/123/", "HotValue": "9863351"},
+                {"Title": " "},
+                {"Title": "无热度值条目"}
+            ]
+        });
+        let items = parse_toutiao(&v);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].2, Some(9863351), "HotValue 字符串转数字");
+        assert_eq!(items[1].2, None);
+    }
+
+    #[test]
+    fn B站解析_关键词条目() {
+        let v = serde_json::json!({
+            "code": 0,
+            "data": {"trending": {"title": "bilibili热搜", "list": [
+                {"keyword": "锐评IG战胜JDG晋级S赛", "show_name": "锐评IG战胜JDG晋级S赛", "heat_score": 1613343}
+            ]}}
+        });
+        let items = parse_bili(&v);
+        assert_eq!(items.len(), 1);
+        assert!(items[0].1.starts_with("https://search.bilibili.com/all?keyword="));
+        assert_eq!(items[0].2, Some(1613343));
+    }
+
+    #[test]
+    fn 抖音解析_词与热度() {
+        let v = serde_json::json!({
+            "status_code": 0,
+            "word_list": [
+                {"word": "2026亚运会开幕式", "hot_value": 12171980},
+                {"word": "布莱顿3:0完胜阿森纳", "hot_value": 9876543}
+            ]
+        });
+        let items = parse_douyin(&v);
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].0, "2026亚运会开幕式");
+        assert_eq!(items[0].2, Some(12171980));
+        assert!(items[0].1.starts_with("https://www.douyin.com/search/"));
+    }
+
+    #[test]
+    fn 解析_非法JSON不炸返回空() {
+        assert!(parse_weibo(&serde_json::Value::Null).is_empty());
+        assert!(parse_toutiao(&serde_json::json!({"data": "不是数组"})).is_empty());
     }
 }

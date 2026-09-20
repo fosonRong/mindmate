@@ -405,6 +405,15 @@ check("v1.1.3 命令面板接线：App 全局挂载 + 跳转事件（打开该�
       and "mindmate:open-palette" in read("apps", "web", "src", "App.vue")
       and "mindmate:open-day" in read("apps", "web", "src", "views", "Month.vue")
       and "mindmate:new-todo" in read("apps", "web", "src", "views", "Todos.vue"))
+# ── v1.1.4 热点源冗余（60s 公共实例 429 限流 → 直连上游兜底） ──
+news_rs = read("core", "src", "news.rs")
+check("v1.1.4 热点源冗余：五栏目直连上游注册表，直连优先、60s 聚合降级兜底",
+      all(x in news_rs for x in ("direct_source_for", "fetch_direct", "parse_weibo",
+                                  "parse_zhihu", "parse_toutiao", "parse_bili", "parse_douyin"))
+      and news_rs.index("fetch_direct") < news_rs.index("聚合实例兜底"))
+check("v1.1.4 热点源冗余：直连请求头按源实测配置（微博 Referer/知乎 App UA/B站 Referer）",
+      "H_WEIBO" in news_rs and "osee2unifiedRelease" in news_rs
+      and "H_BILI" in news_rs)
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)
