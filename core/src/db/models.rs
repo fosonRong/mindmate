@@ -73,6 +73,9 @@ pub struct Todo {
     pub recur_skip_rest: bool,
     /// 本实例由哪个根实例生成（用户手建的那条是根：NULL）
     pub recur_source_id: Option<i64>,
+    /// 收集箱标记：1=未排期（不进日程/统计，拖到周视图排期）
+    #[serde(default)]
+    pub inbox: bool,
     /// 是否已逾期（服务端计算，仅展示用）
     pub overdue: bool,
 }
@@ -105,6 +108,9 @@ pub struct NewTodo {
     /// 落在休息日顺延到下一个工作日
     #[serde(default)]
     pub recur_skip_rest: bool,
+    /// 收集箱（未排期）：只记标题不打日期，拖到日历/周视图时排期
+    #[serde(default)]
+    pub inbox: bool,
 }
 
 fn default_one() -> i64 {
@@ -133,6 +139,8 @@ pub struct TodoPatch {
     pub recur_until: Option<String>,
     pub recur_interval: Option<i64>,
     pub recur_skip_rest: Option<bool>,
+    /// 排期语义：拖到某天 = 设 due_date + inbox=false
+    pub inbox: Option<bool>,
 }
 
 /// 报告

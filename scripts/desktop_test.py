@@ -282,7 +282,7 @@ check("循环待办：库迁移 V2+V3 加循环字段（类型/锚点/来源/截
       "recur_type" in read("core", "src", "db", "mod.rs")
       and "SCHEMA_V2" in read("core", "src", "db", "mod.rs")
       and "SCHEMA_V3" in read("core", "src", "db", "mod.rs")
-      and "SCHEMA_VERSION: i64 = 3" in read("core", "src", "db", "mod.rs"))
+      and any(f"SCHEMA_VERSION: i64 = {n}" in read("core", "src", "db", "mod.rs") for n in (3, 4, 5)))
 check("循环待办：补期引擎（每天/每周/每月 + 月末截断）",
       "ensure_recurring" in read("core", "src", "db", "queries.rs")
       and '"daily"' in read("core", "src", "db", "queries.rs")
@@ -418,6 +418,45 @@ check("v1.1.5 热点链接规范化：知乎转 www 问题页、头条构造短�
       "www.zhihu.com/question/{id}" in news_rs
       and "trending/{id}" in news_rs
       and "ClusterIdStr" in news_rs)
+# ── v1.2.0 洞察与留存 ──
+api_rs = read("core", "src", "api", "mod.rs")
+check("v1.2.0 报告对比：stats/compare 接口（本期 vs 上期，记录/完成/活跃）",
+      "/api/v1/stats/compare" in api_rs and "stats_compare" in api_rs
+      and "prev_from" in api_rs and "PeriodBrief" in api_rs)
+check("v1.2.0 报告对比：智伴页趋势条组件（涨绿跌红/首期处理）",
+      os.path.exists(os.path.join(ROOT, "apps", "web", "src", "components", "PeriodCompareBar.vue"))
+      and "PeriodCompareBar" in read("apps", "web", "src", "views", "Companion.vue"))
+check("v1.2.0 AI 周计划：接口双路（AI 优先/本地规则兜底）+ 一键转待办",
+      "/api/v1/ai/weekly-plan" in api_rs and "local_week_plan" in api_rs
+      and "parse_todo_array" in api_rs and "aiWeeklyPlan" in read("apps", "web", "src", "views", "Companion.vue")
+      and "SmartTodoModal" in read("apps", "web", "src", "views", "Companion.vue"))
+check("v1.2.0 新手引导：今日页引导卡（数据推导完成态/自动收起/可跳过）",
+      "guideSteps" in read("apps", "web", "src", "views", "Today.vue")
+      and "guide_done" in read("apps", "web", "src", "views", "Today.vue"))
+check("v1.2.0 反馈入口 + 状态自检页（逐项体检/重新自检）",
+      "showFeedback" in read("apps", "web", "src", "views", "Settings.vue")
+      and "runDiag" in read("apps", "web", "src", "views", "Settings.vue")
+      and "news_cache_at" in read("apps", "web", "src", "views", "Settings.vue"))
+
+# ── v1.2.1 提醒与触达 ──
+check("v1.2.1 收集箱：迁移 V4 inbox 列 + 专属查询 + 日程/提醒/统计排除",
+      "SCHEMA_V4" in read("core", "src", "db", "mod.rs")
+      and "list_inbox_todos" in queries_rs
+      and "inbox = 0" in queries_rs and "AND inbox = 1" in queries_rs)
+check("v1.2.1 收集箱：待办页收集区 + 周视图日卡拖放排期（拖出即 inbox=false）",
+      "collectInbox" in read("apps", "web", "src", "views", "Todos.vue")
+      and "loadInbox" in read("apps", "web", "src", "views", "Week.vue")
+      and "onDropTodo" in read("apps", "web", "src", "views", "Week.vue")
+      and "drop-target" in read("apps", "web", "src", "styles", "app.css"))
+check("v1.2.1 专注模式：publish 单咽喉静默 + 顶栏菜单/状态栏倒计时",
+      "pub fn in_focus" in read("core", "src", "reminder", "mod.rs")
+      and "in_focus(&ctx.db)" in read("core", "src", "reminder", "mod.rs")
+      and "focus_until" in read("apps", "web", "src", "App.vue"))
+check("v1.2.1 报告定时推送：调度分支 + 渠道 dispatch + 当日去重守卫",
+      "report_push_tick" in read("core", "src", "reminder", "mod.rs")
+      and "dispatch(&db2" in read("core", "src", "reminder", "mod.rs")
+      and "report_push_last" in read("core", "src", "reminder", "mod.rs")
+      and "reportPushEnabled" in read("apps", "web", "src", "views", "Settings.vue"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)
@@ -442,7 +481,8 @@ check("删除待办：前端循环待办二选一（删整个循环/仅此一条
       "删整个循环" in read("apps", "web", "src", "components", "TodoItem.vue")
       and "确认删除？" in read("apps", "web", "src", "components", "TodoItem.vue"))
 check("循环增强：迁移 V3（结束日期/间隔/跳过休息日）",
-      "SCHEMA_V3" in read("core", "src", "db", "mod.rs") and "SCHEMA_VERSION: i64 = 3" in read("core", "src", "db", "mod.rs"))
+      "SCHEMA_V3" in read("core", "src", "db", "mod.rs")
+      and any(f"SCHEMA_VERSION: i64 = {n}" in read("core", "src", "db", "mod.rs") for n in (3, 4, 5)))
 check("循环增强：生成规则支持间隔/截止/跳过休息日（Rust 侧法定假期表）",
       "HOLIDAY_OFF" in read("core", "src", "db", "queries.rs")
       and "is_rest_day" in read("core", "src", "db", "queries.rs"))

@@ -3,7 +3,7 @@ import { t } from '@/i18n'
 import type {
   Achievement, AchievementDef, AiConfig, AiTestResult, AppEvent, AuthStatus, ChatMessage, DailyStats,
   MonthlySummary, Node, OllamaProbe, PeriodStats, Preset, PushConfig, PushResult, Report,
-  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic, TagStat, ExtractedTodo, SearchResults
+  ScheduleData, Setting, Todo, HotNewsResult, NewsChannel, FocusTopic, TagStat, ExtractedTodo, SearchResults, PeriodCompare, WeeklyPlan
 } from './types'
 
 export class ApiError extends Error {
@@ -90,6 +90,9 @@ export const api = {
   periodStats: (from: string, to: string) =>
     get<PeriodStats>(`/api/v1/stats/period?from=${from}&to=${to}`),
   monthlySummary: (date: string) => get<MonthlySummary>(`/api/v1/stats/monthly?date=${date}`),
+  /** 报告回顾对比（v1.2.0）：本期 vs 上期 */
+  statsCompare: (kind: 'daily' | 'weekly', date?: string) =>
+    get<PeriodCompare>(`/api/v1/stats/compare?kind=${kind}${date ? `&date=${date}` : ''}`),
 
   // 待办
   todos: (params: Record<string, string> = {}) => {
@@ -112,6 +115,8 @@ export const api = {
   /** 智能速记：一句话拆成待办（标题/日期/时间；AI 未配置时后端走本地规则） */
   aiExtractTodos: (content: string) =>
     post<{ isAi: boolean; todos: ExtractedTodo[] }>('/api/v1/ai/extract-todos', { content }),
+  /** AI 周计划（v1.2.0）：基于上周生成下周建议（本地规则兜底） */
+  aiWeeklyPlan: () => post<WeeklyPlan>('/api/v1/ai/weekly-plan'),
 
   // 设置
   settings: () => get<Setting[]>('/api/v1/settings'),

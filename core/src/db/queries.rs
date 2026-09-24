@@ -343,11 +343,12 @@ impl Db {
             recur_until: row.get(17)?,
             recur_interval: row.get(18)?,
             recur_skip_rest: row.get::<_, i64>(19)? != 0,
+            inbox: row.get::<_, i64>(20)? != 0,
             overdue: is_overdue(&due_date, due_time.as_deref(), &status),
         })
     }
 
-    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest";
+    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest, inbox";
 
     pub fn create_todo(&self, input: NewTodo) -> Result<Todo> {
         let now = now_string();
@@ -376,9 +377,9 @@ impl Db {
         let recur_until = normalize_date_opt(&input.recur_until);
         let recur_interval = if input.recur_interval < 1 { 1 } else { input.recur_interval };
         conn.execute(
-            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_until, recur_interval, recur_skip_rest)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?3,?11,?12,?13)",
-            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now, recur_type, recur_until, recur_interval, input.recur_skip_rest as i64],
+            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_until, recur_interval, recur_skip_rest, inbox)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?3,?11,?12,?13,?14)",
+            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now, recur_type, recur_until, recur_interval, input.recur_skip_rest as i64, input.inbox as i64],
         )?;
         let id = conn.last_insert_rowid();
         let todo = conn.query_row(
@@ -397,8 +398,9 @@ impl Db {
         tag: Option<&str>,
         q: Option<&str>,
     ) -> Result<Vec<Todo>> {
+        // 收集箱条目（inbox=1）不属于任何日程视图，只走 /todos?inbox=1 专属查询
         let mut sql = format!(
-            "SELECT {} FROM todos WHERE deleted_at IS NULL",
+            "SELECT {} FROM todos WHERE deleted_at IS NULL AND inbox = 0",
             Self::TODO_COLS
         );
         let mut args: Vec<String> = vec![];
@@ -503,6 +505,9 @@ impl Db {
         if let Some(v) = patch.recur_skip_rest {
             t.recur_skip_rest = v;
         }
+        if let Some(v) = patch.inbox {
+            t.inbox = v;
+        }
         let today = today_string();
         // 归类：显式指定优先，否则按截止日期重算
         t.category = patch
@@ -513,8 +518,8 @@ impl Db {
         conn.execute(
             "UPDATE todos SET title=?1, description=?2, due_date=?3, due_time=?4, remind_at=?5,
                     priority=?6, tags=?7, status=?8, category=?9, sort_order=?10, updated_at=?11,
-                    recur_type=?12, recur_until=?13, recur_interval=?14, recur_skip_rest=?15
-             WHERE id=?16",
+                    recur_type=?12, recur_until=?13, recur_interval=?14, recur_skip_rest=?15, inbox=?16
+             WHERE id=?17",
             params![
                 t.title,
                 t.description,
@@ -531,6 +536,7 @@ impl Db {
                 t.recur_until,
                 t.recur_interval,
                 t.recur_skip_rest as i64,
+                t.inbox as i64,
                 id
             ],
         )?;
@@ -621,10 +627,22 @@ impl Db {
     }
 
     /// 某日【日程 + 待办】双栏数据
+    /// 收集箱：未排期待办池（按创建倒序，过滤已完成）
+    pub fn list_inbox_todos(&self) -> Result<Vec<Todo>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM todos WHERE deleted_at IS NULL AND inbox = 1 AND status != '已完成'
+             ORDER BY id DESC",
+            Self::TODO_COLS
+        ))?;
+        let rows = stmt.query_map([], Self::row_to_todo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn schedule_for_date(&self, date: &str) -> Result<(Vec<Todo>, Vec<Todo>)> {
         let conn = self.lock();
         let mut stmt = conn.prepare(&format!(
-            "SELECT {} FROM todos WHERE deleted_at IS NULL AND due_date=?1 AND due_time IS NOT NULL
+            "SELECT {} FROM todos WHERE deleted_at IS NULL AND inbox = 0 AND due_date=?1 AND due_time IS NOT NULL
              ORDER BY due_time ASC",
             Self::TODO_COLS
         ))?;
@@ -633,7 +651,7 @@ impl Db {
             .collect::<rusqlite::Result<Vec<_>>>()?;
         drop(stmt);
         let mut stmt2 = conn.prepare(&format!(
-            "SELECT {} FROM todos WHERE deleted_at IS NULL AND due_date=?1 ORDER BY sort_order ASC, id ASC",
+            "SELECT {} FROM todos WHERE deleted_at IS NULL AND inbox = 0 AND due_date=?1 ORDER BY sort_order ASC, id ASC",
             Self::TODO_COLS
         ))?;
         let todos = stmt2
@@ -647,7 +665,7 @@ impl Db {
         let conn = self.lock();
         let mut stmt = conn.prepare(&format!(
             "SELECT {} FROM todos
-             WHERE deleted_at IS NULL AND status IN ('待处理','进行中','已逾期')
+             WHERE deleted_at IS NULL AND inbox = 0 AND status IN ('待处理','进行中','已逾期')
                AND remind_at IS NOT NULL AND remind_at <= ?1 AND reminded_at IS NULL
              ORDER BY remind_at ASC LIMIT 20",
             Self::TODO_COLS
@@ -1630,6 +1648,7 @@ mod unified_search_tests {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
         db.create_todo(NewTodo {
@@ -1645,6 +1664,7 @@ mod unified_search_tests {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
         db.save_report("daily", "2026-09-01", "# 日报 今天完成了报告的初稿，进展顺利。", true).unwrap();

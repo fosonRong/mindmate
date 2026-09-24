@@ -14,7 +14,7 @@ const app = useAppStore()
 const update = useUpdateStore()
 const tagsStore = useTagsStore()
 
-type Section = 'remind' | 'push' | 'ai' | 'goal' | 'appearance' | 'data' | 'about'
+type Section = 'remind' | 'push' | 'ai' | 'goal' | 'appearance' | 'data' | 'about' | 'diag'
 const section = ref<Section>('remind')
 
 // ── 提醒 ──
@@ -129,6 +129,29 @@ const telegramTokenInput = ref('')
 const pushSaving = ref(false)
 const pushTesting = ref<string | null>(null)
 const pushTestResult = ref<{ channel: string; ok: boolean; detail: string } | null>(null)
+
+// ── 定时推送报告（v1.2.1） ──
+const reportPushEnabled = ref(app.settings.report_push_enabled === '1')
+const reportPushTime = ref(app.settings.report_push_time || '21:00')
+const reportPushDaily = ref((app.settings.report_push_types || 'daily').includes('daily'))
+const reportPushWeekly = ref((app.settings.report_push_types || '').includes('weekly'))
+
+async function saveReportPush() {
+  const types = [
+    ...(reportPushDaily.value ? ['daily'] : []),
+    ...(reportPushWeekly.value ? ['weekly'] : [])
+  ].join(',')
+  if (reportPushEnabled.value && !types) {
+    app.toast('warning', t('至少选择一种推送内容'))
+    reportPushEnabled.value = false
+  }
+  await app.saveSettings({
+    report_push_enabled: reportPushEnabled.value ? '1' : '0',
+    report_push_time: reportPushTime.value || '21:00',
+    report_push_types: types || 'daily'
+  })
+  app.toast('success', t('定时推送已保存'))
+}
 
 function channelOn(ch: string) {
   return push.value.channels.includes(ch)
@@ -594,6 +617,101 @@ async function removeTag(name: string) {
   }
 }
 
+// ── 意见反馈（v1.2.0-④） ──
+const showFeedback = ref(false)
+const feedbackText = ref('')
+
+async function submitFeedback(openPage: boolean) {
+  const text = feedbackText.value.trim()
+  if (!text) {
+    app.toast('warning', t('先写点想法吧'))
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(
+      t('【智伴反馈】{a}', { a: text })
+    )
+  } catch {
+    /* 剪贴板不可用时忽略，用户可手动复制 */
+  }
+  if (openPage) {
+    const url = 'https://github.com/fosonRong/mindmate/issues/new'
+    try {
+      if (app.settings.deploy_mode === 'local') await api.openUrl(url)
+      else window.open(url, '_blank', 'noopener')
+    } catch {
+      window.open(url, '_blank', 'noopener')
+    }
+  }
+  showFeedback.value = false
+  feedbackText.value = ''
+  app.toast('success', t('反馈已复制到剪贴板，粘贴到反馈页即可'))
+}
+
+// ── 状态自检（v1.2.0-⑤） ──
+interface DiagRow {
+  name: string
+  status: 'ok' | 'warn' | 'err'
+  detail: string
+}
+const diagRows = ref<DiagRow[]>([])
+const diagRunning = ref(false)
+
+async function runDiag() {
+  if (diagRunning.value) return
+  diagRunning.value = true
+  const rows: DiagRow[] = []
+  // 1 核心服务与模式
+  const modeName =
+    app.settings.deploy_mode === 'lan' ? t('局域网') : app.settings.deploy_mode === 'server' ? t('服务器') : t('本地')
+  rows.push(
+    app.connected
+      ? { name: t('核心服务'), status: 'ok', detail: t('运行中 · {a} 模式', { a: modeName }) }
+      : { name: t('核心服务'), status: 'err', detail: t('未连接，请重启应用') }
+  )
+  // 2 版本
+  rows.push({ name: t('应用版本'), status: 'ok', detail: `v${update.currentVersion || '?'}` })
+  // 3 AI 模型
+  try {
+    const cfg = await api.aiConfig()
+    rows.push(
+      app.aiReady
+        ? { name: t('AI 模型'), status: 'ok', detail: `${cfg.provider} · ${cfg.model}` }
+        : { name: t('AI 模型'), status: 'warn', detail: t('未配置 Key：智能打标/周计划走本地规则') }
+    )
+  } catch {
+    rows.push({ name: t('AI 模型'), status: 'err', detail: t('配置读取失败') })
+  }
+  // 4 热点源
+  const at = app.settings.news_cache_at || ''
+  const ts = at ? new Date(at.replace(' ', 'T')).getTime() : 0
+  const fresh = ts > 0 && Date.now() - ts < 24 * 3600 * 1000
+  rows.push(
+    fresh
+      ? { name: t('今日热点源'), status: 'ok', detail: t('最近成功：{a}', { a: at.slice(11, 16) }) }
+      : { name: t('今日热点源'), status: 'warn', detail: at ? t('超过 24 小时未成功，去今日页点「重新生成」') : t('从未抓取成功') }
+  )
+  // 5 提醒
+  rows.push(
+    app.settings.remind_enabled === '0'
+      ? { name: t('提醒'), status: 'warn', detail: t('已在设置中关闭') }
+      : {
+          name: t('提醒'),
+          status: 'ok',
+          detail: `${app.settings.remind_window_start || '09:00'} ~ ${app.settings.remind_window_end || '21:00'}`
+        }
+  )
+  // 6 本地数据
+  try {
+    const list = await api.settings()
+    rows.push({ name: t('本地数据'), status: 'ok', detail: t('读写正常 · 设置 {a} 项', { a: list.length }) })
+  } catch {
+    rows.push({ name: t('本地数据'), status: 'err', detail: t('设置读取失败') })
+  }
+  diagRows.value = rows
+  diagRunning.value = false
+}
+
 async function doExport() {
   const data = await api.exportData()
   exportText.value = JSON.stringify(data, null, 2)
@@ -677,7 +795,8 @@ onMounted(() => {
       <button :class="{ on: section === 'goal' }" @click="section = 'goal'">{{ $t('🎯 每日目标') }}</button>
       <button :class="{ on: section === 'appearance' }" @click="section = 'appearance'">{{ $t('🎨 外观') }}</button>
       <button :class="{ on: section === 'data' }" @click="section = 'data'">{{ $t('💾 数据与部署') }}</button>
-      <button :class="{ on: section === 'about' }" @click="section = 'about'">{{ $t('ℹ️ 关于') }}</button>
+      <button :class="{ on: section === 'diag' }" @click="section = 'diag'; runDiag()">{{ $t('🩺 状态自检') }}</button>
+            <button :class="{ on: section === 'about' }" @click="section = 'about'">{{ $t('ℹ️ 关于') }}</button>
     </aside>
 
     <div class="col-stack">
@@ -862,6 +981,38 @@ onMounted(() => {
 
       <!-- 推送渠道（FR-4.10）-->
       <template v-if="section === 'push'">
+        <!-- 定时推送报告（v1.2.1） -->
+        <section class="card stack">
+          <div class="card-title" style="font-size: 15px">{{ $t('⏰ 定时推送报告') }}</div>
+          <div class="small muted">
+            {{ $t('到点把日报/周报推到下方已启用的渠道（邮件 / 企业微信 / Telegram）；当期已有 AI 报告优先推送，否则用本地模板生成。') }}
+          </div>
+          <div class="row">
+            <span style="flex: 1; font-size: 13px">{{ $t('启用定时推送') }}</span>
+            <div class="switch" :class="{ on: reportPushEnabled }" @click="reportPushEnabled = !reportPushEnabled; saveReportPush()"></div>
+          </div>
+          <template v-if="reportPushEnabled">
+            <div class="row" style="gap: 12px">
+              <div class="form-row" style="flex: 1">
+                <label class="form-label">{{ $t('推送时间') }}</label>
+                <input v-model="reportPushTime" type="time" class="input" style="height: 32px" @change="saveReportPush" />
+              </div>
+              <div class="form-row" style="flex: 1">
+                <label class="form-label">{{ $t('推送内容') }}</label>
+                <div class="row" style="gap: 8px">
+                  <label class="small" style="cursor: pointer">
+                    <input v-model="reportPushDaily" type="checkbox" @change="saveReportPush" /> {{ $t('每天日报') }}
+                  </label>
+                  <label class="small" style="cursor: pointer">
+                    <input v-model="reportPushWeekly" type="checkbox" @change="saveReportPush" /> {{ $t('周一发周报') }}
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div class="hint-bar info">{{ $t('需先在下方启用至少一个推送渠道；错过时间点会在下次打开应用时补推当天/当周一次。') }}</div>
+          </template>
+        </section>
+
         <section class="card stack">
           <div class="card-title" style="font-size: 15px">{{ $t('远程推送渠道') }}</div>
           <div class="small muted">
@@ -1356,6 +1507,28 @@ onMounted(() => {
       </template>
 
       <!-- 关于 -->
+      <!-- 状态自检（v1.2.0） -->
+      <template v-if="section === 'diag'">
+        <section class="card stack">
+          <div class="row">
+            <div class="card-title" style="font-size: 15px">{{ $t('状态自检') }}</div>
+            <div class="spacer"></div>
+            <button class="btn btn-sm" :disabled="diagRunning" @click="runDiag">{{ $t('重新自检') }}</button>
+          </div>
+          <div v-if="diagRunning" class="small muted">{{ $t('检查中…') }}</div>
+          <div v-for="(r, i) in diagRows" :key="i" class="row">
+            <span class="badge" :class="r.status === 'ok' ? 'ok' : r.status === 'warn' ? 'info' : 'danger'" style="flex: none">
+              {{ r.status === 'ok' ? '✓' : r.status === 'warn' ? '!' : '✗' }}
+            </span>
+            <span style="width: 90px; flex: none; font-size: 13px">{{ r.name }}</span>
+            <span class="small muted" style="flex: 1; min-width: 0">{{ r.detail }}</span>
+          </div>
+          <div v-if="!diagRows.length && !diagRunning" class="small muted">
+            {{ $t('进入本页自动体检一次；发现 ⚠ / ✗ 项按提示处理即可。') }}
+          </div>
+        </section>
+      </template>
+
       <template v-if="section === 'about'">
         <section class="card stack">
           <div class="row">
@@ -1374,6 +1547,13 @@ onMounted(() => {
           <div class="row">
             <span class="small muted">{{ $t('服务状态：') }}</span>
             <span class="badge" :class="app.connected ? 'ok' : 'danger'">{{ app.connected ? $t('运行中') : $t('未连接') }}</span>
+          </div>
+
+          <!-- 意见反馈（v1.2.0） -->
+          <div class="divider"></div>
+          <div class="row">
+            <span style="flex: 1; font-size: 13px">{{ $t('意见反馈') }}</span>
+            <button class="btn btn-sm" @click="showFeedback = true">{{ $t('提意见') }}</button>
           </div>
 
           <!-- 版本与更新 -->
@@ -1418,4 +1598,19 @@ onMounted(() => {
       </template>
     </div>
   </div>
+    <!-- 意见反馈弹窗（v1.2.0） -->
+    <div v-if="showFeedback" class="modal-mask" @click.self="showFeedback = false">
+      <div class="modal">
+        <h3>{{ $t('意见反馈') }}</h3>
+        <div class="small muted" style="margin-bottom: 8px">
+          {{ $t('写下你想加强或不满的点；提交后会复制到剪贴板，并可直达 GitHub 反馈页。') }}
+        </div>
+        <textarea v-model="feedbackText" class="textarea" rows="5" :placeholder="$t('例如：希望周报能对比上周…')"></textarea>
+        <div class="modal-actions">
+          <button class="btn" @click="showFeedback = false">{{ $t('取消') }}</button>
+          <button class="btn" @click="submitFeedback(false)">{{ $t('仅复制') }}</button>
+          <button class="btn btn-primary" @click="submitFeedback(true)">{{ $t('复制并打开反馈页') }}</button>
+        </div>
+      </div>
+    </div>
 </template>

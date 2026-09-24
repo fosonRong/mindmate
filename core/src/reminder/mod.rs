@@ -7,7 +7,7 @@
 //! - 所有提醒经事件总线广播（SSE），桌面端订阅后弹系统通知
 
 use crate::{AppContext, Event};
-use chrono::{Duration, Local, NaiveDate, NaiveDateTime, Timelike};
+use chrono::{ Datelike, Duration, Local, NaiveDate, NaiveDateTime, Timelike};
 use serde_json::json;
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
@@ -326,6 +326,11 @@ async fn tick(
         }
     }
 
+    // 2.5) 报告定时推送（v1.2.1）：到点把报告推到已配置渠道
+    if let Err(e) = report_push_tick(&ctx.db.clone()) {
+        tracing::warn!("报告定时推送失败: {e}");
+    }
+
     // 3) 睡眠唤醒补偿：tick 间隔异常增大（>2 倍 tick 且 >2 分钟）
     let freq_minutes: i64 = db
         .get_setting("remind_freq_minutes")?
@@ -422,7 +427,30 @@ async fn tick(
     Ok(())
 }
 
+/// 专注模式（v1.2.1）：settings.focus_until（"YYYY-MM-DD HH:MM:SS"）之内一律静默，
+/// 到点自动恢复。所有提醒都走 publish 单一咽喉点，在这里拦即可全覆盖。
+pub fn in_focus(db: &crate::db::Db) -> bool {
+    let until = db.get_setting("focus_until").ok().flatten().unwrap_or_default();
+    let until = until.trim();
+    if until.is_empty() {
+        return false;
+    }
+    let ts = chrono::NaiveDateTime::parse_from_str(until, "%Y-%m-%d %H:%M:%S")
+        .map(|d| {
+            d.and_local_timezone(Local)
+                .single()
+                .map(|t| t.timestamp())
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    ts > 0 && Local::now().timestamp() < ts
+}
+
 fn publish(ctx: &Arc<AppContext>, n: &Notification) {
+    if in_focus(&ctx.db) {
+        tracing::info!("专注模式，静默提醒 [{}] {}", n.kind.as_str(), n.title);
+        return;
+    }
     tracing::info!("提醒触发 [{}] {}", n.kind.as_str(), n.title);
     ctx.bus.publish(Event::new(
         "reminder.triggered",
@@ -454,6 +482,82 @@ fn publish(ctx: &Arc<AppContext>, n: &Notification) {
             }
         });
     }
+}
+
+/// 报告定时推送（v1.2.1）：report_push_enabled / report_push_time / report_push_types。
+/// 到点后（每天只发一次/类型）优先推当日已生成报告，无则用本地模板生成；周报在周一推上周。
+pub fn report_push_tick(db: &std::sync::Arc<crate::db::Db>) -> anyhow::Result<()> {
+    let enabled = db
+        .get_setting("report_push_enabled")?
+        .map(|v| v == "1")
+        .unwrap_or(false);
+    if !enabled {
+        return Ok(());
+    }
+    let cfg = crate::push::load_config(db);
+    if cfg.channels.is_empty() {
+        return Ok(()); // 未配置任何渠道，静默跳过
+    }
+    let push_time = db
+        .get_setting("report_push_time")?
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "21:00".into());
+    let now = Local::now();
+    if now.format("%H:%M").to_string().as_str() < push_time.trim() {
+        return Ok(());
+    }
+    let today = crate::db::today_string();
+    let types = db
+        .get_setting("report_push_types")?
+        .filter(|v| !v.trim().is_empty())
+        .unwrap_or_else(|| "daily".into());
+    let last = db.get_setting("report_push_last")?.unwrap_or_default();
+    for rtype in types.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        let (rtype, period, guard) = if rtype == "weekly" {
+            // 周报：周一推上周（period=上周一）
+            let today_d = now.date_naive();
+            let mon = today_d - chrono::Duration::days(today_d.weekday().num_days_from_monday() as i64);
+            let last_mon = mon - chrono::Duration::days(7);
+            let week_key = format!("weekly#{}", now.format("%G-W%V"));
+            ("weekly".to_string(), last_mon.format("%Y-%m-%d").to_string(), week_key)
+        } else {
+            ("daily".to_string(), today.clone(), format!("daily#{today}"))
+        };
+        if last.contains(&guard) {
+            continue;
+        }
+        // 当期已有报告优先（AI 生成的优先于本地模板）
+        let existing = db.list_reports(Some(&rtype), 20)?.into_iter().find(|r| r.period == period);
+        let content = match existing {
+            Some(r) => r.content,
+            None => crate::ai::fallback_report(db, &rtype, &period)?,
+        };
+        let title = if rtype == "weekly" {
+            format!("📄 周报 · {}", period)
+        } else {
+            format!("📄 日报 · {}", period)
+        };
+        let msg = crate::push::OutgoingMessage {
+            title,
+            body: content,
+            kind: "report".into(),
+            at: now.format("%Y-%m-%d %H:%M:%S").to_string(),
+        };
+        let db2 = db.clone();
+        let guard2 = guard;
+        let rtype2 = rtype;
+        tokio::spawn(async move {
+            let results = crate::push::dispatch(&db2, &msg).await;
+            let ok_count = results.iter().filter(|r| r.ok).count();
+            if ok_count > 0 {
+                tracing::info!("报告定时推送成功 [{}] {} 个渠道", rtype2, ok_count);
+                let _ = db2.set_setting("report_push_last", &guard2);
+            } else {
+                tracing::warn!("报告定时推送全部渠道失败 [{}]", rtype2);
+            }
+        });
+    }
+    Ok(())
 }
 
 /// 睡眠/休眠唤醒补偿判定（纯函数，便于测试）
@@ -510,4 +614,30 @@ pub fn now_string() -> String {
 pub fn next_aligned(now: NaiveDateTime, freq_minutes: i64) -> NaiveDateTime {
     let add = freq_minutes - (now.minute() as i64 % freq_minutes.max(1));
     now + Duration::minutes(add)
+}
+
+#[cfg(test)]
+mod focus_tests {
+    use super::in_focus;
+    use crate::db::Db;
+
+    #[test]
+    fn 专注模式_时间窗内外() {
+        let db = Db::open_memory().unwrap();
+        db.seed_defaults().unwrap();
+        // 未设置 → 不在专注
+        assert!(!in_focus(&db));
+        // 未来 → 专注中
+        let future = (chrono::Local::now() + chrono::Duration::minutes(30))
+            .format("%Y-%m-%d %H:%M:%S")
+            .to_string();
+        db.set_setting("focus_until", &future).unwrap();
+        assert!(in_focus(&db));
+        // 过去 → 自动恢复
+        db.set_setting("focus_until", "2020-01-01 00:00:00").unwrap();
+        assert!(!in_focus(&db));
+        // 非法值 → 不专注（不炸）
+        db.set_setting("focus_until", "garbage").unwrap();
+        assert!(!in_focus(&db));
+    }
 }

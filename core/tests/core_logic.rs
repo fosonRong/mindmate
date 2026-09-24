@@ -405,6 +405,7 @@ fn 数据层_待办完成与撤销流转() {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
     assert_eq!(t.status, "待处理");
@@ -435,6 +436,7 @@ fn 数据层_逾期刷新标记() {
         recur_until: String::new(),
         recur_interval: 1,
         recur_skip_rest: false,
+        inbox: false,
     })
     .unwrap();
     let overdue = db.refresh_overdue().unwrap();
@@ -459,6 +461,7 @@ fn 数据层_待办改期后重新归类() {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
     assert_eq!(t.category, "日程");
@@ -476,6 +479,7 @@ fn 数据层_待办改期后重新归类() {
                 recur_until: None,
                 recur_interval: None,
                 recur_skip_rest: None,
+                inbox: Some(false),
                 priority: None,
                 tags: None,
                 status: None,
@@ -547,6 +551,7 @@ fn 降级_日报模板拼装含记录与待办() {
         recur_until: String::new(),
         recur_interval: 1,
         recur_skip_rest: false,
+        inbox: false,
     })
     .unwrap();
 
@@ -627,6 +632,7 @@ fn 月度小结_记录天数与完成待办与最长连续() {
                 recur_until: String::new(),
                 recur_interval: 1,
                 recur_skip_rest: false,
+                inbox: false,
             })
             .unwrap();
         if title != "任务C" {
@@ -797,6 +803,7 @@ fn 循环待办_删除整个循环() {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
     let _ = db.ensure_recurring().unwrap();
@@ -916,6 +923,7 @@ fn 循环待办_创建根实例即补齐下一期() {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
     assert_eq!(root.recur_type, "weekly");
@@ -954,6 +962,7 @@ fn 循环待办_完成最后一期后生成下一期() {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
     let today = mindmate_core::db::today_string();
@@ -995,6 +1004,7 @@ fn 循环待办_停止循环后不再生成() {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
     let _ = db.ensure_recurring().unwrap();

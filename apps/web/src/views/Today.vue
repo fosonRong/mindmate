@@ -219,6 +219,31 @@ function newsToTodo(n: NewsItem) {
 
 const unlockedBadges = computed(() => badges.value.filter((a) => a.unlocked))
 
+// ── 新手引导任务流（v1.2.0-③）：从现有数据推导完成态，全部完成自动收起并持久化 ──
+const guideSteps = computed(() => [
+  { key: 'node', label: t('完成第一条速记'), done: (app.stats?.nodeCount ?? 0) > 0 || nodes.nodes.length > 0 },
+  { key: 'todo', label: t('创建第一个待办'), done: todos.todos.length > 0 },
+  { key: 'brief', label: t('生成第一份简报'), done: !!briefContent.value },
+  { key: 'ai', label: t('配置 AI 模型（可选，解锁智能打标/周计划）'), done: app.aiReady, optional: true }
+])
+const guideAllDone = computed(() => guideSteps.value.filter((x) => !x.optional).every((x) => x.done))
+const showGuide = ref(app.settings.guide_done !== '1')
+
+function dismissGuide() {
+  showGuide.value = false
+  app.saveSettings({ guide_done: '1' }).catch(() => {
+    localStorage.setItem('mindmate_guide_done', '1')
+  })
+}
+
+watch(
+  guideAllDone,
+  (v) => {
+    if (v && showGuide.value) dismissGuide()
+  },
+  { immediate: true }
+)
+
 async function loadBadges() {
   try {
     badges.value = await api.checkAchievements()
@@ -337,6 +362,26 @@ async function completeTodo(id: number) {
 <template>
   <div class="grid-today">
     <div class="col-stack">
+      <!-- 新手引导（v1.2.0）：四步走完核心路径 -->
+      <section v-if="showGuide && !guideAllDone" class="card guide-card">
+        <div class="row" style="margin-bottom: 6px">
+          <div class="card-title" style="font-size: 15px">{{ $t('👋 三步上手智伴') }}</div>
+          <div class="spacer"></div>
+          <button class="btn btn-sm" @click="dismissGuide">{{ $t('跳过引导') }}</button>
+        </div>
+        <div class="row wrap" style="gap: 8px">
+          <span
+            v-for="st in guideSteps"
+            :key="st.key"
+            class="badge"
+            :class="st.done ? 'ok' : 'info'"
+            :style="st.done ? '' : 'opacity:.75'"
+          >
+            {{ st.done ? '✓' : '○' }} {{ st.label }}
+          </span>
+        </div>
+      </section>
+
       <!-- 我的简报 + 今日热点 -->
       <section class="card">
         <div class="row" style="align-items: flex-start">

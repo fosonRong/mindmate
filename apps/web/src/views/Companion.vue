@@ -1,10 +1,14 @@
 <script setup lang="ts">
 // 智伴 AI：报告（日/周/月/历史）+ 复盘 + 问答
-import { computed, onMounted, ref, nextTick } from 'vue'
+import { computed, onMounted, ref, watch, nextTick } from 'vue'
 import { api, streamApi } from '@/api/client'
 import { useAppStore, todayStr, friendlyDate } from '@/stores/app'
 import type { ChatMessage, Report } from '@/api/types'
 import MarkdownView from '@/components/MarkdownView.vue'
+import PeriodCompareBar from '@/components/PeriodCompareBar.vue'
+import SmartTodoModal from '@/components/SmartTodoModal.vue'
+import type { PeriodCompare, WeeklyPlan } from '@/api/types'
+import { useTodosStore } from '@/stores/todos'
 import { t } from '@/i18n'
 
 const app = useAppStore()
@@ -198,11 +202,55 @@ async function clearChat() {
   app.toast('info', t('已清空对话'))
 }
 
+// ── 报告回顾对比（v1.2.0-①）──
+const todosStore = useTodosStore()
+const compare = ref<PeriodCompare | null>(null)
+
+async function loadCompare() {
+  if (rtype.value === 'monthly') {
+    compare.value = null
+    return
+  }
+  try {
+    compare.value = await api.statsCompare(rtype.value === 'weekly' ? 'weekly' : 'daily', reportDate.value)
+  } catch {
+    compare.value = null
+  }
+}
+
+// ── AI 周计划（v1.2.0-②）──
+const planLoading = ref(false)
+const plan = ref<WeeklyPlan | null>(null)
+const showPlanModal = ref(false)
+const planSource = ref('')
+
+async function loadPlan() {
+  if (planLoading.value) return
+  planLoading.value = true
+  try {
+    plan.value = await api.aiWeeklyPlan()
+    planSource.value = plan.value.isAi ? t('AI 基于上周数据生成') : t('本地规则基于上周数据生成')
+    showPlanModal.value = true
+  } catch (e: any) {
+    app.toast('error', e?.message || t('生成失败，请稍后再试'))
+  } finally {
+    planLoading.value = false
+  }
+}
+
+function onPlanSaved() {
+  showPlanModal.value = false
+  todosStore.load()
+  app.refreshStats()
+}
+
 const SUGGESTIONS = ['本周完成了几件待办？', '我周三记了什么？', '哪类任务最容易拖延？', '今天有哪些逾期待办？']
 
 onMounted(async () => {
-  await Promise.all([loadSaved(), loadHistory(), loadReview(), loadChat()])
+  await Promise.all([loadSaved(), loadHistory(), loadReview(), loadChat(), loadCompare()])
 })
+
+watch([rtype, reportDate], () => loadCompare())
 </script>
 
 <template>
@@ -228,6 +276,9 @@ onMounted(async () => {
         <button v-if="reportLoading" class="btn btn-sm" @click="stop">{{ $t('停止生成') }}</button>
         <button v-else class="btn btn-sm btn-primary" @click="generate">{{ $t('✨ 生成报告') }}</button>
       </div>
+
+      <!-- 报告回顾对比（v1.2.0）：本期 vs 上期趋势 -->
+      <PeriodCompareBar v-if="rtype !== 'monthly'" :compare="compare" :kind="rtype === 'weekly' ? 'weekly' : 'daily'" style="margin-bottom: 12px" />
 
       <div v-if="reportDegraded" class="hint-bar warn" style="margin-bottom: 12px">
         {{ $t('⚙️ 当前为本地模板拼装，配置 AI 模型可获得更优质的{a}', { a: rtypeLabel[rtype] }) }}
@@ -266,6 +317,21 @@ onMounted(async () => {
             <button class="icon-btn" style="width: 24px; height: 24px" @click="api.deleteReport(h.id).then(loadHistory)">×</button>
           </div>
         </div>
+      </div>
+    </section>
+
+    <!-- AI 周计划（v1.2.0）：基于上周生成下周建议，一键转待办 -->
+    <section v-if="tab === 'report'" class="card">
+      <div class="row" style="margin-bottom: 8px">
+        <div class="card-title" style="font-size: 15px">{{ $t('🗓️ 下周计划') }}</div>
+        <span class="card-sub">{{ $t('基于上周记录与完成情况') }}</span>
+        <div class="spacer"></div>
+        <button class="btn btn-sm btn-primary" :disabled="planLoading" @click="loadPlan">
+          {{ planLoading ? $t('生成中…') : $t('✨ 生成下周计划') }}
+        </button>
+      </div>
+      <div class="small muted">
+        {{ $t('根据上周记录条数、待办完成率与逾期情况，给出 3~5 条建议，确认后一键转为下周待办。') }}
       </div>
     </section>
 
@@ -344,4 +410,13 @@ onMounted(async () => {
       </div>
     </section>
   </div>
+    <SmartTodoModal
+      v-if="showPlanModal && plan"
+      :items="plan.items"
+      :is-ai="plan.isAi"
+      :source="planSource || t('下周计划')"
+      tag="周计划"
+      @close="showPlanModal = false"
+      @saved="onPlanSaved"
+    />
 </template>

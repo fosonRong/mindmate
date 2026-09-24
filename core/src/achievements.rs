@@ -303,6 +303,7 @@ mod tests {
                 recur_until: String::new(),
                 recur_interval: 1,
                 recur_skip_rest: false,
+                inbox: false,
             })
             .unwrap();
         let bus = EventBus::new();

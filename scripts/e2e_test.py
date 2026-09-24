@@ -1052,6 +1052,51 @@ check("报告片段包含检索词", all("日报" in (x.get("snippet") or "") fo
 _r, _code = call("GET", "/search?q=")
 check("缺 q 返回业务错误", _r.get("code") != 0, f"code={_r.get('code')}")
 
+# ─────────────────────── 15. 洞察与留存（v1.2.0）───────────────────────
+section("15. 报告对比 + AI 周计划（AI 未配置走本地规则）")
+_r, _code = call("GET", "/stats/compare?kind=daily")
+_d = (_r.get("data") or {})
+check("对比接口返回两期结构",
+      _r.get("code") == 0 and isinstance(_d.get("cur"), dict) and isinstance(_d.get("prev"), dict)
+      and "nodeCount" in _d.get("cur", {}), str(_r.get("message"))[:60])
+check("日报对比的窗口就是今天/昨天",
+      _d.get("curFrom") == date.today().isoformat() and _d.get("prevFrom") == (date.today() - timedelta(days=1)).isoformat(),
+      f"cur={_d.get('curFrom')} prev={_d.get('prevFrom')}")
+_r, _code = call("GET", "/stats/compare?kind=weekly")
+_d = (_r.get("data") or {})
+check("周对比窗口为完整一周", _r.get("code") == 0 and bool(_d.get("curFrom")) and bool(_d.get("curTo")),
+      f"cur={_d.get('curFrom')}~{_d.get('curTo')}")
+_r, _code = call("POST", "/ai/weekly-plan")
+_d = (_r.get("data") or {})
+_items = _d.get("items") or []
+check("周计划接口返回成功且未配 AI 标记 isAi=false",
+      _r.get("code") == 0 and _d.get("isAi") is False, str(_r.get("message"))[:60])
+check("本地规则计划 3~5 条且日期落在下周",
+      3 <= len(_items) <= 5, f"n={len(_items)}")
+
+# ─────────────────────── 16. 收集箱（v1.2.1）───────────────────────
+section("16. 收集箱：未排期待办池与排期闭环")
+_uq16 = f"E2E收集箱{int(time.time())}"
+_r, _ = call("POST", "/todos", {"title": _uq16, "inbox": True})
+_inbox_id = ((_r.get("data") or {}).get("id"))
+check("收集箱条目创建成功（inbox=true）", _r.get("code") == 0 and (_r.get("data") or {}).get("inbox") is True,
+      str(_r.get("message"))[:60])
+_r, _ = call("GET", "/todos")
+check("默认待办视图不含收集箱条目",
+      not any((x.get("title") or "").startswith(_uq16) for x in (_r.get("data") or [])), "")
+_r, _ = call("GET", "/todos?inbox=1")
+_inbox_hits = [x for x in (_r.get("data") or []) if (x.get("title") or "") == _uq16]
+check("inbox=1 专属查询命中收集箱", len(_inbox_hits) == 1, f"n={len(_inbox_hits)}")
+_tomorrow16 = TOMORROW
+_r, _ = call("PATCH", f"/todos/{_inbox_id}", {"dueDate": _tomorrow16, "inbox": False})
+check("拖拽排期=设日期+出箱", _r.get("code") == 0, str(_r.get("message"))[:60])
+_r, _ = call("GET", f"/todos?inbox=1")
+check("排期后离开收集箱", not any(x.get("id") == _inbox_id for x in (_r.get("data") or [])), "")
+_r, _ = call("GET", "/todos")
+check("排期后进入常规待办视图", any(x.get("id") == _inbox_id for x in (_r.get("data") or [])), "")
+_r, _ = call("DELETE", f"/todos/{_inbox_id}")
+check("清理测试条目", _r.get("code") == 0, "")
+
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：")

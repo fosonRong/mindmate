@@ -130,6 +130,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         // 统计
         .route("/api/v1/stats/daily", get(stats_daily))
         .route("/api/v1/stats/period", get(stats_period))
+        .route("/api/v1/stats/compare", get(stats_compare))
         .route("/api/v1/stats/monthly", get(stats_monthly))
         // 待办
         .route("/api/v1/todos", post(create_todo).get(list_todos))
@@ -165,6 +166,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/replan", post(ai_replan))
         .route("/api/v1/ai/tag", post(ai_tag))
         .route("/api/v1/ai/extract-todos", post(ai_extract_todos))
+        .route("/api/v1/ai/weekly-plan", post(ai_weekly_plan))
         // 报告
         .route("/api/v1/reports", get(list_reports))
         .route("/api/v1/reports/{id}", delete(delete_report))
@@ -499,6 +501,65 @@ async fn stats_period(
     Ok(ApiResp::ok(ctx.db.period_stats(&from, &to)?))
 }
 
+// ───────────────── 报告回顾对比（v1.2.0-①）：本期 vs 上期 ─────────────────
+
+/// 对比简报（两期共有的关键数字）
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PeriodBrief {
+    node_count: i64,
+    done_todos: i64,
+    total_todos: i64,
+    days_with_records: i64,
+}
+
+fn brief_of(p: &PeriodStats) -> PeriodBrief {
+    PeriodBrief {
+        node_count: p.node_count,
+        done_todos: p.done_todos,
+        total_todos: p.total_todos,
+        days_with_records: p.days_with_records,
+    }
+}
+
+/// 报告回顾对比：kind=daily（默认，对比昨天）/weekly（对比上周），date 缺省今天。
+/// 前端据此渲染涨跌趋势条（报告动辄几千字，先给一个 5 秒能看懂的「比上期怎么样」）。
+async fn stats_compare(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let kind = q.get("kind").map(|s| s.as_str()).unwrap_or("daily");
+    let date = chrono::NaiveDate::parse_from_str(
+        q.get("date").map(|s| s.as_str()).filter(|s| !s.is_empty()).unwrap_or(&crate::db::today_string()),
+        "%Y-%m-%d",
+    )
+    .unwrap_or_else(|_| chrono::Local::now().date_naive());
+    let (cur_from, cur_to, prev_from, prev_to) = if kind == "weekly" {
+        let mon = date - chrono::Duration::days(date.weekday().num_days_from_monday() as i64);
+        (
+            mon,
+            mon + chrono::Duration::days(6),
+            mon - chrono::Duration::days(7),
+            mon - chrono::Duration::days(1),
+        )
+    } else {
+        let prev = date - chrono::Duration::days(1);
+        (date, date, prev, prev)
+    };
+    let fmt = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
+    let cur = ctx.db.period_stats(&fmt(cur_from), &fmt(cur_to))?;
+    let prev = ctx.db.period_stats(&fmt(prev_from), &fmt(prev_to))?;
+    Ok(ApiResp::ok(json!({
+        "kind": kind,
+        "curFrom": fmt(cur_from), "curTo": fmt(cur_to),
+        "prevFrom": fmt(prev_from), "prevTo": fmt(prev_to),
+        "cur": brief_of(&cur),
+        "prev": brief_of(&prev),
+    })))
+}
+
 /// 月度小结（FR-6.4）
 async fn stats_monthly(
     State(ctx): State<Arc<AppContext>>,
@@ -554,6 +615,10 @@ async fn list_todos(
 ) -> ApiResult<Vec<Todo>> {
     ensure_auth(&ctx, &headers)?;
     ctx.db.refresh_overdue().ok();
+    // inbox=1：只返回收集箱（未排期池）；默认视图不含收集箱条目
+    if q.get("inbox").map(|v| v == "1").unwrap_or(false) {
+        return Ok(ApiResp::ok(ctx.db.list_inbox_todos()?));
+    }
     Ok(ApiResp::ok(ctx.db.list_todos(
         q.get("category").map(|s| s.as_str()),
         q.get("status").map(|s| s.as_str()),
@@ -851,6 +916,140 @@ async fn ai_extract_todos(
     }
     let todos = crate::todo_extract::extract_todos_local(&content, today);
     Ok(ApiResp::ok(json!({ "isAi": false, "todos": todos })))
+}
+
+// ───────────────── AI 周计划（v1.2.0-②）：基于上周生成下周建议 ─────────────────
+
+/// 上周一周的画像（喂给 AI / 本地规则共用的素材）
+struct WeekPicture {
+    cur_from: String,
+    cur_to: String,
+    next_mon: chrono::NaiveDate,
+    node_count: i64,
+    done_todos: i64,
+    total_todos: i64,
+    overdue: i64,
+    top_tags: Vec<String>,
+}
+
+fn week_picture(ctx: &AppContext) -> Result<WeekPicture, String> {
+    let today = chrono::NaiveDate::parse_from_str(&crate::db::today_string(), "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::Local::now().date_naive());
+    let mon = today - chrono::Duration::days(today.weekday().num_days_from_monday() as i64);
+    let last_mon = mon - chrono::Duration::days(7);
+    let fmt = |d: chrono::NaiveDate| d.format("%Y-%m-%d").to_string();
+    let stats = ctx
+        .db
+        .period_stats(&fmt(last_mon), &fmt(last_mon + chrono::Duration::days(6)))
+        .map_err(|e| e.to_string())?;
+    // 上周记录里的高频标签（前 3）
+    let nodes = ctx
+        .db
+        .list_nodes_range(&fmt(last_mon), &fmt(last_mon + chrono::Duration::days(6)))
+        .map_err(|e| e.to_string())?;
+    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+    for n in &nodes {
+        for t in &n.tags {
+            *counts.entry(t.clone()).or_insert(0) += 1;
+        }
+    }
+    let mut top_tags: Vec<(String, i64)> = counts.into_iter().collect();
+    top_tags.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+    top_tags.truncate(3);
+    let top_tags: Vec<String> = top_tags.into_iter().map(|(name, _)| name).collect();
+    let overdue = ctx.db.list_todos(None, None, None, None, None).map_err(|e| e.to_string())?;
+    let overdue_count = overdue.iter().filter(|t| t.overdue).count() as i64;
+    Ok(WeekPicture {
+        cur_from: fmt(last_mon),
+        cur_to: fmt(last_mon + chrono::Duration::days(6)),
+        next_mon: mon,
+        node_count: stats.node_count,
+        done_todos: stats.done_todos,
+        total_todos: stats.total_todos,
+        overdue: overdue_count,
+        top_tags,
+    })
+}
+
+/// 本地规则周计划（AI 未配置/失败兜底）：清逾期 → 承接高频标签 → 常规规划/复盘
+fn local_week_plan(pic: &WeekPicture) -> Vec<crate::todo_extract::ExtractedTodo> {
+    use crate::todo_extract::ExtractedTodo;
+    let d = |offset: i64| (pic.next_mon + chrono::Duration::days(offset)).format("%Y-%m-%d").to_string();
+    let mut out = Vec::new();
+    if pic.overdue > 0 {
+        out.push(ExtractedTodo {
+            title: format!("清理 {} 条逾期待办", pic.overdue),
+            date: d(0),
+            time: None,
+        });
+    }
+    out.push(ExtractedTodo {
+        title: "规划本周重点（不超过 3 件）".into(),
+        date: d(0),
+        time: None,
+    });
+    if !pic.top_tags.is_empty() {
+        let tag = &pic.top_tags[0];
+        out.push(ExtractedTodo {
+            title: format!("安排 2 小时「{tag}」专项时间"),
+            date: d(2),
+            time: None,
+        });
+    }
+    if pic.total_todos > 0 && pic.done_todos * 10 / pic.total_todos >= 8 {
+        out.push(ExtractedTodo {
+            title: format!("延续上周好节奏：记录 {} 条 / 完成 {}/{}，本周保持", pic.node_count, pic.done_todos, pic.total_todos),
+            date: d(1),
+            time: None,
+        });
+    }
+    out.push(ExtractedTodo {
+        title: "写本周复盘（完成率与拖延点）".into(),
+        date: d(6),
+        time: None,
+    });
+    out.truncate(5);
+    out
+}
+
+/// AI 周计划：基于上周记录/完成情况生成下周 3~5 条建议（标题+日期）。
+/// AI 配置了走模型（parse_todo_array 清洗），未配置/失败/格式跑偏一律本地规则兜底。
+async fn ai_weekly_plan(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let pic = week_picture(&ctx).map_err(ApiError::internal)?;
+
+    let cfg = ai::load_config(&ctx.db)?;
+    if cfg.has_key || cfg.provider == "ollama" {
+        let tags_text = if pic.top_tags.is_empty() {
+            "（无）".to_string()
+        } else {
+            pic.top_tags.join("、")
+        };
+        let prompt = format!(
+            "用户上周（{} ~ {}）记录了 {} 条、完成待办 {}/{}，当前逾期 {} 条，高频主题：{}。             请为下周（{} 开始）生成 3～5 条可行的一周计划建议，每条给简短标题和具体日期。             只输出 JSON 数组：[{{\"title\":\"…\",\"date\":\"YYYY-MM-DD\",\"time\":null}}]，不要解释。             今天是 {}。",
+            pic.cur_from, pic.cur_to, pic.node_count, pic.done_todos, pic.total_todos, pic.overdue,
+            tags_text,
+            pic.next_mon.format("%Y-%m-%d"),
+            crate::db::today_string()
+        );
+        let key = crate::secrets::load_api_key()?;
+        if let Ok(text) = ai::chat_once(&cfg, vec![ChatMsg::user(prompt)], key).await {
+            let items = crate::todo_extract::parse_todo_array(&text);
+            if !items.is_empty() {
+                return Ok(ApiResp::ok(json!({
+                    "isAi": true, "weekStart": pic.next_mon.format("%Y-%m-%d").to_string(), "items": items
+                })));
+            }
+        }
+    }
+    Ok(ApiResp::ok(json!({
+        "isAi": false,
+        "weekStart": pic.next_mon.format("%Y-%m-%d").to_string(),
+        "items": local_week_plan(&pic)
+    })))
 }
 
 /// 从模型回复里抠出 JSON 字符串数组（容忍 ```json 包裹与前后废话），
@@ -2063,6 +2262,7 @@ async fn data_import(
                 recur_until: String::new(),
                 recur_interval: 1,
                 recur_skip_rest: false,
+                inbox: false,
                 tags: t["tags"]
                     .as_array()
                     .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
@@ -2212,6 +2412,56 @@ async fn stream_events(
     Ok(boxed_sse(stream))
 }
 
+
+#[cfg(test)]
+mod weekly_plan_tests {
+    use super::{local_week_plan, WeekPicture};
+
+    fn pic(node: i64, done: i64, total: i64, overdue: i64, tags: &[&str]) -> WeekPicture {
+        WeekPicture {
+            cur_from: "2026-09-07".into(),
+            cur_to: "2026-09-13".into(),
+            next_mon: chrono::NaiveDate::from_ymd_opt(2026, 9, 14).unwrap(),
+            node_count: node,
+            done_todos: done,
+            total_todos: total,
+            overdue,
+            top_tags: tags.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn 本地计划_基本盘_规划与复盘必有() {
+        let items = local_week_plan(&pic(10, 3, 8, 0, &[]));
+        assert!(items.iter().any(|x| x.title.contains("规划本周重点")));
+        assert!(items.iter().any(|x| x.title.contains("复盘")));
+        // 日期都在下周一之后的一周内
+        for x in &items {
+            assert!(x.date.as_str() >= "2026-09-14" && x.date.as_str() <= "2026-09-20", "date={}", x.date);
+        }
+    }
+
+    #[test]
+    fn 本地计划_有逾期先清理() {
+        let items = local_week_plan(&pic(0, 0, 0, 5, &[]));
+        assert!(items[0].title.contains("清理 5 条逾期"), "第一条应为清理逾期: {}", items[0].title);
+        assert_eq!(items[0].date, "2026-09-14", "清理逾期排在下周一");
+    }
+
+    #[test]
+    fn 本地计划_高完成度给延续建议_高频标签给专项() {
+        let items = local_week_plan(&pic(30, 9, 10, 0, &["工作", "学习"]));
+        assert!(items.iter().any(|x| x.title.contains("延续上周好节奏")), "完成率≥80% 给延续建议");
+        assert!(items.iter().any(|x| x.title.contains("工作")), "高频标签给专项时间");
+        assert!(items.len() <= 5);
+    }
+
+    #[test]
+    fn 本地计划_最多五条() {
+        let items = local_week_plan(&pic(30, 9, 10, 7, &["工作"]));
+        assert!(items.len() <= 5);
+    }
+}
 
 #[cfg(test)]
 mod ai_tag_tests {

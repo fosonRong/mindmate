@@ -7,7 +7,10 @@ import { useTodosStore } from '@/stores/todos'
 import { useAppStore } from '@/stores/app'
 import { t } from '@/i18n'
 
-const props = defineProps<{ items: ExtractedTodo[]; isAi: boolean; source: string }>()
+const props = withDefaults(
+  defineProps<{ items: ExtractedTodo[]; isAi: boolean; source: string; tag?: string }>(),
+  { tag: '' }
+)
 const emit = defineEmits<{ (e: 'close'): void; (e: 'saved', count: number): void }>()
 
 const todos = useTodosStore()
@@ -42,7 +45,7 @@ async function save() {
         dueDate: r.date,
         dueTime: r.time || null,
         priority: '中',
-        tags: [t('智能速记')]
+        tags: [props.tag || t('智能速记')]
       })
       ok++
     }

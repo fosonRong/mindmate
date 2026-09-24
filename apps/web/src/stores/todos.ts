@@ -14,6 +14,8 @@ export interface TodoFilter {
 
 export const useTodosStore = defineStore('todos', {
   state: () => ({
+    /** 收集箱（未排期待办池，v1.2.1） */
+    inbox: [] as Todo[],
     todos: [] as Todo[],
     loading: false,
     filter: { category: '全部', status: '全部', priority: '全部', tag: '', q: '' } as TodoFilter,
@@ -102,9 +104,24 @@ export const useTodosStore = defineStore('todos', {
       return todo
     },
 
-    /** 改期（拖拽/按钮） */
+    /** 改期（拖拽/按钮）；从收集箱拖出即视为排期（inbox=false） */
     async reschedule(id: number, dueDate: string) {
-      await this.update(id, { dueDate })
+      const t = this.todos.find((x) => x.id === id) || this.inbox.find((x) => x.id === id)
+      await this.update(id, { dueDate, inbox: t?.inbox ? false : undefined })
+      this.inbox = this.inbox.filter((x) => x.id !== id)
+    },
+
+    /** 拉取收集箱（未排期池） */
+    async loadInbox() {
+      this.inbox = await api.todos({ inbox: '1' })
+      return this.inbox
+    },
+
+    /** 收集箱快速收集：只记标题 */
+    async collect(title: string) {
+      const todo = await api.createTodo({ title, inbox: true } as any)
+      this.inbox.unshift(todo)
+      return todo
     },
 
     async loadSchedule(date?: string) {
@@ -117,6 +134,10 @@ export const useTodosStore = defineStore('todos', {
       const id = ev.payload?.id
       if (!id) return
       if (ev.kind === 'todo.created') {
+        if (ev.payload?.inbox) {
+          this.inbox = [ev.payload, ...this.inbox.filter((t) => t.id !== id)]
+          return
+        }
         if (!this.todos.some((t) => t.id === id)) this.todos.unshift(ev.payload)
       } else if (ev.kind === 'todo.updated' || ev.kind === 'todo.completed') {
         const i = this.todos.findIndex((t) => t.id === id)

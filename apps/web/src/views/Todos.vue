@@ -62,7 +62,7 @@ const todoTitles = computed(() => {
 })
 
 async function loadAll() {
-  await Promise.all([todos.load(), todos.loadSchedule(todos.selectedDate)])
+  await Promise.all([todos.load(), todos.loadSchedule(todos.selectedDate), todos.loadInbox()])
   const from = `${todos.selectedDate.slice(0, 8)}01`
   const end = new Date(todos.selectedDate.replace(/-/g, '/'))
   end.setMonth(end.getMonth() + 1)
@@ -104,6 +104,27 @@ async function onDropTodo(payload: { id: number; date: string }) {
   await todos.reschedule(payload.id, payload.date)
   app.toast('success', t('已改期至 {a}', { a: payload.date }))
   await loadAll()
+}
+
+/** 收集箱快速收集（v1.2.1）：只记标题，不打日期 */
+const inboxDraft = ref('')
+
+async function collectInbox() {
+  const title = inboxDraft.value.trim()
+  if (!title) return
+  try {
+    await todos.collect(title)
+    inboxDraft.value = ''
+    app.toast('success', t('已收进收集箱'))
+  } catch (e: any) {
+    app.toast('error', e?.message || t('添加失败'))
+  }
+}
+
+/** 收集箱条目拖到周视图日卡排期（dragstart 写入传输数据） */
+function onInboxDragStart(e: DragEvent, id: number) {
+  e.dataTransfer?.setData('text/mindmate-todo', String(id))
+  e.dataTransfer?.setData('text/plain', String(id))
 }
 
 function newTodo() {
@@ -176,6 +197,40 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
     <div class="todos-split">
       <!-- 左：待办列表（按分类分组） -->
       <div class="col-stack">
+        <!-- 收集箱（v1.2.1）：未排期待办池，条目可拖到周视图日卡排期 -->
+        <section class="card inbox-card">
+          <div class="row" style="margin-bottom: 6px">
+            <div class="card-title" style="font-size: 15px">{{ $t('📥 收集箱') }}</div>
+            <span class="card-sub">{{ $t('{a} 条待排期', { a: todos.inbox.length }) }}</span>
+            <div class="spacer"></div>
+          </div>
+          <div class="row" style="gap: 8px">
+            <input
+              v-model="inboxDraft"
+              class="input"
+              style="flex: 1; height: 32px"
+              maxlength="100"
+              :placeholder="$t('想到什么记什么，改天再排期，回车收集')"
+              @keydown.enter.prevent="collectInbox"
+            />
+            <button class="btn btn-sm" :disabled="!inboxDraft.trim()" @click="collectInbox">{{ $t('收集') }}</button>
+          </div>
+          <div v-if="todos.inbox.length" class="inbox-list">
+            <div
+              v-for="t in todos.inbox"
+              :key="t.id"
+              class="inbox-item"
+              draggable="true"
+              :title="$t('拖到周视图的某一天即可排期')"
+              @dragstart="onInboxDragStart($event, t.id)"
+            >
+              <span class="small">⠿ {{ t.title }}</span>
+            </div>
+          </div>
+          <div v-else class="small muted" style="margin-top: 6px">
+            {{ $t('收集箱是空的——灵感来了先记下，排期交给以后的我。') }}
+          </div>
+        </section>
         <section v-if="todos.todos.length === 0" class="card">
           <div class="empty">
             <div class="ill">✨</div>

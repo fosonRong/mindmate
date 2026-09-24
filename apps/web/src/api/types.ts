@@ -28,6 +28,31 @@ export interface SearchResults {
   reports: ReportHit[]
 }
 
+/** 报告回顾对比（v1.2.0）：本期 vs 上期关键数字 */
+export interface PeriodBrief {
+  nodeCount: number
+  doneTodos: number
+  totalTodos: number
+  daysWithRecords: number
+}
+
+export interface PeriodCompare {
+  kind: 'daily' | 'weekly' | string
+  curFrom: string
+  curTo: string
+  prevFrom: string
+  prevTo: string
+  cur: PeriodBrief
+  prev: PeriodBrief
+}
+
+/** AI 周计划（v1.2.0） */
+export interface WeeklyPlan {
+  isAi: boolean
+  weekStart: string
+  items: ExtractedTodo[]
+}
+
 /** 智能速记拆出的待办（v1.1.2） */
 export interface ExtractedTodo {
   title: string
@@ -71,6 +96,8 @@ export interface Todo {
   recurSkipRest: boolean
   /** 本实例由哪个根实例生成（用户手建的是根：null） */
   recurSourceId: number | null
+  /** 收集箱（未排期）：不进日程/统计，拖到周视图某天即排期 */
+  inbox: boolean
   overdue: boolean
 }
 

@@ -20,7 +20,7 @@ pub struct Db {
 }
 
 /// 当前程序支持的库结构版本。新增表/列时：**追加**一条迁移并把这个数字 +1。
-pub const SCHEMA_VERSION: i64 = 3;
+pub const SCHEMA_VERSION: i64 = 4;
 
 /// V2：循环待办（每周/每月自动生成下一期）
 /// - recur_type      ''|'weekly'|'monthly'，''=普通待办
@@ -43,9 +43,13 @@ ALTER TABLE todos ADD COLUMN recur_interval INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE todos ADD COLUMN recur_skip_rest INTEGER NOT NULL DEFAULT 0;
 "#;
 
+/// V4（v1.2.1）：收集箱——未排期待办池。inbox=1 的待办不出现在日程/今日/统计里，
+/// 拖到周视图某一天时置 0 并写 due_date（即「排期」）。
+const SCHEMA_V4: &str = "ALTER TABLE todos ADD COLUMN inbox INTEGER NOT NULL DEFAULT 0;";
+
 /// 版本化迁移链：每项为 (目标版本, 该版本的 DDL)。逐级执行，幂等。
 fn migrations() -> Vec<(i64, &'static str)> {
-    vec![(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3)]
+    vec![(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3), (4, SCHEMA_V4)]
 }
 
 impl Db {
@@ -127,7 +131,7 @@ impl Db {
 
     /// 首次启动写入默认设置
     pub fn seed_defaults(&self) -> Result<()> {
-        let defaults: [(&str, &str); 32] = [
+        let defaults: [(&str, &str); 35] = [
             ("daily_goal", "4"),
             ("daily_goal_enabled", "1"),
             ("remind_freq_minutes", "60"),
@@ -164,6 +168,10 @@ impl Db {
             ("custom_tags", "[]"),
             // AI 自动打标（v1.1.1）：速记输入停顿后自动建议标签；0=只在点「AI 打标」时建议
             ("ai_autotag", "1"),
+            // 报告定时推送（v1.2.1）：到点把日报/周报推到已启用渠道
+            ("report_push_enabled", "0"),
+            ("report_push_time", "21:00"),
+            ("report_push_types", "daily"),
         ];
         let conn = self.lock();
         let now = models::now_string();
@@ -460,6 +468,7 @@ mod tests {
             recur_until: String::new(),
             recur_interval: 1,
             recur_skip_rest: false,
+            inbox: false,
         })
         .unwrap();
 

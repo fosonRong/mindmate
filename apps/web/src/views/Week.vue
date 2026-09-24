@@ -3,6 +3,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 import { useAppStore, weekStart, addDays, fmtDate, weekdayLabel, parseDate } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
+import { useTodosStore } from '@/stores/todos'
 import { api } from '@/api/client'
 import type { PeriodStats } from '@/api/types'
 import ProgressPair from '@/components/ProgressPair.vue'
@@ -11,6 +12,7 @@ import { t } from '@/i18n'
 
 const app = useAppStore()
 const nodes = useNodesStore()
+const todos = useTodosStore()
 
 const anchor = ref(fmtDate(new Date()))
 const stats = ref<PeriodStats | null>(null)
@@ -57,6 +59,7 @@ function isRedDay(date: string) {
 // 字体就绪后再量一次，保证自愈。
 const expanded = ref<Record<string, boolean>>({})
 const hiddenCount = ref<Record<string, number>>({})
+const dragOverDate = ref('')
 const bodyEls: Record<string, HTMLElement | null> = {}
 const bodyResize: Record<string, ResizeObserver> = {}
 let raf1 = 0
@@ -150,7 +153,33 @@ function recordLabel() {
   return t('{a}/{b} 条', { a: stats.value.nodeCount, b: goal })
 }
 
+function onDragStart(e: DragEvent, id: number) {
+  e.dataTransfer?.setData('text/mindmate-todo', String(id))
+  e.dataTransfer?.setData('text/plain', String(id))
+}
+
+/** 收集箱拖拽排期（v1.2.1）：日卡是投放目标 */
+function onDragOver(e: DragEvent) {
+  e.preventDefault()
+}
+
+async function onDropTodo(date: string, e: DragEvent) {
+  e.preventDefault()
+  const raw = e.dataTransfer?.getData('text/mindmate-todo') || e.dataTransfer?.getData('text/plain')
+  const id = Number(raw)
+  if (!id) return
+  try {
+    await todos.reschedule(id, date)
+    app.toast('success', t('已排期到 {a}', { a: date }))
+    await Promise.all([todos.loadInbox(), load()])
+    app.refreshStats()
+  } catch (err: any) {
+    app.toast('error', err?.message || t('排期失败，请稍后再试'))
+  }
+}
+
 onMounted(async () => {
+  todos.loadInbox().catch(() => {})
   await load()
   // 逐格观察：格子尺寸随窗口/网格变化时重测（观察本身也会触发一次初始回调）
   if (typeof ResizeObserver !== 'undefined') {
@@ -199,14 +228,39 @@ onUnmounted(() => {
       </div>
     </section>
 
+    <!-- 收集箱侧栏（v1.2.1）：未排期待办，拖到下面任意日卡排期 -->
+    <section v-if="todos.inbox.length" class="card inbox-rail">
+      <div class="row" style="margin-bottom: 4px">
+        <div class="card-title" style="font-size: 14px">{{ $t('📥 收集箱') }}</div>
+        <span class="card-sub">{{ $t('拖到某一天即可排期') }}</span>
+      </div>
+      <div class="row wrap" style="gap: 6px">
+        <div
+          v-for="t in todos.inbox"
+          :key="t.id"
+          class="inbox-item"
+          style="max-width: 260px"
+          draggable="true"
+          :title="t.title"
+          @dragstart="onDragStart($event, t.id)"
+        >
+          <span class="small">⠿ {{ t.title.length > 24 ? t.title.slice(0, 24) + '…' : t.title }}</span>
+        </div>
+      </div>
+    </section>
+
     <!-- 7 列：卡片宽高等额自适应，内容超出隐藏（展开态改为卡内滚动，不撑大布局） -->
     <div class="week-grid">
       <div
         v-for="d in days"
         :key="d.date"
         class="card week-card"
-        :class="{ 'today-card': d.isToday, 'red-day': isRedDay(d.date) }"
+        :class="{ 'today-card': d.isToday, 'red-day': isRedDay(d.date), 'drop-target': dragOverDate === d.date }"
         :style="d.isFuture ? 'opacity:.55' : d.isToday ? 'border-color:var(--primary)' : ''"
+        @dragover="onDragOver"
+        @dragenter="dragOverDate = d.date"
+        @dragleave="dragOverDate = ''"
+        @drop="onDropTodo(d.date, $event)"
       >
         <div class="row" style="justify-content: space-between; margin-bottom: 2px">
           <b style="font-size: 14px">{{ d.label }}</b>

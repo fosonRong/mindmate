@@ -60,6 +60,42 @@ function openPalette() {
   window.dispatchEvent(new CustomEvent('mindmate:open-palette'))
 }
 
+// ── 专注模式（v1.2.1）：静默全部提醒，到期自动恢复 ──
+const showFocusMenu = ref(false)
+const nowTick = ref(Date.now())
+
+const focusUntilTs = computed(() => {
+  const raw = app.settings.focus_until || ''
+  if (!raw) return 0
+  return new Date(raw.replace(' ', 'T')).getTime() || 0
+})
+const focusActive = computed(() => focusUntilTs.value > nowTick.value)
+const focusRemain = computed(() => {
+  const mins = Math.max(1, Math.round((focusUntilTs.value - nowTick.value) / 60000))
+  if (mins < 60) return t('{a} 分钟', { a: mins })
+  return t('{a} 小时 {b} 分', { a: Math.floor(mins / 60), b: mins % 60 })
+})
+
+async function setFocus(minutes: number) {
+  const until = new Date(Date.now() + minutes * 60000)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const ts = `${until.getFullYear()}-${pad(until.getMonth() + 1)}-${pad(until.getDate())} ${pad(until.getHours())}:${pad(until.getMinutes())}:00`
+  await app.saveSettings({ focus_until: ts })
+  showFocusMenu.value = false
+  app.toast('success', t('已进入专注 {a} 小时', { a: (minutes / 60).toString() }).replace('{a} 小时', minutes < 60 ? `${minutes} 分钟` : `${minutes / 60} 小时`))
+}
+
+async function cancelFocus() {
+  await app.saveSettings({ focus_until: '' })
+  showFocusMenu.value = false
+  app.toast('info', t('已结束专注'))
+}
+
+let focusTimer: ReturnType<typeof setInterval> | null = null
+onMounted(() => {
+  focusTimer = setInterval(() => (nowTick.value = Date.now()), 30000)
+})
+
 async function openQuickEntry() {
   // 桌面端：打开独立速记窗口；浏览器端：聚焦今日页速记框
   if (isDesktop()) {
@@ -107,6 +143,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (focusTimer) { clearInterval(focusTimer); focusTimer = null }
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('mindmate:event', onGlobalEvent)
 })
@@ -156,6 +193,19 @@ onUnmounted(() => {
         <button class="btn btn-sm" :title="$t('全局搜索与命令（Ctrl+K）')" @click="openPalette">
           🔍 <span class="muted mono" style="font-size: 11px">Ctrl+K</span>
         </button>
+        <!-- 专注模式（v1.2.1）：静默全部提醒 -->
+        <div style="position: relative">
+          <button class="btn btn-sm" :class="{ 'focus-active': focusActive }" @click="showFocusMenu = !showFocusMenu">
+            🎯 {{ focusActive ? $t('专注中') : $t('专注') }}
+          </button>
+          <div v-if="showFocusMenu" class="focus-menu">
+            <button @click="setFocus(30)">{{ $t('30 分钟') }}</button>
+            <button @click="setFocus(60)">{{ $t('1 小时') }}</button>
+            <button @click="setFocus(120)">{{ $t('2 小时') }}</button>
+            <button @click="setFocus(240)">{{ $t('4 小时') }}</button>
+            <button v-if="focusActive" class="focus-cancel" @click="cancelFocus">{{ $t('结束专注') }}</button>
+          </div>
+        </div>
         <router-link to="/settings" class="icon-btn" :title="$t('设置')"><Icon name="gear" :size="18" /></router-link>
       </header>
 
@@ -174,6 +224,9 @@ onUnmounted(() => {
         <span v-if="app.stats">{{ $t('今日 {a} 条 · 待办 {b}/{c}', { a: app.stats.nodeCount, b: app.stats.todayDoneTodos, c: app.stats.todayTodos }) }}</span>
         <div class="spacer"></div>
         <span v-if="app.stats && app.stats.streakDays > 0">{{ $t('🔥 连续记录 {a} 天', { a: app.stats.streakDays }) }}</span>
+        <span v-if="focusActive" class="badge ok" style="cursor: pointer" :title="$t('点击结束专注')" @click="cancelFocus">
+          🎯 {{ $t('专注中 · 剩 {a}', { a: focusRemain }) }}
+        </span>
         <span v-if="update.currentVersion">v{{ update.currentVersion }}</span>
       </footer>
     </div>
