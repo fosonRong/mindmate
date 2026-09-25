@@ -11,8 +11,9 @@ import TodoItem from '@/components/TodoItem.vue'
 import ProgressPair from '@/components/ProgressPair.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import TodoEditModal from '@/components/TodoEditModal.vue'
+import TodoDetailModal from '@/components/TodoDetailModal.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
-import type { AchievementDef, NewsItem } from '@/api/types'
+import type { AchievementDef, NewsItem, Todo } from '@/api/types'
 import { isDesktop } from '@/lib/desktop'
 import { t } from '@/i18n'
 
@@ -352,6 +353,30 @@ onUnmounted(() => {
   abortBrief?.()
 })
 
+// ── 待办详情（v1.2.2）：点行看详情 ──
+const detailTodo = ref<Todo | null>(null)
+const editingTodo = ref<Todo | null>(null)
+const showEditModal = ref(false)
+
+function openDetail(t: Todo) {
+  detailTodo.value = t
+}
+
+async function onDetailToggle(id: number) {
+  await todos.toggle(id)
+  detailTodo.value = null
+  await todos.load()
+  app.refreshStats()
+}
+
+async function onDetailPin(todo: Todo) {
+  const pinned = todo.sortOrder < 0
+  await todos.update(todo.id, { sortOrder: pinned ? 0 : -1 })
+  detailTodo.value = null
+  await todos.load()
+  app.toast('success', pinned ? t('已取消置顶') : t('已置顶，将显示在最前'))
+}
+
 // 一键把今日待办完成
 async function completeTodo(id: number) {
   await todos.toggle(id)
@@ -549,7 +574,7 @@ async function completeTodo(id: number) {
           <div class="t">{{ $t('此刻一身轻') }}</div>
           <div class="d">{{ $t('没有待办，或添加一件') }}</div>
         </div>
-        <TodoItem v-for="t in todayTodoList" :key="t.id" :todo="t" />
+        <TodoItem v-for="t in todayTodoList" :key="t.id" :todo="t" @detail="openDetail" />
         <button class="btn" style="width: 100%; justify-content: center; margin-top: 8px" @click="showTodoModal = true">
           {{ $t('＋ 添加今日待办') }}
         </button>
@@ -559,7 +584,7 @@ async function completeTodo(id: number) {
       <section v-if="todos.overdue.length" class="card">
         <div class="card-title" style="font-size: 15px; color: var(--danger)">{{ $t('⚠️ 已逾期 {a}', { a: todos.overdue.length }) }}</div>
         <div style="margin-top: 8px">
-          <TodoItem v-for="t in todos.overdue.slice(0, 5)" :key="t.id" :todo="t" />
+          <TodoItem v-for="t in todos.overdue.slice(0, 5)" :key="t.id" :todo="t" @detail="openDetail" />
         </div>
       </section>
 
@@ -592,4 +617,20 @@ async function completeTodo(id: number) {
       @saved="showTodoModal = false; presetTodo = null; todos.load(); app.refreshStats()"
     />
   </div>
+    <TodoDetailModal
+      v-if="detailTodo"
+      :todo="detailTodo"
+      @close="detailTodo = null"
+      @edit="(t) => { detailTodo = null; editingTodo = t; showEditModal = true }"
+      @pin="onDetailPin"
+      @toggle="onDetailToggle"
+    />
+
+    <!-- 编辑既有待办（v1.2.2：详情页跳转编辑） -->
+    <TodoEditModal
+      v-if="showEditModal && editingTodo"
+      :todo="editingTodo"
+      @close="showEditModal = false; editingTodo = null"
+      @saved="showEditModal = false; editingTodo = null; todos.load(); app.refreshStats()"
+    />
 </template>

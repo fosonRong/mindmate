@@ -196,6 +196,8 @@ export interface PushConfig {
   telegramChatId: string
   hasTelegramToken: boolean
   wecomWebhook: string
+  dingtalkWebhook: string
+  dingtalkSecret: string
 }
 
 export interface PushResult {

@@ -122,13 +122,39 @@ function changeLocale(mode: LocaleMode) {
 const push = ref<PushConfig>({
   channels: [], smtpHost: '', smtpPort: 587, smtpUser: '', emailFrom: '', emailTo: '',
   smtpSecurity: 'starttls', hasSmtpPassword: false, telegramChatId: '',
-  hasTelegramToken: false, wecomWebhook: ''
+  hasTelegramToken: false, wecomWebhook: '', dingtalkWebhook: '', dingtalkSecret: ''
 })
 const smtpPasswordInput = ref('')
 const telegramTokenInput = ref('')
 const pushSaving = ref(false)
 const pushTesting = ref<string | null>(null)
 const pushTestResult = ref<{ channel: string; ok: boolean; detail: string } | null>(null)
+
+// ── 推送渠道指定（v1.2.3）：提醒 / 报告各自选择走哪些渠道，空=全部启用渠道 ──
+const allChannelIds = ['wecom', 'email', 'telegram', 'dingtalk']
+const CHANNEL_NAME: Record<string, string> = {
+  wecom: '企业微信',
+  email: '邮件',
+  telegram: 'Telegram',
+  dingtalk: '钉钉'
+}
+const todoPushChannels = ref<string[]>(safeParse(app.settings.push_route_todo))
+const reportPushChannels = ref<string[]>(safeParse(app.settings.push_route_report))
+
+function safeParse(raw?: string): string[] {
+  try {
+    const arr = JSON.parse(raw || '[]')
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
+}
+
+async function savePushRoute(kind: 'todo' | 'report') {
+  const value = (kind === 'todo' ? todoPushChannels : reportPushChannels).value
+  await app.saveSettings({ [`push_route_${kind}`]: value.length ? JSON.stringify(value) : 'all' })
+  app.toast('success', t('推送渠道已保存'))
+}
 
 // ── 定时推送报告（v1.2.1） ──
 const reportPushEnabled = ref(app.settings.report_push_enabled === '1')
@@ -178,6 +204,10 @@ async function savePush() {
       app.toast('warning', t('启用企业微信需要 Webhook 地址'))
       return
     }
+    if (channelOn('dingtalk') && !push.value.dingtalkWebhook) {
+      app.toast('warning', t('启用钉钉需要 Webhook 地址'))
+      return
+    }
     push.value = await api.savePushConfig(push.value, smtpPasswordInput.value, telegramTokenInput.value)
     smtpPasswordInput.value = ''
     telegramTokenInput.value = ''
@@ -211,7 +241,8 @@ async function testPush(channel: string) {
 const CHANNEL_META: { id: string; name: string; desc: string; icon: string }[] = [
   { id: 'wecom', name: '企业微信机器人', desc: '群机器人 Webhook，最省事（推荐）', icon: '💬' },
   { id: 'email', name: '邮件', desc: 'SMTP 发送（支持 SSL / STARTTLS）', icon: '📧' },
-  { id: 'telegram', name: 'Telegram', desc: 'Bot API 推送到指定会话', icon: '✈️' }
+  { id: 'telegram', name: 'Telegram', desc: 'Bot API 推送到指定会话', icon: '✈️' },
+  { id: 'dingtalk', name: '钉钉机器人', desc: '群机器人 Webhook（支持加签安全设置）', icon: '🔔' }
 ]
 
 // ── 开机自启（桌面端）──
@@ -981,6 +1012,42 @@ onMounted(() => {
 
       <!-- 推送渠道（FR-4.10）-->
       <template v-if="section === 'push'">
+        <!-- 推送渠道指定（v1.2.3）：提醒与报告可走不同渠道 -->
+        <section class="card stack">
+          <div class="card-title" style="font-size: 15px">{{ $t('推送内容与渠道') }}</div>
+          <div class="small muted">
+            {{ $t('两类推送可分别指定渠道；都不勾 = 全部已启用渠道（兼容老设置）。') }}
+          </div>
+          <div class="row" style="gap: 24px; align-items: flex-start">
+            <div style="flex: 1">
+              <div class="small" style="font-weight: 600; margin-bottom: 4px">{{ $t('待办提醒') }}</div>
+              <div class="row wrap" style="gap: 6px">
+                <label v-for="c in allChannelIds" :key="c" class="small" style="cursor: pointer">
+                  <input
+                    type="checkbox"
+                    :checked="todoPushChannels.includes(c)"
+                    @change="(e) => { const t = e.target as HTMLInputElement; todoPushChannels = t.checked ? [...todoPushChannels, c] : todoPushChannels.filter((x) => x !== c); savePushRoute('todo') }"
+                  />
+                  {{ CHANNEL_NAME[c] }}
+                </label>
+              </div>
+            </div>
+            <div style="flex: 1">
+              <div class="small" style="font-weight: 600; margin-bottom: 4px">{{ $t('报告推送') }}</div>
+              <div class="row wrap" style="gap: 6px">
+                <label v-for="c in allChannelIds" :key="c" class="small" style="cursor: pointer">
+                  <input
+                    type="checkbox"
+                    :checked="reportPushChannels.includes(c)"
+                    @change="(e) => { const t = e.target as HTMLInputElement; reportPushChannels = t.checked ? [...reportPushChannels, c] : reportPushChannels.filter((x) => x !== c); savePushRoute('report') }"
+                  />
+                  {{ CHANNEL_NAME[c] }}
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <!-- 定时推送报告（v1.2.1） -->
         <section class="card stack">
           <div class="card-title" style="font-size: 15px">{{ $t('⏰ 定时推送报告') }}</div>
@@ -1056,6 +1123,23 @@ onMounted(() => {
             />
           </div>
           <div class="small muted">{{ $t('群聊 → 右上角 → 群机器人 → 添加机器人 → 复制 Webhook 地址') }}</div>
+        </section>
+
+        <section class="card stack" :class="{ dim: !channelOn('dingtalk') }">
+          <div class="card-title" style="font-size: 15px">{{ $t('钉钉群机器人') }}</div>
+          <div class="form-row">
+            <label class="form-label">{{ $t('Webhook 地址') }}</label>
+            <input
+              v-model="push.dingtalkWebhook"
+              class="input mono"
+              placeholder="https://oapi.dingtalk.com/robot/send?access_token=…"
+            />
+          </div>
+          <div class="form-row">
+            <label class="form-label">{{ $t('加签密钥（可选）') }}</label>
+            <input v-model="push.dingtalkSecret" class="input mono" placeholder="SEC…" />
+          </div>
+          <div class="small muted">{{ $t('群设置 → 智能群助手 → 添加机器人 → 自定义（安全设置选「加签」可填密钥）') }}</div>
         </section>
 
         <section class="card stack" :class="{ dim: !channelOn('email') }">

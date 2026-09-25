@@ -37,6 +37,11 @@ def check(name, cond, detail=""):
     print(f"  [{'PASS' if cond else 'FAIL'}] {name}" + (f" — {detail}" if detail else ""))
 
 
+def all_channels_fix(push_rs: str) -> bool:
+    return "'dingtalk'" in push_rs or 'CH_DINGTALK' in push_rs
+
+
+
 def read(*parts):
     p = os.path.join(ROOT, *parts)
     with open(p, "r", encoding="utf-8") as f:
@@ -457,6 +462,29 @@ check("v1.2.1 报告定时推送：调度分支 + 渠道 dispatch + 当日去重
       and "dispatch(&db2" in read("core", "src", "reminder", "mod.rs")
       and "report_push_last" in read("core", "src", "reminder", "mod.rs")
       and "reportPushEnabled" in read("apps", "web", "src", "views", "Settings.vue"))
+# ── v1.2.2 待办三连：自定义提醒 / 点击详情 / 置顶 ──
+todoitem = read("apps", "web", "src", "components", "TodoItem.vue")
+modal_vue = read("apps", "web", "src", "components", "TodoEditModal.vue")
+check("v1.2.2 待办：提醒支持「指定时刻」直传 remind_at + 全天待办也可提醒",
+      "remindMode" in modal_vue and "remindAt:" in modal_vue
+      and "remindAt" in read("apps", "web", "src", "stores", "todos.ts"))
+check("v1.2.2 待办：点击行显详情弹窗（只读信息 + 详情内编辑/置顶/完成）",
+      os.path.exists(os.path.join(ROOT, "apps", "web", "src", "components", "TodoDetailModal.vue"))
+      and "@detail=\"openDetail\"" in read("apps", "web", "src", "views", "Today.vue")
+      and "@detail=\"openDetail\"" in read("apps", "web", "src", "views", "Todos.vue"))
+check("v1.2.2 待办：置顶（sort_order<0 排最前 + ★ 徽标 + 详情/列表双入口）",
+      "(sort_order < 0) DESC" in read("core", "src", "db", "queries.rs")
+      and "togglePin" in todoitem and ".badge.pin" in read("apps", "web", "src", "styles", "app.css"))
+# ── v1.2.3 钉钉推送 + 指定渠道路由 ──
+push_rs = read("core", "src", "push", "mod.rs")
+check("v1.2.3 钉钉：群机器人 Webhook 渠道（HmacSHA256 加签，无密钥原样）",
+      "CH_DINGTALK" in push_rs and "send_dingtalk" in push_rs
+      and "sign_dingtalk_url" in push_rs and "Hmac::<sha2::Sha256>" in push_rs
+      and all_channels_fix(push_rs))
+check("v1.2.3 渠道路由：待办提醒/报告推送可指定渠道（push_route_<kind>，缺省=全部启用）",
+      "channels_for" in push_rs and "push_route_" in push_rs
+      and "savePushRoute" in read("apps", "web", "src", "views", "Settings.vue")
+      and "todoPushChannels" in read("apps", "web", "src", "views", "Settings.vue"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

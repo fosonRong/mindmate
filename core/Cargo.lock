@@ -648,6 +648,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest",
+]
+
+[[package]]
 name = "hostname"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1085,16 +1094,18 @@ dependencies = [
 
 [[package]]
 name = "mindmate-core"
-version = "1.2.1"
+version = "1.2.3"
 dependencies = [
  "anyhow",
  "argon2",
  "async-stream",
  "axum",
+ "base64 0.22.1",
  "chrono",
  "cron",
  "dirs",
  "futures-util",
+ "hmac",
  "jsonwebtoken",
  "keyring",
  "lettre",
@@ -1105,6 +1116,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.20",
  "tokio",
  "tokio-test",
@@ -1707,6 +1719,17 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.17",
+ "digest",
 ]
 
 [[package]]

@@ -348,3 +348,13 @@ input[type='range'] { width: 100%; accent-color: var(--primary); }
 .focus-menu button { border: none; background: none; text-align: left; padding: 8px 12px; font-size: 13px; cursor: pointer; color: var(--text-strong); }
 .focus-menu button:hover { background: var(--bg-hover); }
 .focus-menu .focus-cancel { color: var(--danger); }
+
+/* ── v1.2.2 待办置顶 ── */
+.badge.pin { color: var(--warning); background: #FFF8EC; }
+:root[data-theme="dark"] .badge.pin { background: #2E2415; }
+.actions .pin-on { color: var(--warning); }
+
+/* ── v1.2.2 待办置顶 */
+.badge.pin { color: var(--warning); background: #FFF8EC; }
+:root[data-theme="dark"] .badge.pin { background: #2E2415; }
+.actions .pin-on { color: var(--warning); }

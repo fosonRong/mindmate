@@ -65,6 +65,8 @@ export const useTodosStore = defineStore('todos', {
       priority?: string
       tags?: string[]
       remindOffsetMin?: number
+      /** 指定提醒时刻（YYYY-MM-DD HH:MM，优先于提前量）；null=清除提醒 */
+      remindAt?: string | null
       /** 循环类型：''=不循环 daily=每天 weekly=每周 monthly=每月 */
       recurType?: string
       /** 循环截止日期（空=无限） */

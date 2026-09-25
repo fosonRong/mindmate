@@ -437,7 +437,8 @@ impl Db {
                 args.push(format!("%{kw}%"));
             }
         }
-        sql.push_str(" ORDER BY CASE status WHEN '已逾期' THEN 0 WHEN '进行中' THEN 1 WHEN '待处理' THEN 2 ELSE 3 END, due_date ASC, due_time ASC, sort_order ASC, id DESC");
+        // 置顶（v1.2.2）：sort_order<0 视为置顶，排最前；同组内仍按日期/时间/常规序
+        sql.push_str(" ORDER BY (sort_order < 0) DESC, CASE status WHEN '已逾期' THEN 0 WHEN '进行中' THEN 1 WHEN '待处理' THEN 2 ELSE 3 END, due_date ASC, due_time ASC, sort_order ASC, id DESC");
 
         let conn = self.lock();
         let mut stmt = conn.prepare(&sql)?;

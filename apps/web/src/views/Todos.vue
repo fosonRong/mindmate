@@ -4,6 +4,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useTodosStore } from '@/stores/todos'
 import { useAppStore, todayStr, friendlyDate, fmtDate } from '@/stores/app'
 import TodoItem from '@/components/TodoItem.vue'
+import TodoDetailModal from '@/components/TodoDetailModal.vue'
 import TodoEditModal from '@/components/TodoEditModal.vue'
 import CalendarMonth from '@/components/CalendarMonth.vue'
 import { api } from '@/api/client'
@@ -104,6 +105,30 @@ async function onDropTodo(payload: { id: number; date: string }) {
   await todos.reschedule(payload.id, payload.date)
   app.toast('success', t('已改期至 {a}', { a: payload.date }))
   await loadAll()
+}
+
+// ── 待办详情弹窗（v1.2.2）：点行看详情，详情里编辑/置顶/完成 ──
+const detailTodo = ref<Todo | null>(null)
+
+function openDetail(t: Todo) {
+  detailTodo.value = t
+}
+
+async function onDetailToggle(id: number) {
+  await todos.toggle(id)
+  detailTodo.value = null
+  await loadAll()
+  app.refreshStats()
+}
+
+async function onDetailPin(todo: Todo) {
+  const pinned = todo.sortOrder < 0
+  await todos.update(todo.id, { sortOrder: pinned ? 0 : -1 })
+  if (detailTodo.value?.id === todo.id) {
+    detailTodo.value = { ...detailTodo.value, sortOrder: pinned ? 0 : -1 }
+  }
+  await loadAll()
+  app.toast('success', pinned ? t('已取消置顶') : t('已置顶，将显示在最前'))
 }
 
 /** 收集箱快速收集（v1.2.1）：只记标题，不打日期 */
@@ -258,7 +283,7 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
             :key="t.id"
             :todo="t"
             draggable
-            @click="editTodo(t)"
+            @detail="openDetail"
           />
         </section>
       </div>
@@ -326,4 +351,13 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
 
     <TodoEditModal v-if="showModal" :todo="editing" :default-date="todos.selectedDate" @close="showModal = false" @saved="onSaved" />
   </div>
+    <!-- 待办详情（v1.2.2） -->
+    <TodoDetailModal
+      v-if="detailTodo"
+      :todo="detailTodo"
+      @close="detailTodo = null"
+      @edit="(t) => { detailTodo = null; editTodo(t) }"
+      @pin="onDetailPin"
+      @toggle="onDetailToggle"
+    />
 </template>

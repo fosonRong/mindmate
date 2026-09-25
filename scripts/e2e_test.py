@@ -1097,6 +1097,37 @@ check("排期后进入常规待办视图", any(x.get("id") == _inbox_id for x in
 _r, _ = call("DELETE", f"/todos/{_inbox_id}")
 check("清理测试条目", _r.get("code") == 0, "")
 
+# ─────────────────────── 17. 钉钉渠道与渠道路由（v1.2.3）───────────────────────
+section("17. 钉钉渠道 + 推送渠道路由")
+_r, _ = call("GET", "/push/config")
+_cfg = (_r.get("data") or {})
+check("推送配置含钉钉字段", _r.get("code") == 0 and "dingtalkWebhook" in _cfg and "dingtalkSecret" in _cfg,
+      str(_r.get("message"))[:60])
+_cfg_full = dict(_cfg)
+_cfg_full["dingtalkWebhook"] = "https://oapi.dingtalk.com/robot/send?access_token=e2e"
+_cfg_full["dingtalkSecret"] = "SECe2e"
+_r, _ = call("POST", "/push/config", {"config": _cfg_full})
+check("保存钉钉配置成功", _r.get("code") == 0, str(_r.get("message"))[:60])
+_r, _ = call("GET", "/push/config")
+_cfg2 = (_r.get("data") or {})
+check("钉钉配置回读一致",
+      _cfg2.get("dingtalkWebhook") == "https://oapi.dingtalk.com/robot/send?access_token=e2e"
+      and _cfg2.get("dingtalkSecret") == "SECe2e",
+      f"webhook={_cfg2.get('dingtalkWebhook')}")
+# 渠道路由：报告只走钉钉
+_r, _ = call("PUT", "/settings", {"values": {"push_route_report": json.dumps(["dingtalk"])}})
+check("设置报告路由=钉钉", _r.get("code") == 0, str(_r.get("message"))[:60])
+_r, _ = call("GET", "/settings/push_route_report")
+_check = (_r.get("data") or {})
+check("路由设置回读", _check.get("value") == json.dumps(["dingtalk"]), f"value={_check.get('value')}")
+_r, _ = call("PUT", "/settings", {"values": {"push_route_report": "all"}})
+check("恢复路由=全部（清理）", _r.get("code") == 0, "")
+_cfg_clean = dict(_cfg2)
+_cfg_clean["dingtalkWebhook"] = ""
+_cfg_clean["dingtalkSecret"] = ""
+_r, _ = call("POST", "/push/config", {"config": _cfg_clean})
+check("清理钉钉配置", _r.get("code") == 0, "")
+
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：")

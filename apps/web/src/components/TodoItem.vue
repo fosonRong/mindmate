@@ -12,8 +12,24 @@ const props = withDefaults(
   defineProps<{ todo: Todo; draggable?: boolean; showActions?: boolean }>(),
   { draggable: false, showActions: true }
 )
+const emit = defineEmits<{
+  (e: 'detail', todo: Todo): void
+}>()
 const todos = useTodosStore()
 const app = useAppStore()
+
+/** 置顶（v1.2.2）：sort_order<0 视为置顶 */
+const isPinned = () => props.todo.sortOrder < 0
+
+async function togglePin() {
+  try {
+    await todos.update(props.todo.id, { sortOrder: isPinned() ? 0 : -1 })
+    await todos.load()
+    app.toast('success', isPinned() ? t('已置顶，将显示在最前') : t('已取消置顶'))
+  } catch (e: any) {
+    app.toast('error', e?.message || t('操作失败'))
+  }
+}
 
 function tagClass(t: string) {
   const map: Record<string, string> = { 工作: 'work', 生活: 'life', 健康: 'health', 学习: 'study' }
@@ -105,7 +121,7 @@ async function suggest() {
     <div class="check" :class="{ done: todo.status === '已完成' }" @click.stop="toggle">
       <span v-if="todo.status === '已完成'">✓</span>
     </div>
-    <div class="body">
+    <div class="body" :title="$t('点击查看详情')" @click.stop="emit('detail', props.todo)">
       <div class="title">{{ todo.title }}</div>
       <div v-if="todo.description" class="desc" :title="todo.description">{{ todo.description }}</div>
       <div class="meta">
@@ -119,12 +135,14 @@ async function suggest() {
           class="chip recur"
           :title="recurTip(todo)"
         >🔁 {{ $t(recurLabel(todo.recurType)) }}{{ todo.recurInterval > 1 ? '×' + todo.recurInterval : '' }}{{ todo.recurUntil ? ' → ' + todo.recurUntil : '' }}</span>
+        <span v-if="isPinned()" class="badge pin" :title="$t('已置顶')">★ {{ $t('置顶') }}</span>
         <span v-if="todo.status === '已逾期'" class="badge danger">{{ $t('逾期') }}</span>
         <span v-for="t in todo.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
       </div>
     </div>
     <!-- .stop：删除/建议按钮的点击不能冒泡到外层（待办页在行上绑了「点击=编辑」，否则点删除会弹出编辑框） -->
     <div v-if="showActions !== false" class="actions" @click.stop>
+      <button :class="{ 'pin-on': isPinned() }" :title="isPinned() ? $t('取消置顶') : $t('置顶')" @click="togglePin">★</button>
       <button v-if="todo.status !== '已完成'" :title="$t('智伴排期建议')" @click="suggest">✨</button>
       <template v-if="askSeries">
         <button class="danger" :title="$t('已生成的后续一期也会一并删除')" @click="doRemove('series')">{{ $t('删整个循环') }}</button>

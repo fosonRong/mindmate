@@ -2,7 +2,7 @@
 // 待办编辑/新建弹窗
 // v1.1.1：标签选项共用 stores/tags（内置 ∪ 自定义 ∪ 在用），可现场加词、✨ AI 打标；
 // 新增 preset 预填（今日热点一键转待办用）。
-import { ref, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { Todo } from '@/api/types'
 import { useTodosStore } from '@/stores/todos'
 import { useAppStore, todayStr, addDays } from '@/stores/app'
@@ -31,6 +31,11 @@ const tags = ref<string[]>(
   props.todo?.tags ? [...props.todo.tags] : props.preset?.tags ? [...props.preset.tags] : []
 )
 const remindOffset = ref<number>(30)
+const dueTime0 = computed(() => props.todo?.dueTime || '')
+// 提醒模式（v1.2.2）：offset=按截止时间提前；at=指定时刻（remind_at 直传）；none=不提醒。
+// 编辑时反推初始模式：有 remind_at → at；无 remind_at 但有截止时间 → offset；否则 none
+const remindMode = ref<'offset' | 'at' | 'none'>(props.todo?.remindAt ? 'at' : props.todo ? (dueTime0.value ? 'offset' : 'none') : 'none')
+const remindAtInput = ref(props.todo?.remindAt ? props.todo.remindAt.slice(11, 16) : '')
 // 循环待办：''=不循环 daily=每天 weekly=每周 monthly=每月。
 // 编辑既有循环实例时显示其类型；修改会写回链的根实例（后端按根重算后续生成）。
 const recurType = ref<string>(props.todo?.recurType || '')
@@ -96,6 +101,23 @@ async function suggestTags() {
   }
 }
 
+/** 按当前提醒模式算出 remind_at（v1.2.2）：at=指定时刻；offset=截止-提前量；none=null */
+function resolvedRemindAt(): string | null {
+  if (!dueDate.value) return null
+  if (remindMode.value === 'at') {
+    return remindAtInput.value ? `${dueDate.value} ${remindAtInput.value}` : null
+  }
+  if (remindMode.value === 'offset' && dueTime.value) {
+    const [h, m] = dueTime.value.split(':').map(Number)
+    const total = h * 60 + m - remindOffset.value
+    const nh = Math.floor(total / 60) % 24
+    const nm = ((total % 60) + 60) % 60
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${dueDate.value} ${pad(nh)}:${pad(nm)}`
+  }
+  return null
+}
+
 async function save() {
   if (!title.value.trim()) {
     app.toast('warning', t('请填写待办标题'))
@@ -111,6 +133,7 @@ async function save() {
         dueTime: dueTime.value || null,
         priority: priority.value,
         tags: tags.value,
+        remindAt: resolvedRemindAt(),
         recurType: recurType.value,
         recurUntil: recurUntil.value,
         recurInterval: recurInterval.value,
@@ -125,7 +148,8 @@ async function save() {
         dueTime: dueTime.value || null,
         priority: priority.value,
         tags: tags.value,
-        remindOffsetMin: dueTime.value ? remindOffset.value : undefined,
+        remindOffsetMin: dueTime.value && remindMode.value === 'offset' ? remindOffset.value : undefined,
+        remindAt: resolvedRemindAt(),
         recurType: recurType.value,
         recurUntil: recurUntil.value,
         recurInterval: recurInterval.value,
@@ -221,14 +245,46 @@ onMounted(() => tagsStore.load())
           </div>
         </div>
         <div v-if="dueTime" class="form-row" style="flex: 1">
-          <label class="form-label">{{ $t('提前提醒') }}</label>
-          <select v-model.number="remindOffset" class="input">
-            <option :value="5">{{ $t('5 分钟') }}</option>
-            <option :value="15">{{ $t('15 分钟') }}</option>
-            <option :value="30">{{ $t('30 分钟') }}</option>
-            <option :value="60">{{ $t('1 小时') }}</option>
-            <option :value="0">{{ $t('准点') }}</option>
-          </select>
+          <label class="form-label">{{ $t('提醒') }}</label>
+          <div class="row" style="gap: 6px">
+            <select v-if="remindMode === 'offset'" v-model.number="remindOffset" class="input" style="flex: 1">
+              <option :value="5">{{ $t('提前 5 分钟') }}</option>
+              <option :value="15">{{ $t('提前 15 分钟') }}</option>
+              <option :value="30">{{ $t('提前 30 分钟') }}</option>
+              <option :value="60">{{ $t('提前 1 小时') }}</option>
+              <option :value="0">{{ $t('准点') }}</option>
+            </select>
+            <input
+              v-else-if="remindMode === 'at'"
+              v-model="remindAtInput"
+              type="time"
+              class="input"
+              style="flex: 1"
+            />
+            <span v-else class="small muted" style="flex: 1">{{ $t('不提醒') }}</span>
+            <select v-model="remindMode" class="input" style="width: 96px; flex: none">
+              <option value="offset">{{ $t('提前') }}</option>
+              <option value="at">{{ $t('指定时刻') }}</option>
+              <option value="none">{{ $t('关闭') }}</option>
+            </select>
+          </div>
+        </div>
+        <div v-else class="form-row" style="flex: 1">
+          <label class="form-label">{{ $t('提醒') }}</label>
+          <div class="row" style="gap: 6px">
+            <input
+              v-if="remindMode === 'at'"
+              v-model="remindAtInput"
+              type="time"
+              class="input"
+              style="flex: 1"
+            />
+            <span v-else class="small muted" style="flex: 1">{{ $t('全天待办可指定时刻提醒（选「指定时刻」）') }}</span>
+            <select v-model="remindMode" class="input" style="width: 96px; flex: none">
+              <option value="none">{{ $t('关闭') }}</option>
+              <option value="at">{{ $t('指定时刻') }}</option>
+            </select>
+          </div>
         </div>
       </div>
 

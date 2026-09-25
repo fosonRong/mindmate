@@ -1,6 +1,6 @@
 [package]
 name = "mindmate-core"
-version = "1.2.1"
+version = "1.2.3"
 edition = "2021"
 description = "智伴 Mindmate 核心：数据层 + REST/SSE 服务 + AI 接入 + 提醒调度"
 
@@ -29,6 +29,9 @@ rand = "0.8"
 dirs = "5"
 keyring = { version = "3", default-features = false, features = ["windows-native", "apple-native"] }
 urlencoding = "2"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
 lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "tokio1-rustls-tls", "builder", "hostname"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 tokio-test = "0.4"

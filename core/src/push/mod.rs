@@ -12,9 +12,10 @@ use serde::{Deserialize, Serialize};
 pub const CH_EMAIL: &str = "email";
 pub const CH_TELEGRAM: &str = "telegram";
 pub const CH_WECOM: &str = "wecom";
+pub const CH_DINGTALK: &str = "dingtalk";
 
-pub fn all_channels() -> [&'static str; 3] {
-    [CH_EMAIL, CH_TELEGRAM, CH_WECOM]
+pub fn all_channels() -> [&'static str; 4] {
+    [CH_EMAIL, CH_TELEGRAM, CH_WECOM, CH_DINGTALK]
 }
 
 /// 推送配置（不含任何明文凭据，仅返回"是否已配置"）
@@ -37,6 +38,10 @@ pub struct PushConfig {
     pub has_telegram_token: bool,
     // 企业微信
     pub wecom_webhook: String,
+    // 钉钉
+    pub dingtalk_webhook: String,
+    /// 加签密钥（可选；配置后 webhook 自动带 timestamp&sign）
+    pub dingtalk_secret: String,
 }
 
 fn get(db: &Db, key: &str, default: &str) -> String {
@@ -65,6 +70,8 @@ pub fn load_config(db: &Db) -> PushConfig {
         telegram_chat_id: get(db, "telegram_chat_id", ""),
         has_telegram_token: secrets::has_secret(secrets::SECRET_TELEGRAM_TOKEN),
         wecom_webhook: get(db, "wecom_webhook", ""),
+        dingtalk_webhook: get(db, "dingtalk_webhook", ""),
+        dingtalk_secret: get(db, "dingtalk_secret", ""),
     }
 }
 
@@ -78,6 +85,8 @@ pub fn save_config(db: &Db, cfg: &PushConfig) -> Result<()> {
     db.set_setting("smtp_security", &cfg.smtp_security)?;
     db.set_setting("telegram_chat_id", &cfg.telegram_chat_id)?;
     db.set_setting("wecom_webhook", &cfg.wecom_webhook)?;
+    db.set_setting("dingtalk_webhook", &cfg.dingtalk_webhook)?;
+    db.set_setting("dingtalk_secret", &cfg.dingtalk_secret)?;
     Ok(())
 }
 
@@ -179,6 +188,65 @@ pub async fn send_wecom(webhook: &str, msg: &OutgoingMessage) -> Result<String> 
     Ok("已投递".into())
 }
 
+/// 通过钉钉群机器人 Webhook 发送（v1.2.3）。
+/// 支持加签安全设置：配置 secret 后自动追加 &timestamp=..&sign=..（HmacSHA256 → Base64）。
+pub async fn send_dingtalk(webhook: &str, secret: &str, msg: &OutgoingMessage) -> Result<String> {
+    if webhook.trim().is_empty() {
+        anyhow::bail!("未配置钉钉 Webhook 地址");
+    }
+    let url = sign_dingtalk_url(webhook.trim(), secret.trim());
+    let payload = serde_json::json!({
+        "msgtype": "text",
+        "text": { "content": format!("{}
+{}", msg.subject(), msg.plain_text()) }
+    });
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()?;
+    let resp = client.post(&url).json(&payload).send().await?;
+    let status = resp.status();
+    let text = resp.text().await.unwrap_or_default();
+    if !status.is_success() {
+        anyhow::bail!("钉钉返回 {status}：{}", truncate(&text, 200));
+    }
+    // 钉钉成功返回 {"errcode":0,...}
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+        if let Some(code) = v.get("errcode").and_then(|c| c.as_i64()) {
+            if code != 0 {
+                anyhow::bail!(
+                    "钉钉错误码 {code}：{}",
+                    v.get("errmsg").and_then(|m| m.as_str()).unwrap_or("")
+                );
+            }
+        }
+    }
+    Ok("已投递".into())
+}
+
+/// 钉钉加签 URL：secret 非空时追加 timestamp 与 sign（换行符为算法要求的分隔符）
+pub fn sign_dingtalk_url(webhook: &str, secret: &str) -> String {
+    if secret.is_empty() {
+        return webhook.to_string();
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    let string_to_sign = format!("{ts}
+{secret}");
+    use base64::Engine as _;
+    use hmac::Mac;
+    let mut mac = hmac::Hmac::<sha2::Sha256>::new_from_slice(secret.as_bytes())
+        .expect("HMAC 接受任意长度密钥");
+    mac.update(string_to_sign.as_bytes());
+    let sig = base64::engine::general_purpose::STANDARD.encode(mac.finalize().into_bytes());
+    let sep = if webhook.contains('?') { '&' } else { '?' };
+    format!(
+        "{webhook}{sep}timestamp={ts}&sign={}",
+        urlencoding::encode(&sig)
+    )
+}
+
 /// 通过 Telegram Bot API 发送
 pub async fn send_telegram(token: &str, chat_id: &str, msg: &OutgoingMessage) -> Result<String> {
     if token.trim().is_empty() {
@@ -259,10 +327,26 @@ pub async fn send_email(cfg: &PushConfig, msg: &OutgoingMessage) -> Result<Strin
 }
 
 /// 向所有已启用渠道推送（失败不影响其它渠道，逐个返回结果）
+/// 某类消息应使用的渠道：settings.push_route_todo / push_route_report（JSON 数组）。
+/// 未设置或缺省 "all" = 用全部启用渠道（向后兼容）。
+pub fn channels_for(db: &Db, kind: &str) -> Option<Vec<String>> {
+    let raw = db
+        .get_setting(&format!("push_route_{kind}"))
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if raw.is_empty() || raw == "all" {
+        return None;
+    }
+    serde_json::from_str::<Vec<String>>(&raw).ok()
+}
+
 pub async fn dispatch(db: &Db, msg: &OutgoingMessage) -> Vec<PushResult> {
     let cfg = load_config(db);
+    // 按消息类型选渠道（v1.2.3）：未配置映射时用全部启用渠道
+    let channels = channels_for(db, &msg.kind).unwrap_or_else(|| cfg.channels.clone());
     let mut results = Vec::new();
-    for ch in &cfg.channels {
+    for ch in &channels {
         let r = match ch.as_str() {
             CH_WECOM => send_wecom(&cfg.wecom_webhook, msg).await,
             CH_TELEGRAM => {
@@ -270,6 +354,7 @@ pub async fn dispatch(db: &Db, msg: &OutgoingMessage) -> Vec<PushResult> {
                 send_telegram(token.as_deref().unwrap_or(""), &cfg.telegram_chat_id, msg).await
             }
             CH_EMAIL => send_email(&cfg, msg).await,
+            CH_DINGTALK => send_dingtalk(&cfg.dingtalk_webhook, &cfg.dingtalk_secret, msg).await,
             other => Err(anyhow::anyhow!("未知渠道：{other}")),
         };
         let (ok, detail) = match r {
@@ -391,6 +476,8 @@ mod tests {
             telegram_chat_id: "".into(),
             has_telegram_token: false,
             wecom_webhook: "".into(),
+            dingtalk_webhook: "".into(),
+            dingtalk_secret: "".into(),
         };
         let e = send_email(&cfg, &sample()).await.unwrap_err().to_string();
         assert!(e.contains("SMTP"), "{e}");
@@ -422,6 +509,8 @@ mod tests {
             telegram_chat_id: "".into(),
             has_telegram_token: false,
             wecom_webhook: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc".into(),
+            dingtalk_webhook: "https://oapi.dingtalk.com/robot/send?access_token=xyz".into(),
+            dingtalk_secret: "SECtest".into(),
         };
         save_config(&db, &cfg).unwrap();
         let back = load_config(&db);
@@ -429,5 +518,37 @@ mod tests {
         assert_eq!(back.smtp_port, 465);
         assert_eq!(back.smtp_security, "tls");
         assert!(back.wecom_webhook.contains("webhook"));
+    }
+}
+
+#[cfg(test)]
+mod dingtalk_tests {
+    use super::*;
+
+    #[test]
+    fn 钉钉加签_url_包含时间戳与签名() {
+        let url = sign_dingtalk_url("https://oapi.dingtalk.com/robot/send?access_token=abc", "SEC123");
+        assert!(url.starts_with("https://oapi.dingtalk.com/robot/send?access_token=abc&timestamp="));
+        assert!(url.contains("&sign="));
+        // 签名是 Base64URL 编码后的字符串（再经 URL 编码，不含裸 +/=）
+        let sign = url.rsplit("&sign=").next().unwrap();
+        assert!(!sign.is_empty());
+    }
+
+    #[test]
+    fn 钉钉无密钥_原样返回() {
+        let url = sign_dingtalk_url("https://oapi.dingtalk.com/robot/send?access_token=abc", "");
+        assert_eq!(url, "https://oapi.dingtalk.com/robot/send?access_token=abc");
+    }
+
+    #[test]
+    fn 钉钉_无查询参数时用问号拼接() {
+        let url = sign_dingtalk_url("https://oapi.dingtalk.com/robot/send", "SEC");
+        assert!(url.starts_with("https://oapi.dingtalk.com/robot/send?timestamp="));
+    }
+
+    #[test]
+    fn 渠道清单_含钉钉() {
+        assert!(all_channels().contains(&CH_DINGTALK));
     }
 }
