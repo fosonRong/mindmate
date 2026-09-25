@@ -518,6 +518,22 @@ check("v1.4.0 剪贴板/文件捕捉：桌面命令（arboard）+ 拖放监听",
 check("v1.4.0 语音速记：Web Speech 特性探测（不可用自动隐藏）",
       "speechAvailable" in read("apps", "web", "src", "components", "QuickEntry.vue")
       and "webkitSpeechRecognition" in read("apps", "web", "src", "components", "QuickEntry.vue"))
+# ── v1.4.1 智能整理 ──
+smart_rs = read("core", "src", "smart_organize.rs")
+todos_vue2 = read("apps", "web", "src", "views", "Todos.vue")
+check("v1.4.1 收集箱智能归类：规则引擎（链接/日期/动作词）+ 端点 + 一键采纳",
+      "suggest_kind" in smart_rs and "smart/classify" in read("core", "src", "api", "mod.rs")
+      and "applySuggestion" in todos_vue2 and "smartClassify" in todos_vue2)
+check("v1.4.1 事项串联：打分（标签/关键词/邻近）+ 端点 + 详情展示",
+      "channels_for" not in smart_rs and "smart/related" in read("core", "src", "api", "mod.rs")
+      and "relatedItems" in read("apps", "web", "src", "components", "TodoDetailModal.vue"))
+check("v1.4.1 提炼行动项：规则/AI 双路 + 今日页选择模式 + 跟进识别",
+      "suggest_action_items" in smart_rs and "follow_up_todo" in smart_rs
+      and "ai/action-items" in read("core", "src", "api", "mod.rs")
+      and "extractActions" in read("apps", "web", "src", "views", "Today.vue"))
+check("v1.4.1 相似内容提示：速记输入防抖检索 + 轻提示不打断",
+      "checkSimilar" in read("apps", "web", "src", "components", "QuickEntry.vue")
+      and "similar-hint" in read("apps", "web", "src", "styles", "base.css"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

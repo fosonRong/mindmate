@@ -381,3 +381,7 @@ select.input { appearance: none; }
 .tag-pick.smart-todo { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); background: var(--primary-weak); }
 .tag-pick.smart-todo:hover:not(:disabled) { background: var(--primary); border-color: var(--primary); color: #fff; }
 .tag-pick.smart-todo:disabled { opacity: 0.6; cursor: default; }
+
+/* ── v1.4.1 相似记录提示 ── */
+.similar-hint { display: flex; align-items: center; gap: 8px; padding: 2px 4px 0; color: var(--text-weak); }
+.similar-hint .link { color: var(--primary); cursor: pointer; }

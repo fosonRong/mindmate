@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // 待办详情弹窗（v1.2.2）：点击待办行展示完整信息 + 快捷操作。
 // 只读详情（编辑仍走 TodoEditModal），描述/提醒/循环/标签/时间线一屏看全。
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import type { Todo } from '@/api/types'
 import { friendlyDate, weekdayLabel } from '@/stores/app'
+import { api } from '@/api/client'
 import { useTodosStore } from '@/stores/todos'
 import { useAppStore } from '@/stores/app'
 import { t } from '@/i18n'
@@ -18,6 +19,34 @@ const emit = defineEmits<{
 
 const todos = useTodosStore()
 const app = useAppStore()
+
+// ── 相关事项（v1.4.1）：标签/关键词/时间邻近串联 ──
+const related = ref<{ nodes: { id: number; title: string; date: string }[]; todos: { id: number; title: string; date: string }[] } | null>(null)
+const relatedLoading = ref(false)
+
+async function loadRelated() {
+  if (props.todo.inbox) return
+  relatedLoading.value = true
+  try {
+    related.value = await api.relatedItems('todo', props.todo.id, 4)
+  } catch {
+    related.value = null
+  } finally {
+    relatedLoading.value = false
+  }
+}
+
+function jumpToRelated(kind: string, id: number) {
+  if (kind === 'todo') {
+    location.hash = '#/todos'
+  } else {
+    // 记录 → 月视图并打开该日抽屉（复用命令面板事件）
+    window.dispatchEvent(new CustomEvent('mindmate:open-day', { detail: { date: props.todo.dueDate } }))
+    location.hash = '#/month'
+  }
+  emit('close')
+  void id
+}
 
 const recurLabel = computed(() => {
   const map: Record<string, string> = { daily: t('每天'), weekly: t('每周'), monthly: t('每月') }
@@ -42,6 +71,8 @@ const remindText = computed(() => {
 function isPinned(todo: Todo) {
   return todo.sortOrder < 0
 }
+
+onMounted(() => loadRelated().catch(() => {}))
 </script>
 
 <template>
@@ -98,6 +129,30 @@ function isPinned(todo: Todo) {
         </div>
       </div>
 
+      <!-- 相关事项（v1.4.1） -->
+      <div v-if="related && (related.nodes.length || related.todos.length)" class="divider" style="margin: 10px 0"></div>
+      <div v-if="related && (related.nodes.length || related.todos.length)">
+        <div class="small muted" style="margin-bottom: 4px">{{ $t('🔗 相关事项') }}</div>
+        <div
+          v-for="n in related.nodes"
+          :key="'n' + n.id"
+          class="small related-item"
+          @click="jumpToRelated('node', n.id)"
+        >
+          📝 {{ n.title.slice(0, 40) }}{{ n.title.length > 40 ? '…' : '' }}
+          <span class="mono muted">{{ n.date.slice(5) }}</span>
+        </div>
+        <div
+          v-for="x in related.todos"
+          :key="'t' + x.id"
+          class="small related-item"
+          @click="jumpToRelated('todo', x.id)"
+        >
+          ✅ {{ x.title.slice(0, 40) }}{{ x.title.length > 40 ? '…' : '' }}
+          <span class="mono muted">{{ x.date.slice(5) }}</span>
+        </div>
+      </div>
+
       <div class="modal-actions">
         <button class="btn" :class="{ 'pin-on': isPinned(todo) }" @click="emit('pin', todo)">
           {{ isPinned(todo) ? $t('★ 取消置顶') : $t('☆ 置顶') }}
@@ -119,4 +174,6 @@ function isPinned(todo: Todo) {
 .detail-item span:not(.lbl):not(.badge) { color: var(--text-strong); min-width: 0; word-break: break-word; }
 .detail-desc { white-space: pre-wrap; line-height: 1.6; }
 .pin-on { color: var(--warning); border-color: var(--warning); }
+.related-item { padding: 3px 6px; border-radius: 6px; cursor: pointer; color: var(--text-regular); }
+.related-item:hover { background: var(--bg-hover); color: var(--primary); }
 </style>

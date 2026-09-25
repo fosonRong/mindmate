@@ -120,6 +120,19 @@ export const api = {
     post<{ isAi: boolean; todos: ExtractedTodo[] }>('/api/v1/ai/extract-todos', { content }),
   /** AI 周计划（v1.2.0）：基于上周生成下周建议（本地规则兜底） */
   aiWeeklyPlan: () => post<WeeklyPlan>('/api/v1/ai/weekly-plan'),
+  /** 收集箱智能归类（v1.4.1）：每条给 todo/reference/note 建议 */
+  smartClassify: () =>
+    post<{ items: { id: number; title: string; kind: 'todo' | 'reference' | 'note' | string; confidence: number }[] }>(
+      '/api/v1/smart/classify'
+    ),
+  /** 相关事项（v1.4.1）：标签/关键词/时间邻近打分 */
+  relatedItems: (kind: 'todo' | 'node', id: number, limit = 5) =>
+    get<{ nodes: { id: number; title: string; date: string; score: number }[]; todos: { id: number; title: string; date: string; score: number }[] }>(
+      `/api/v1/smart/related?kind=${kind}&id=${id}&limit=${limit}`
+    ),
+  /** 提炼行动项（v1.4.1）：AI 优先本地规则兜底 */
+  aiActionItems: (contents: string[]) =>
+    post<{ isAi: boolean; items: ExtractedTodo[] }>('/api/v1/ai/action-items', { contents }),
 
   // 设置
   settings: () => get<Setting[]>('/api/v1/settings'),

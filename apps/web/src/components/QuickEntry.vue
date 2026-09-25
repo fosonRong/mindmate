@@ -88,7 +88,37 @@ function onContentInput() {
   suggestTimer = setTimeout(() => suggestTags(false), 2500)
 }
 
-watch(content, onContentInput)
+watch(content, (v) => {
+  onContentInput()
+  onSimilarInput()
+})
+// ── 相似内容提示（v1.4.1）：本地检索已有记录，轻提示防重复 ──
+const similarNode = ref<{ id: number; content: string } | null>(null)
+let similarTimer: ReturnType<typeof setTimeout> | null = null
+
+async function checkSimilar(text: string) {
+  if (text.length < 4) {
+    similarNode.value = null
+    return
+  }
+  try {
+    const hits = await api.searchNodes(text.slice(0, 30))
+    const hit = hits.find((n) => n.content.includes(text.slice(0, 8)) || text.includes(n.content.slice(0, 8)))
+    similarNode.value = hit ? { id: hit.id, content: hit.content } : null
+  } catch {
+    similarNode.value = null
+  }
+}
+
+function onSimilarInput() {
+  if (similarTimer) clearTimeout(similarTimer)
+  similarTimer = setTimeout(() => {
+    const text = content.value.trim()
+    if (text.length >= 4) checkSimilar(text)
+    else similarNode.value = null
+  }, 400)
+}
+
 // 用户关掉自动打标 / 配好 AI 后立即生效
 watch(
   () => [app.settings.ai_autotag, app.aiReady],
@@ -215,6 +245,7 @@ async function submit() {
     await nodes.create(content.value, [...pickedTags.value], props.date)
     content.value = ''
     lastSuggestedFor = ''
+    similarNode.value = null
     app.toast('success', t('已记录 {a}', { a: new Date().toTimeString().slice(0, 5) }))
     app.refreshStats()
     emit('saved')
@@ -259,6 +290,10 @@ defineExpose({ focus })
       @keydown.enter.prevent="submit"
       @paste="onPaste"
     />
+    <div v-if="similarNode" class="similar-hint small">
+      <span>{{ $t('已有相似记录：') }}{{ similarNode.content.slice(0, 24) }}{{ similarNode.content.length > 24 ? '…' : '' }}</span>
+      <span class="link" @click="similarNode = null">{{ $t('仍要记录') }}</span>
+    </div>
     <div class="tags-row" :style="compact ? 'opacity:1' : ''">
       <button
         v-for="t in tagsStore.options"

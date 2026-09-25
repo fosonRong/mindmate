@@ -18,6 +18,7 @@ pub mod push;
 pub mod reminder;
 pub mod secrets;
 pub mod system;
+pub mod smart_organize;
 pub mod todo_extract;
 
 pub use config::{AppConfig, RunMode};

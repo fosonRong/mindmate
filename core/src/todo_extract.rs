@@ -15,6 +15,9 @@ pub struct ExtractedTodo {
     pub title: String,
     pub date: String,
     pub time: Option<String>,
+    /// 建议标签（v1.4.1：跟进/行动项）；None 序列化省略，兼容旧解析路径
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
 }
 
 /// 从模型回复里抠出 JSON 数组（容忍 ```json 包裹与前后废话），并清洗校验：
@@ -47,7 +50,7 @@ pub fn parse_todo_array(text: &str) -> Vec<ExtractedTodo> {
             continue;
         };
         let time = t.time.as_str().and_then(normalize_time);
-        out.push(ExtractedTodo { title, date, time });
+        out.push(ExtractedTodo { title, date, time, tag: None });
         if out.len() >= 5 {
             break;
         }
@@ -146,12 +149,18 @@ fn extract_one(text: &str, today: NaiveDate) -> Option<ExtractedTodo> {
         title,
         date: date.unwrap_or_else(|| today.format("%Y-%m-%d").to_string()),
         time,
+        tag: None,
     })
 }
 
 // ── 时间抽取 ──
 
 /// 从字符串头开始找第一个时间表达并从原串删除，返回规整 HH:MM
+/// 供 smart_organize 复用（内部实现保持私有语义）
+pub fn take_time_public(s: &mut String) -> Option<String> {
+    take_time(s)
+}
+
 fn take_time(s: &mut String) -> Option<String> {
     // HH:MM / HH：MM（分钟要两位数，避免把「比例3:1」当时间）
     let re = regex::Regex::new(r"([01]?\d|2[0-3])[:：]([0-5]\d)").unwrap();
@@ -196,6 +205,11 @@ fn take_time(s: &mut String) -> Option<String> {
 // ── 日期抽取 ──
 
 /// 找日期表达并从原串删除，返回 YYYY-MM-DD
+/// 供 smart_organize 复用
+pub fn take_date_public(s: &mut String, today: NaiveDate) -> Option<String> {
+    take_date(s, today)
+}
+
 fn take_date(s: &mut String, today: NaiveDate) -> Option<String> {
     // 相对词
     let rel: &[(&str, i64)] = &[
@@ -274,6 +288,11 @@ fn take_date(s: &mut String, today: NaiveDate) -> Option<String> {
 
 /// 标题清理：去掉日期/时间残留后的空白与首尾标点，以及明确的祈使引导词（记得/别忘了）。
 /// 刻意不动「要/去/需要」——「要求客户确认」剥成「求客户确认」这类误伤比口语省字更亏。
+/// 供 smart_organize 复用
+pub fn clean_title_public(s: &str) -> String {
+    clean_title(s)
+}
+
 fn clean_title(s: &str) -> String {
     let mut t = s.trim();
     for w in ["记得要", "记得", "别忘了"] {

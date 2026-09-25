@@ -166,6 +166,9 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/chat", post(ai_chat))
         .route("/api/v1/ai/replan", post(ai_replan))
         .route("/api/v1/ai/tag", post(ai_tag))
+        .route("/api/v1/smart/classify", post(smart_classify))
+        .route("/api/v1/smart/related", get(smart_related))
+        .route("/api/v1/ai/action-items", post(ai_action_items))
         .route("/api/v1/ai/extract-todos", post(ai_extract_todos))
         .route("/api/v1/ai/weekly-plan", post(ai_weekly_plan))
         // 报告
@@ -988,12 +991,14 @@ fn local_week_plan(pic: &WeekPicture) -> Vec<crate::todo_extract::ExtractedTodo>
             title: format!("清理 {} 条逾期待办", pic.overdue),
             date: d(0),
             time: None,
+            tag: None,
         });
     }
     out.push(ExtractedTodo {
         title: "规划本周重点（不超过 3 件）".into(),
         date: d(0),
         time: None,
+        tag: None,
     });
     if !pic.top_tags.is_empty() {
         let tag = &pic.top_tags[0];
@@ -1001,6 +1006,7 @@ fn local_week_plan(pic: &WeekPicture) -> Vec<crate::todo_extract::ExtractedTodo>
             title: format!("安排 2 小时「{tag}」专项时间"),
             date: d(2),
             time: None,
+            tag: None,
         });
     }
     if pic.total_todos > 0 && pic.done_todos * 10 / pic.total_todos >= 8 {
@@ -1008,12 +1014,14 @@ fn local_week_plan(pic: &WeekPicture) -> Vec<crate::todo_extract::ExtractedTodo>
             title: format!("延续上周好节奏：记录 {} 条 / 完成 {}/{}，本周保持", pic.node_count, pic.done_todos, pic.total_todos),
             date: d(1),
             time: None,
+            tag: None,
         });
     }
     out.push(ExtractedTodo {
         title: "写本周复盘（完成率与拖延点）".into(),
         date: d(6),
         time: None,
+        tag: None,
     });
     out.truncate(5);
     out
@@ -1480,6 +1488,208 @@ async fn news_hot(
 
     let result = crate::news::fetch_hot_news(&ctx.db, &channels, limit).await;
     Ok(ApiResp::ok(result))
+}
+
+// ───────────────── 智能整理（v1.4.1） ─────────────────
+
+/// 收集箱智能归类：对每条未排期条目给分类建议（todo/reference/note）。
+/// AI 未配置时走本地规则（smart_organize::suggest_kind）。
+async fn smart_classify(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let inbox = ctx.db.list_inbox_todos()?;
+    let mut out = Vec::new();
+    for t in inbox {
+        let sug = crate::smart_organize::suggest_kind(&t.title);
+        out.push(json!({
+            "id": t.id,
+            "title": t.title,
+            "kind": sug.kind,
+            "confidence": sug.confidence,
+        }));
+    }
+    Ok(ApiResp::ok(json!({ "items": out })))
+}
+
+/// 相关事项串联（v1.4.1）：给定一条待办或记录，按「标签重合 + 关键词重合 + 时间邻近」打分，
+/// 返回最相关的记录与待办（纯本地计算，断网可用）。
+async fn smart_related(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let kind = q.get("kind").map(|s| s.as_str()).unwrap_or("todo");
+    let id: i64 = q
+        .get("id")
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| ApiError::bad_request("缺少 id"))?;
+    let limit = q.get("limit").and_then(|v| v.parse::<usize>().ok()).unwrap_or(5).min(20);
+
+    // 取锚点条目的标题词与标签
+    let (anchor_title, anchor_tags, anchor_date) = if kind == "node" {
+        let all = ctx
+            .db
+            .list_nodes_range("2000-01-01", "2999-12-31")
+            .map_err(|e| ApiError::internal(e.to_string()))?;
+        let n = all
+            .into_iter()
+            .find(|n| n.id == id)
+            .ok_or_else(|| ApiError::not_found("记录不存在"))?;
+        (n.content.clone(), n.tags.clone(), n.date.clone())
+    } else {
+        let t = ctx
+            .db
+            .get_todo(id)
+            .map_err(|e| ApiError::internal(e.to_string()))?
+            .ok_or_else(|| ApiError::not_found("待办不存在"))?;
+        (t.title.clone(), t.tags.clone(), t.due_date.clone())
+    };
+
+    // 简易关键词：标题按 2 字滑窗切词（中文无空格），取长度 ≥2 的片段
+    let words: Vec<String> = anchor_title
+        .chars()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .map(|w| w.iter().collect::<String>())
+        .filter(|w| !w.trim().is_empty())
+        .collect();
+
+    let score_of = |other_title: &str, other_tags: &[String], other_date: &str| -> f64 {
+        let mut score = 0.0;
+        // 标签重合
+        for t in &anchor_tags {
+            if other_tags.iter().any(|o| o == t) {
+                score += 3.0;
+            }
+        }
+        // 标题 2 字滑窗重合（抽样防性能：词数截 40）
+        let other_lower = other_title.to_lowercase();
+        let mut hits = 0;
+        for w in words.iter().take(40) {
+            if other_lower.contains(w.as_str()) {
+                hits += 1;
+            }
+        }
+        if !words.is_empty() {
+            score += (hits as f64 / words.iter().take(40).count() as f64) * 5.0;
+        }
+        // 时间邻近（30 天内线性衰减）
+        if let (Ok(a), Ok(b)) = (
+            chrono::NaiveDate::parse_from_str(&anchor_date, "%Y-%m-%d"),
+            chrono::NaiveDate::parse_from_str(other_date, "%Y-%m-%d"),
+        ) {
+            let diff = (a - b).num_days().abs();
+            if diff <= 30 {
+                score += 2.0 * (1.0 - diff as f64 / 30.0);
+            }
+        }
+        score
+    };
+
+    let mut related_nodes: Vec<serde_json::Value> = Vec::new();
+    let month_ago = (chrono::Local::now().date_naive() - chrono::Duration::days(365))
+        .format("%Y-%m-%d")
+        .to_string();
+    let nodes = ctx.db.list_nodes_range(&month_ago, "2999-12-31")?;
+    for n in &nodes {
+        if kind == "node" && n.id == id {
+            continue;
+        }
+        let score = score_of(&n.content, &n.tags, &n.date);
+        if score >= 3.0 {
+            related_nodes.push(json!({
+                "id": n.id, "kind": "node", "title": n.content.chars().take(80).collect::<String>(),
+                "date": n.date, "score": score,
+            }));
+        }
+    }
+    let mut related_todos: Vec<serde_json::Value> = Vec::new();
+    if let Ok(all) = ctx.db.list_todos(Some("全部"), Some("全部"), None, None, None) {
+        for t in &all {
+            if kind == "todo" && t.id == id {
+                continue;
+            }
+            let score = score_of(&t.title, &t.tags, &t.due_date);
+            if score >= 3.0 {
+                related_todos.push(json!({
+                    "id": t.id, "kind": "todo", "title": t.title,
+                    "date": t.due_date, "score": score,
+                }));
+            }
+        }
+    }
+    related_nodes.sort_by(|a, b| {
+        b["score"].as_f64().unwrap_or(0.0).partial_cmp(&a["score"].as_f64().unwrap_or(0.0)).unwrap()
+    });
+    related_todos.sort_by(|a, b| {
+        b["score"].as_f64().unwrap_or(0.0).partial_cmp(&a["score"].as_f64().unwrap_or(0.0)).unwrap()
+    });
+    related_nodes.truncate(limit);
+    related_todos.truncate(limit);
+    Ok(ApiResp::ok(json!({ "nodes": related_nodes, "todos": related_todos })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ActionItemsReq {
+    /// 参与提炼的记录内容（前端勾选传来）
+    contents: Vec<String>,
+}
+
+/// 提炼行动项（v1.4.1）：AI 配置了走模型（parse_todo_array 清洗），否则/失败走本地规则；
+/// 结果统一带「行动项」标签，前端复用拆待办弹窗逐条确认。
+async fn ai_action_items(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<ActionItemsReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let contents: Vec<String> = req
+        .contents
+        .iter()
+        .map(|c| c.trim().chars().take(500).collect::<String>())
+        .filter(|c| !c.is_empty())
+        .take(20)
+        .collect();
+    if contents.is_empty() {
+        return Err(ApiError::bad_request("未选择记录"));
+    }
+    let today = chrono::NaiveDate::parse_from_str(&crate::db::today_string(), "%Y-%m-%d")
+        .unwrap_or_else(|_| chrono::Local::now().date_naive());
+
+    let cfg = ai::load_config(&ctx.db)?;
+    if cfg.has_key || cfg.provider == "ollama" {
+        let joined = contents
+            .iter()
+            .enumerate()
+            .map(|(i, c)| format!("{}. {}", i + 1, c))
+            .collect::<Vec<_>>()
+            .join("
+");
+        let prompt = format!(
+            "以下是几条工作记录。请提炼其中隐含的待办行动项（含负责人/截止/下一步），每条给简短标题和日期。             日期用 YYYY-MM-DD（相对说法按今天 {} 换算），时间没有就填 null。             只输出 JSON 数组：[{{\"title\":\"…\",\"date\":\"YYYY-MM-DD\",\"time\":null}}]，不要解释。
+
+记录：
+{}",
+            crate::db::today_string(),
+            joined
+        );
+        let key = crate::secrets::load_api_key()?;
+        if let Ok(text) = ai::chat_once(&cfg, vec![ChatMsg::user(prompt)], key).await {
+            let mut items = crate::todo_extract::parse_todo_array(&text);
+            if !items.is_empty() {
+                for it in items.iter_mut() {
+                    it.tag = Some("行动项".into());
+                }
+                return Ok(ApiResp::ok(json!({ "isAi": true, "items": items })));
+            }
+        }
+    }
+    let items = crate::smart_organize::suggest_action_items(&contents, today);
+    Ok(ApiResp::ok(json!({ "isAi": false, "items": items })))
 }
 
 #[derive(Deserialize)]

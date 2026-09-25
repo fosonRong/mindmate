@@ -64,6 +64,8 @@ const todoTitles = computed(() => {
 
 async function loadAll() {
   await Promise.all([todos.load(), todos.loadSchedule(todos.selectedDate), todos.loadInbox()])
+  // 收集箱有内容且未归类过 → 自动拉一次归类建议（静默失败不影响列表）
+  if (todos.inbox.length && !Object.keys(suggestions.value).length) classifyInbox().catch(() => {})
   const from = `${todos.selectedDate.slice(0, 8)}01`
   const end = new Date(todos.selectedDate.replace(/-/g, '/'))
   end.setMonth(end.getMonth() + 1)
@@ -129,6 +131,52 @@ async function onDetailPin(todo: Todo) {
   }
   await loadAll()
   app.toast('success', pinned ? t('已取消置顶') : t('已置顶，将显示在最前'))
+}
+
+// ── 收集箱智能归类（v1.4.1）──
+const KIND_META: Record<string, { icon: string; label: string }> = {
+  todo: { icon: '✅', label: '转待办' },
+  reference: { icon: '🔗', label: '参考资料' },
+  note: { icon: '📝', label: '转记录' }
+}
+const suggestions = ref<Record<number, { kind: string; confidence: number }>>({})
+const classifying = ref(false)
+const converting = ref<number | null>(null)
+
+async function classifyInbox() {
+  if (classifying.value || !todos.inbox.length) return
+  classifying.value = true
+  try {
+    const r = await api.smartClassify()
+    const map: Record<number, { kind: string; confidence: number }> = {}
+    for (const it of r.items) map[it.id] = { kind: it.kind, confidence: it.confidence }
+    suggestions.value = map
+  } catch {
+    app.toast('error', t('归类失败，请稍后再试'))
+  } finally {
+    classifying.value = false
+  }
+}
+
+/** 按建议执行转换：todo→收集箱待办原样出箱排今天；note/reference→转记录后从箱里删除 */
+async function applySuggestion(item: Todo, kind: string) {
+  converting.value = item.id
+  try {
+    if (kind === 'todo') {
+      await todos.update(item.id, { dueDate: todayStr(), inbox: false })
+    } else {
+      const content = kind === 'reference' ? `🔗 ${item.title}` : item.title
+      await api.createNode({ content, tags: [t('收集箱')], date: todayStr() })
+      await todos.remove(item.id)
+    }
+    app.toast('success', t('已处理'))
+    await Promise.all([todos.loadInbox(), loadAll()])
+    app.refreshStats()
+  } catch (e: any) {
+    app.toast('error', e?.message || t('操作失败'))
+  } finally {
+    converting.value = null
+  }
 }
 
 /** 收集箱快速收集（v1.2.1）：只记标题，不打日期 */
@@ -228,6 +276,15 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
             <div class="card-title" style="font-size: 15px">{{ $t('📥 收集箱') }}</div>
             <span class="card-sub">{{ $t('{a} 条待排期', { a: todos.inbox.length }) }}</span>
             <div class="spacer"></div>
+            <button
+              v-if="todos.inbox.length"
+              class="btn btn-sm"
+              :disabled="classifying"
+              :title="$t('自动建议每条是待办、记录还是参考资料')"
+              @click="classifyInbox"
+            >
+              {{ classifying ? $t('分析中…') : $t('✨ 智能归类') }}
+            </button>
           </div>
           <div class="row" style="gap: 8px">
             <input
@@ -249,7 +306,28 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
               :title="$t('拖到周视图的某一天即可排期')"
               @dragstart="onInboxDragStart($event, t.id)"
             >
-              <span class="small">⠿ {{ t.title }}</span>
+              <div class="row" style="align-items: flex-start; gap: 6px">
+                <span class="small" style="flex: 1; min-width: 0">⠿ {{ t.title }}</span>
+                <span
+                  v-if="suggestions[t.id]"
+                  class="badge"
+                  :class="suggestions[t.id].kind === 'todo' ? 'ok' : suggestions[t.id].kind === 'reference' ? 'info' : 'info'"
+                  style="flex: none"
+                  :title="$t('智能归类建议')"
+                >
+                  {{ KIND_META[suggestions[t.id].kind]?.label || suggestions[t.id].kind }}
+                </span>
+                <button
+                  v-if="suggestions[t.id]"
+                  class="btn btn-sm"
+                  style="flex: none"
+                  :disabled="converting === t.id"
+                  :title="$t('按建议归类处理')"
+                  @click="applySuggestion(t, suggestions[t.id].kind)"
+                >
+                  ✓
+                </button>
+              </div>
             </div>
           </div>
           <div v-else class="small muted" style="margin-top: 6px">

@@ -12,8 +12,9 @@ import ProgressPair from '@/components/ProgressPair.vue'
 import MarkdownView from '@/components/MarkdownView.vue'
 import TodoEditModal from '@/components/TodoEditModal.vue'
 import TodoDetailModal from '@/components/TodoDetailModal.vue'
+import SmartTodoModal from '@/components/SmartTodoModal.vue'
 import AchievementsDrawer from '@/components/AchievementsDrawer.vue'
-import type { AchievementDef, NewsItem, Todo } from '@/api/types'
+import type { AchievementDef, NewsItem, Todo, ExtractedTodo } from '@/api/types'
 import { isDesktop } from '@/lib/desktop'
 import { t } from '@/i18n'
 
@@ -353,6 +354,47 @@ onUnmounted(() => {
   abortBrief?.()
 })
 
+// ── 提炼行动项（v1.4.1）：勾选今日记录 → AI/规则提炼待办 ──
+const selecting = ref(false)
+const selectedNodes = ref<number[]>([])
+const showActionModal = ref(false)
+const actionItems = ref<ExtractedTodo[]>([])
+const actionIsAi = ref(false)
+const actionLoading = ref(false)
+
+function toggleSelect(id: number) {
+  const i = selectedNodes.value.indexOf(id)
+  if (i >= 0) selectedNodes.value.splice(i, 1)
+  else selectedNodes.value.push(id)
+}
+
+function toggleSelecting() {
+  selecting.value = !selecting.value
+  selectedNodes.value = []
+}
+
+async function extractActions() {
+  if (actionLoading.value || !selectedNodes.value.length) return
+  actionLoading.value = true
+  try {
+    const contents = nodes.nodes
+      .filter((n) => selectedNodes.value.includes(n.id))
+      .map((n) => n.content)
+    const r = await api.aiActionItems(contents)
+    actionItems.value = r.items
+    actionIsAi.value = r.isAi
+    if (!r.items.length) {
+      app.toast('info', t('没有提炼出行动项'))
+      return
+    }
+    showActionModal.value = true
+  } catch (e: any) {
+    app.toast('error', e?.message || t('提炼失败，请稍后再试'))
+  } finally {
+    actionLoading.value = false
+  }
+}
+
 // ── 待办详情（v1.2.2）：点行看详情 ──
 const detailTodo = ref<Todo | null>(null)
 const editingTodo = ref<Todo | null>(null)
@@ -540,7 +582,26 @@ async function completeTodo(id: number) {
           <div class="card-title" style="font-size: 15px">{{ $t('今日记录') }}</div>
           <span class="card-sub">{{ $t('{a} 条', { a: nodes.nodes.length }) }}</span>
           <div class="spacer"></div>
-          <span class="small muted">{{ $t('按时刻排列 · 一次录入即一个节点') }}</span>
+          <span v-if="!selecting" class="small muted">{{ $t('按时刻排列 · 一次录入即一个节点') }}</span>
+          <button
+            v-if="nodes.nodes.length"
+            class="btn btn-sm"
+            :class="{ 'btn-primary': selecting }"
+            @click="toggleSelecting"
+          >
+            {{ selecting ? $t('取消选择') : $t('✨ 提炼行动项') }}
+          </button>
+        </div>
+        <div v-if="selecting" class="hint-bar info" style="margin-bottom: 8px">
+          {{ $t('勾选会议记录、沟通摘录等 → 点下方「提炼」自动抽出待办（确认后入库并打「行动项」标签）') }}
+          <button
+            class="btn btn-sm btn-primary"
+            style="margin-left: 8px"
+            :disabled="!selectedNodes.length || actionLoading"
+            @click="extractActions"
+          >
+            {{ actionLoading ? $t('提炼中…') : $t('提炼（{a}）', { a: selectedNodes.length }) }}
+          </button>
         </div>
         <div v-if="nodes.nodes.length === 0" class="empty">
           <div class="ill">📝</div>
@@ -548,12 +609,23 @@ async function completeTodo(id: number) {
           <div class="d">{{ $t('记下第一笔，10 秒就好') }}</div>
         </div>
         <div v-else class="tl">
-          <NodeItem
+          <div
             v-for="(n, i) in nodes.nodes"
             :key="n.id"
-            :node="n"
-            :show-line="i < nodes.nodes.length - 1"
-          />
+            class="row"
+            style="align-items: flex-start; gap: 4px"
+          >
+            <input
+              v-if="selecting"
+              type="checkbox"
+              style="margin-top: 6px"
+              :checked="selectedNodes.includes(n.id)"
+              @change="toggleSelect(n.id)"
+            />
+            <div style="flex: 1; min-width: 0">
+              <NodeItem :node="n" :show-line="i < nodes.nodes.length - 1" />
+            </div>
+          </div>
         </div>
       </section>
     </div>
@@ -627,6 +699,16 @@ async function completeTodo(id: number) {
     />
 
     <!-- 编辑既有待办（v1.2.2：详情页跳转编辑） -->
+    <SmartTodoModal
+      v-if="showActionModal"
+      :items="actionItems"
+      :is-ai="actionIsAi"
+      :source="t('今日记录提炼')"
+      tag="行动项"
+      @close="showActionModal = false"
+      @saved="showActionModal = false; selecting = false; selectedNodes = []; todos.load(); app.refreshStats()"
+    />
+
     <TodoEditModal
       v-if="showEditModal && editingTodo"
       :todo="editingTodo"
