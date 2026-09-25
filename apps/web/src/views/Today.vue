@@ -193,32 +193,6 @@ async function openNews(n: NewsItem) {
 // ── 热点一键转记录 / 转待办（v1.1.1） ──
 const convertingNews = ref<string | null>(null) // 正在转的条目标题（按钮防抖）
 
-/** 转为今日记录：标题 + 链接两行，打「热点」标签 */
-async function newsToNode(n: NewsItem) {
-  if (convertingNews.value) return
-  convertingNews.value = n.title
-  try {
-    const content = n.url ? `${n.title}\n${n.url}` : n.title
-    await nodes.create(content, [t('热点')], today.value)
-    app.toast('success', t('已转为今日记录'))
-    app.refreshStats()
-  } catch (e: any) {
-    app.toast('error', e?.message || t('转换失败，请稍后再试'))
-  } finally {
-    convertingNews.value = null
-  }
-}
-
-/** 转为待办：打开新建弹窗预填标题/链接，用户确认后入库 */
-function newsToTodo(n: NewsItem) {
-  presetTodo.value = {
-    title: n.title,
-    description: n.url || '',
-    tags: [t('热点')]
-  }
-  showTodoModal.value = true
-}
-
 const unlockedBadges = computed(() => badges.value.filter((a) => a.unlocked))
 
 // ── 新手引导任务流（v1.2.0-③）：从现有数据推导完成态，全部完成自动收起并持久化 ──
@@ -510,17 +484,6 @@ async function completeTodo(id: number) {
                 <span class="news-idx mono">{{ i + 1 }}</span>
                 <a class="news-title" :title="n.title" @click="openNews(n)">{{ n.title }}</a>
                 <span class="chip" style="flex: none">{{ n.channelName }}</span>
-                <span class="news-acts">
-                  <button
-                    class="news-act"
-                    :title="$t('存为今日记录')"
-                    :disabled="convertingNews === n.title"
-                    @click.stop="newsToNode(n)"
-                  >
-                    📝
-                  </button>
-                  <button class="news-act" :title="$t('建为待办')" @click.stop="newsToTodo(n)">✓</button>
-                </span>
               </li>
               <li v-if="newsLoadingMore" class="small muted" style="justify-content: center">
                 {{ $t('加载更多…') }}

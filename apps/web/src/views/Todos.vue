@@ -5,6 +5,7 @@ import { useTodosStore } from '@/stores/todos'
 import { useAppStore, todayStr, friendlyDate, fmtDate } from '@/stores/app'
 import TodoItem from '@/components/TodoItem.vue'
 import TodoDetailModal from '@/components/TodoDetailModal.vue'
+import SchedulePlanModal from '@/components/SchedulePlanModal.vue'
 import TodoEditModal from '@/components/TodoEditModal.vue'
 import CalendarMonth from '@/components/CalendarMonth.vue'
 import { api } from '@/api/client'
@@ -131,6 +132,43 @@ async function onDetailPin(todo: Todo) {
   }
   await loadAll()
   app.toast('success', pinned ? t('已取消置顶') : t('已置顶，将显示在最前'))
+}
+
+// ── 一键智能排期 + 跟进视图 + 批量顺延（v1.5.0）──
+const showPlan = ref(false)
+const showWaiting = ref(false)
+const waitingItems = ref<{ id: number; title: string; dueDate: string; status: string; waitingDays: number }[]>([])
+
+async function openWaiting() {
+  showWaiting.value = true
+  try {
+    const r = await api.waitingList()
+    waitingItems.value = r.items
+  } catch {
+    app.toast('error', t('读取失败'))
+  }
+}
+
+/** 逾期批量顺延到最近工作日 */
+async function postponeOverdue() {
+  const ids = todos.todos.filter((x) => x.status === '已逾期').map((x) => x.id)
+  if (!ids.length) {
+    app.toast('info', t('没有逾期待办'))
+    return
+  }
+  try {
+    const r = await api.smartPostpone(ids.map((id) => ({ todoId: id })))
+    app.toast('success', t('已顺延 {a} 条到最近工作日', { a: (r as any).postponed }))
+    await loadAll()
+    app.refreshStats()
+  } catch (e: any) {
+    app.toast('error', e?.message || t('操作失败'))
+  }
+}
+
+function onPlanApplied() {
+  loadAll().catch(() => {})
+  app.refreshStats()
 }
 
 // ── 收集箱智能归类（v1.4.1）──
@@ -286,6 +324,13 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
               {{ classifying ? $t('分析中…') : $t('✨ 智能归类') }}
             </button>
           </div>
+          <div class="row" style="margin-top: 8px; gap: 6px">
+            <button class="btn btn-sm btn-primary" style="flex: 1; justify-content: center" @click="showPlan = true">
+              🗓️ {{ $t('一键智能排期') }}
+            </button>
+            <button class="btn btn-sm" @click="openWaiting">⏳ {{ $t('跟进视图') }}</button>
+            <button class="btn btn-sm" @click="postponeOverdue">↩️ {{ $t('逾期顺延') }}</button>
+          </div>
           <div class="row" style="gap: 8px">
             <input
               v-model="inboxDraft"
@@ -438,4 +483,22 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
       @pin="onDetailPin"
       @toggle="onDetailToggle"
     />
+    <SchedulePlanModal v-if="showPlan" @close="showPlan = false" @applied="onPlanApplied" />
+
+    <!-- 跟进与等待视图 -->
+    <div v-if="showWaiting" class="modal-mask" @click.self="showWaiting = false">
+      <div class="modal">
+        <h3>{{ $t('⏳ 跟进与等待') }}</h3>
+        <div class="small muted" style="margin-bottom: 8px">{{ $t('打「跟进」标签的待办集中在此，等待天数一目了然') }}</div>
+        <div v-if="!waitingItems.length" class="small muted">{{ $t('暂无跟进中的事项') }}</div>
+        <div v-for="w in waitingItems" :key="w.id" class="row" style="padding: 4px 0; border-bottom: 1px solid var(--border)">
+          <span style="flex: 1; min-width: 0; font-size: 13px">{{ w.title }}</span>
+          <span class="small muted">{{ w.dueDate }}</span>
+          <span class="badge" :class="w.waitingDays > 7 ? 'danger' : 'info'">{{ $t('等 {a} 天', { a: w.waitingDays }) }}</span>
+        </div>
+        <div class="modal-actions">
+          <button class="btn" @click="showWaiting = false">{{ $t('关闭') }}</button>
+        </div>
+      </div>
+    </div>
 </template>

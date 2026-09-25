@@ -369,9 +369,8 @@ check("v1.1.1 标签：速记/待办弹窗共用动态选项 + AI 打标 + 停�
       and "ai_autotag" in read("apps", "web", "src", "components", "QuickEntry.vue")
       and "tagsStore.options" in read("apps", "web", "src", "components", "TodoEditModal.vue")
       and "suggestTags" in read("apps", "web", "src", "components", "TodoEditModal.vue"))
-check("v1.1.1 热点：一键转记录/转待办（悬停按钮 + TodoEditModal 预填）",
-      "newsToNode" in today_src and "newsToTodo" in today_src
-      and "news-acts" in read("apps", "web", "src", "styles", "app.css")
+check("v1.2.4+ 热点：一键转记录/转待办已按用户要求移除（保留点击浏览器打开 + preset 预填能力）",
+      "newsToNode" not in today_src and "newsToTodo" not in today_src
       and "preset" in read("apps", "web", "src", "components", "TodoEditModal.vue"))
 # ── v1.1.2 智能速记（自然语言拆待办）+ 空状态引导 ──
 extract_rs = read("core", "src", "todo_extract.rs")
@@ -534,6 +533,24 @@ check("v1.4.1 提炼行动项：规则/AI 双路 + 今日页选择模式 + 跟�
 check("v1.4.1 相似内容提示：速记输入防抖检索 + 轻提示不打断",
       "checkSimilar" in read("apps", "web", "src", "components", "QuickEntry.vue")
       and "similar-hint" in read("apps", "web", "src", "styles", "base.css"))
+# ── v1.5.0 智能排期与档案 ──
+engine_rs = read("core", "src", "schedule_engine.rs")
+todos_v = read("apps", "web", "src", "views", "Todos.vue")
+check("v1.5.0 排期引擎：优先级×截止×容量铺工作日（高优先先排/跳周末/未来不动）",
+      "build_plan" in engine_rs and "is_workday" in engine_rs and "priority_weight" in engine_rs
+      and "(sort_order < 0) DESC" in read("core", "src", "db", "queries.rs"))
+check("v1.5.0 排期端点：预览不写库 + 批量应用 + 撤销反向",
+      "schedule/preview" in read("core", "src", "api", "mod.rs")
+      and "schedule/apply" in read("core", "src", "api", "mod.rs")
+      and "SchedulePlanModal" in read("apps", "web", "src", "views", "Todos.vue"))
+check("v1.5.0 逾期顺延/跟进视图/事项档案/周报证据",
+      "smart_postpone" in read("core", "src", "api", "mod.rs")
+      and "item_archive" in read("core", "src", "api", "mod.rs")
+      and "waiting_list" in read("core", "src", "api", "mod.rs")
+      and "report_evidence" in read("core", "src", "api", "mod.rs")
+      and "openWaiting" in todos_v
+      and "itemArchive" in read("apps", "web", "src", "components", "TodoDetailModal.vue")
+      and "reportEvidence" in read("apps", "web", "src", "views", "Companion.vue"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

@@ -218,6 +218,22 @@ async function loadCompare() {
   }
 }
 
+// ── 周报证据（v1.5.0）──
+const evidence = ref<{ id: number; title: string; dueDate: string; tags: string[] }[]>([])
+
+async function loadEvidence() {
+  if (rtype.value !== 'weekly') {
+    evidence.value = []
+    return
+  }
+  try {
+    const r = await api.reportEvidence(reportDate.value)
+    evidence.value = r.items
+  } catch {
+    evidence.value = []
+  }
+}
+
 // ── AI 周计划（v1.2.0-②）──
 const planLoading = ref(false)
 const plan = ref<WeeklyPlan | null>(null)
@@ -250,7 +266,7 @@ onMounted(async () => {
   await Promise.all([loadSaved(), loadHistory(), loadReview(), loadChat(), loadCompare()])
 })
 
-watch([rtype, reportDate], () => loadCompare())
+watch([rtype, reportDate], () => { loadCompare(); loadEvidence() })
 </script>
 
 <template>
@@ -279,6 +295,13 @@ watch([rtype, reportDate], () => loadCompare())
 
       <!-- 报告回顾对比（v1.2.0）：本期 vs 上期趋势 -->
       <PeriodCompareBar v-if="rtype !== 'monthly'" :compare="compare" :kind="rtype === 'weekly' ? 'weekly' : 'daily'" style="margin-bottom: 12px" />
+      <!-- 周报证据（v1.5.0）：本周完成待办与关联记录 -->
+      <div v-if="rtype === 'weekly' && evidence.length" class="hint-bar info" style="margin-bottom: 12px">
+        <b>{{ $t('🗂️ 本周关键事项与证据') }}</b>
+        <div v-for="e in evidence" :key="e.id" class="small" style="margin-top: 2px">
+          · {{ e.title }} <span class="mono muted">{{ e.dueDate.slice(5) }}</span>
+        </div>
+      </div>
 
       <div v-if="reportDegraded" class="hint-bar warn" style="margin-bottom: 12px">
         {{ $t('⚙️ 当前为本地模板拼装，配置 AI 模型可获得更优质的{a}', { a: rtypeLabel[rtype] }) }}

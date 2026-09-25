@@ -125,6 +125,31 @@ export const api = {
     post<{ items: { id: number; title: string; kind: 'todo' | 'reference' | 'note' | string; confidence: number }[] }>(
       '/api/v1/smart/classify'
     ),
+  /** 一键智能排期预览（v1.5.0） */
+  schedulePlanPreview: () =>
+    post<{ items: { todoId: number; title: string; fromDate: string; toDate: string; priority: string; reason: string }[]; dailyCapacity: number; moved: number; total: number }>(
+      '/api/v1/smart/schedule/preview'
+    ),
+  /** 应用排期（撤销=反向应用原日期） */
+  scheduleApply: (items: { todoId: number; toDate: string }[]) =>
+    post<{ applied: number }>('/api/v1/smart/schedule/apply', { items }),
+  /** 逾期智能顺延（批量到最近工作日） */
+  smartPostpone: (items: { todoId: number }[]) =>
+    post<{ postponed: number; items: { id: number; to: string }[] }>('/api/v1/smart/postpone', { items }),
+  /** 事项档案（v1.5.0 有迹可循） */
+  itemArchive: (kind: 'todo' | 'node', id: number) =>
+    get<{ title: string; tags: string[]; nodes: { id: number; title: string; date: string }[]; todos: { id: number; title: string; date: string }[]; reports: { id: number; type: string; period: string; createdAt: string; snippet: string }[] }>(
+      `/api/v1/smart/archive?kind=${kind}&id=${id}`
+    ),
+  /** 跟进与等待视图（v1.5.0） */
+  waitingList: () => get<{ items: { id: number; title: string; dueDate: string; status: string; waitingDays: number }[] }>(
+    '/api/v1/smart/waiting'
+  ),
+  /** 周报证据（v1.5.0） */
+  reportEvidence: (date?: string) =>
+    get<{ from: string; to: string; items: { id: number; title: string; dueDate: string; tags: string[] }[] }>(
+      `/api/v1/report/evidence${date ? `?date=${date}` : ''}`
+    ),
   /** 相关事项（v1.4.1）：标签/关键词/时间邻近打分 */
   relatedItems: (kind: 'todo' | 'node', id: number, limit = 5) =>
     get<{ nodes: { id: number; title: string; date: string; score: number }[]; todos: { id: number; title: string; date: string; score: number }[] }>(

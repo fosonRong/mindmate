@@ -827,6 +827,19 @@ impl Db {
         Ok(v.filter(|s| !s.is_empty()))
     }
 
+    /// 待办标题/描述检索（统一检索内部复用）
+    pub fn search_todos(&self, query: &str, limit: i64) -> Result<Vec<Todo>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM todos
+             WHERE deleted_at IS NULL AND inbox = 0 AND (title LIKE ?1 OR description LIKE ?1)
+             ORDER BY due_date DESC, id DESC LIMIT ?2",
+            Self::TODO_COLS
+        ))?;
+        let rows = stmt.query_map(params![format!("%{query}%"), limit], Self::row_to_todo)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// 全部在用标签（记录 + 待办的 tags JSON 合并统计）：按使用次数降序、次数同则按名称。
     /// 标签选择器的数据源——「自定义标签」只是把不常碰的词提前放进选项，这里保证删过的、
     /// 手输过的标签也都能被再次选到。

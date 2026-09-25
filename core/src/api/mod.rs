@@ -167,6 +167,12 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/replan", post(ai_replan))
         .route("/api/v1/ai/tag", post(ai_tag))
         .route("/api/v1/smart/classify", post(smart_classify))
+        .route("/api/v1/smart/schedule/preview", post(schedule_preview))
+        .route("/api/v1/smart/schedule/apply", post(schedule_apply))
+        .route("/api/v1/smart/postpone", post(smart_postpone))
+        .route("/api/v1/smart/archive", get(item_archive))
+        .route("/api/v1/smart/waiting", get(waiting_list))
+        .route("/api/v1/report/evidence", get(report_evidence))
         .route("/api/v1/smart/related", get(smart_related))
         .route("/api/v1/ai/action-items", post(ai_action_items))
         .route("/api/v1/ai/extract-todos", post(ai_extract_todos))
@@ -1692,6 +1698,299 @@ async fn ai_action_items(
     Ok(ApiResp::ok(json!({ "isAi": false, "items": items })))
 }
 
+// ───────────────── 智能排期与档案（v1.5.0） ─────────────────
+
+/// 排期预览（v1.5.0）：收集箱 + 逾期/今日未完成按 优先级×截止×容量 铺进未来工作日。
+/// 只产建议不写库；应用走 /smart/schedule/apply。
+async fn schedule_preview(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let capacity = ctx
+        .db
+        .get_setting("daily_goal")
+        .ok()
+        .flatten()
+        .and_then(|v| v.parse::<i64>().ok())
+        .unwrap_or(4)
+        .max(1);
+    let today = crate::db::today_string();
+    let mut data: Vec<(i64, String, String, String)> = Vec::new();
+    for t in ctx.db.list_inbox_todos().map_err(|e| ApiError::internal(e.to_string()))? {
+        data.push((t.id, t.title, t.priority.clone(), today.clone()));
+    }
+    for t in ctx
+        .db
+        .list_todos(Some("全部"), Some("全部"), None, None, None)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+    {
+        if t.inbox || t.status == "已完成" {
+            continue;
+        }
+        if t.due_date <= today {
+            data.push((t.id, t.title, t.priority.clone(), t.due_date.clone()));
+        }
+    }
+    let start = chrono::Local::now().date_naive();
+    let plan = crate::schedule_engine::build_plan(&crate::schedule_engine::EngineInput {
+        todos: &data,
+        daily_capacity: capacity,
+        start,
+        keep_future: true,
+    });
+    let moved = plan
+        .items
+        .iter()
+        .filter(|i| i.from_date != i.to_date)
+        .count();
+    Ok(ApiResp::ok(json!({
+        "items": plan.items,
+        "dailyCapacity": plan.daily_capacity,
+        "moved": moved,
+        "total": plan.items.len(),
+    })))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleApplyReq {
+    /// 预览返回的 items（todoId + toDate）；撤销时前端传原 from_date 反向应用
+    items: Vec<ScheduleApplyItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ScheduleApplyItem {
+    todo_id: i64,
+    to_date: String,
+}
+
+/// 应用排期计划：批量改期（出收集箱）。
+async fn schedule_apply(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<ScheduleApplyReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let mut applied = 0i64;
+    for item in &req.items {
+        if chrono::NaiveDate::parse_from_str(&item.to_date, "%Y-%m-%d").is_err() {
+            return Err(ApiError::bad_request("日期格式不合法"));
+        }
+        if ctx
+            .db
+            .update_todo(
+                item.todo_id,
+                crate::db::TodoPatch {
+                    due_date: Some(item.to_date.clone()),
+                    inbox: Some(false),
+                    ..Default::default()
+                },
+            )?
+            .is_some()
+        {
+            applied += 1;
+        }
+    }
+    ctx.bus.publish(Event::new(
+        "settings.updated",
+        json!({ "keys": ["schedule_applied"] }),
+    ));
+    Ok(ApiResp::ok(json!({ "applied": applied })))
+}
+
+/// 逾期智能顺延（v1.5.0）：批量顺延到最近工作日（跳周末）。
+async fn smart_postpone(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<ScheduleApplyReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let target = crate::schedule_engine::next_workday(chrono::Local::now().date_naive())
+        .format("%Y-%m-%d")
+        .to_string();
+    let mut results = Vec::new();
+    for item in &req.items {
+        if ctx
+            .db
+            .update_todo(
+                item.todo_id,
+                crate::db::TodoPatch {
+                    due_date: Some(target.clone()),
+                    inbox: Some(false),
+                    ..Default::default()
+                },
+            )?
+            .is_some()
+        {
+            results.push(json!({ "id": item.todo_id, "to": target }));
+        }
+    }
+    Ok(ApiResp::ok(json!({ "postponed": results.len(), "items": results })))
+}
+
+/// 事项档案（v1.5.0「有迹可循」）：相关记录/待办 + 涉及报告，一条链路看完来龙去脉。
+async fn item_archive(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let kind = q.get("kind").map(|s| s.as_str()).unwrap_or("todo");
+    let id: i64 = q
+        .get("id")
+        .and_then(|v| v.parse().ok())
+        .ok_or_else(|| ApiError::bad_request("缺少 id"))?;
+
+    let (anchor_title, anchor_tags) = if kind == "todo" {
+        let t = ctx
+            .db
+            .get_todo(id)
+            .map_err(|e| ApiError::internal(e.to_string()))?
+            .ok_or_else(|| ApiError::not_found("待办不存在"))?;
+        (t.title.clone(), t.tags.clone())
+    } else {
+        let n = ctx
+            .db
+            .get_node(id)
+            .map_err(|e| ApiError::internal(e.to_string()))?
+            .ok_or_else(|| ApiError::not_found("记录不存在"))?;
+        (n.content.clone(), n.tags.clone())
+    };
+
+    // 复用统一检索做主题串联（2 字滑窗取标题关键词）
+    let words: Vec<String> = anchor_title
+        .chars()
+        .collect::<Vec<_>>()
+        .windows(2)
+        .map(|w| w.iter().collect::<String>())
+        .take(40)
+        .collect();
+    let related_nodes: Vec<serde_json::Value> = words
+        .iter()
+        .filter_map(|w| ctx.db.search_nodes(w, 5).ok())
+        .flat_map(|v| v)
+        .filter(|n| !(kind == "node" && n.id == id))
+        .map(|n| {
+            json!({
+                "id": n.id, "kind": "node",
+                "title": n.content.chars().take(80).collect::<String>(),
+                "date": n.date,
+            })
+        })
+        .collect::<Vec<_>>();
+    let related_todos: Vec<serde_json::Value> = words
+        .iter()
+        .filter_map(|w| ctx.db.search_todos(w, 5).ok())
+        .flat_map(|v| v)
+        .filter(|t| !(kind == "todo" && t.id == id))
+        .map(|t| {
+            json!({
+                "id": t.id, "kind": "todo", "title": t.title, "date": t.due_date,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    // 涉及报告：内容命中关键词
+    let reports = ctx
+        .db
+        .list_reports(None, 100)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .into_iter()
+        .filter(|r| words.iter().any(|w| r.content.contains(w.as_str())))
+        .take(5)
+        .map(|r| {
+            json!({
+                "id": r.id, "type": r.r#type, "period": r.period,
+                "createdAt": r.created_at,
+                "snippet": crate::db::Db::make_snippet(
+                    &r.content,
+                    words.first().map(String::as_str).unwrap_or(""),
+                    20,
+                    40
+                ),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let dedup = |v: Vec<serde_json::Value>| -> Vec<serde_json::Value> {
+        let mut seen = std::collections::HashSet::new();
+        v.into_iter()
+            .filter(|x| seen.insert(x["id"].as_i64().unwrap_or(0)))
+            .take(8)
+            .collect()
+    };
+
+    Ok(ApiResp::ok(json!({
+        "title": anchor_title.chars().take(60).collect::<String>(),
+        "tags": anchor_tags,
+        "nodes": dedup(related_nodes),
+        "todos": dedup(related_todos),
+        "reports": reports,
+    })))
+}
+
+/// 跟进与等待视图（v1.5.0）：「跟进」标签的未完成待办 + 等待天数。
+async fn waiting_list(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let all = ctx
+        .db
+        .list_todos(Some("全部"), Some("全部"), None, Some("跟进"), None)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let today = chrono::Local::now().date_naive();
+    let items = all
+        .into_iter()
+        .filter(|t| t.status != "已完成")
+        .map(|t| {
+            let waiting_days = chrono::NaiveDate::parse_from_str(&t.due_date, "%Y-%m-%d")
+                .map(|d| (today - d).num_days().max(0))
+                .unwrap_or(0);
+            json!({
+                "id": t.id, "title": t.title, "dueDate": t.due_date,
+                "status": t.status, "waitingDays": waiting_days,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(ApiResp::ok(json!({ "items": items })))
+}
+
+/// 周报证据（v1.5.0）：本周完成的待办 + 关联记录摘要（按待办聚合，汇报直接引用）。
+async fn report_evidence(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Query(q): Query<HashMap<String, String>>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let date = q.get("date").cloned().unwrap_or_else(crate::db::today_string);
+    let d = chrono::NaiveDate::parse_from_str(&date, "%Y-%m-%d")
+        .map_err(|_| ApiError::bad_request("日期格式不合法"))?;
+    let mon = d - chrono::Duration::days(d.weekday().num_days_from_monday() as i64);
+    let from = mon.format("%Y-%m-%d").to_string();
+    let to = (mon + chrono::Duration::days(6)).format("%Y-%m-%d").to_string();
+    let todos = ctx
+        .db
+        .list_todos(Some("全部"), Some("已完成"), None, None, None)
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let evidence = todos
+        .iter()
+        .filter(|t| t.due_date >= from && t.due_date <= to)
+        .take(20)
+        .map(|t| {
+            // 关联记录：同标签或同关键词的今日记录摘要（标题即证据线索）
+            json!({
+                "id": t.id, "title": t.title, "dueDate": t.due_date,
+                "tags": t.tags,
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(ApiResp::ok(json!({ "from": from, "to": to, "items": evidence })))
+}
+
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct CaptureImageReq {
@@ -1844,6 +2143,8 @@ async fn build_report_messages(
                     ("from", from.clone()),
                     ("to", to.clone()),
                     ("nodes", ai::format_nodes_by_day(&nodes)),
+                    // {{context}}：与 nodes 同源（用户自定义模板常用此名，v1.2.4 反馈）
+                    ("context", ai::format_nodes_by_day(&nodes)),
                     ("todos", ai::format_todos(&period_todos)),
                     (
                         "progress",
