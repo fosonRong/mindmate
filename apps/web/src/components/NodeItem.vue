@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // 记录节点气泡（时间线一项）：时刻 + 内容 + 标签 + 悬停操作
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Node } from '@/api/types'
 import { useNodesStore } from '@/stores/nodes'
 import { useAppStore } from '@/stores/app'
@@ -53,6 +53,12 @@ function toggleTag(t: string) {
   else draftTags.value.push(t)
 }
 
+/** 捕捉图片行渲染（v1.4.0）：content 中 /captures/ 开头的行显示为图片 */
+const contentLines = computed(() => props.node.content.split('\n'))
+function isCaptureUrl(line: string) {
+  return line.trim().startsWith('/captures/')
+}
+
 function tagClass(t: string) {
   const map: Record<string, string> = { 工作: 'work', 生活: 'life', 健康: 'health', 学习: 'study' }
   return map[t] || 'none'
@@ -76,7 +82,12 @@ function tagClass(t: string) {
           <span v-for="t in node.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
           <span v-if="node.isBackfill" class="small muted">{{ $t('补录') }}</span>
         </div>
-        <div class="tl-content">{{ node.content }}</div>
+        <div class="tl-content">
+          <template v-for="(line, li) in contentLines" :key="li">
+            <img v-if="isCaptureUrl(line)" :src="line" class="capture-img" :alt="$t('捕捉图片')" loading="lazy" />
+            <template v-else>{{ line }}</template>
+          </template>
+        </div>
       </template>
       <div v-else class="tl-edit">
         <textarea v-model="draft" class="textarea" rows="3" @keydown.esc="editing = false"></textarea>

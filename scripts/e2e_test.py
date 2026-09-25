@@ -1122,6 +1122,30 @@ _check = (_r.get("data") or {})
 check("路由设置回读", _check.get("value") == json.dumps(["dingtalk"]), f"value={_check.get('value')}")
 _r, _ = call("PUT", "/settings", {"values": {"push_route_report": "all"}})
 check("恢复路由=全部（清理）", _r.get("code") == 0, "")
+
+# ─────────────────────── 18. 随手捕捉（v1.4.0：图片速记端点）───────────────────────
+section("18. 随手捕捉：图片速记存储")
+# 1x1 红色 PNG（67 字节）
+_PNG_B64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+_r, _code = call("POST", "/capture/image", {"name": "paste.png", "dataBase64": _PNG_B64})
+_d = (_r.get("data") or {})
+check("图片保存成功并返回路径与 URL",
+      _r.get("code") == 0 and bool(_d.get("path")) and (_d.get("url") or "").startswith("/captures/"),
+      str(_r.get("message"))[:80])
+if _d.get("path"):
+    import os as _os
+    check("文件真实落盘", _os.path.exists(_d.get("path")), f"path={_d.get('path')}")
+    _url = _d.get("url")
+    try:
+        import urllib.request as _u
+        _resp = _u.urlopen(BASE.replace("/api/v1", "") + _url, timeout=5)
+        check("相对 URL 可静态访问", _resp.status == 200 and _resp.headers.get("Content-Type", "").startswith("image/"), str(_resp.headers.get("Content-Type")))
+    except Exception as _e:
+        check("相对 URL 可静态访问", False, str(_e)[:80])
+_r, _code = call("POST", "/capture/image", {"name": "x.exe", "dataBase64": _PNG_B64})
+check("非图片扩展名被拒绝", _r.get("code") != 0, f"code={_r.get('code')}")
+_r, _code = call("POST", "/capture/image", {"name": "x.png", "dataBase64": "!!!not-base64!!!"})
+check("非法 Base64 被拒绝", _r.get("code") != 0, f"code={_r.get('code')}")
 _cfg_clean = dict(_cfg2)
 _cfg_clean["dingtalkWebhook"] = ""
 _cfg_clean["dingtalkSecret"] = ""

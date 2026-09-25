@@ -16,6 +16,10 @@ fn main() {
                 "backend_port",
                 "autostart_status",
                 "autostart_set",
+                "capture_clipboard_text",
+                "capture_clipboard_image",
+                "save_capture_file",
+                "ocr_image",
             ]),
         ),
     )

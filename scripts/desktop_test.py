@@ -495,6 +495,29 @@ check("v1.2.4 推送引导：提醒分区引导条（未配置才显示，点击
       "pushConfigured" in settings_vue
       and "section = 'push'" in settings_vue
       and "推送渠道" in settings_vue and "runDiag" in settings_vue)
+# ── v1.4.0 随手捕捉 ──
+quick_vue = read("apps", "web", "src", "views", "Quick.vue")
+capture_rs = read("src-tauri", "src", "capture.rs")
+check("v1.4.0 万能捕捉浮窗：智能分流（URL/待办草稿内联确认/收集箱/记录）",
+      "smartRoute" in quick_vue and "draftTodos" in quick_vue
+      and "collectInbox" in quick_vue and "isUrl" in quick_vue
+      and "/quick" in read("apps", "web", "src", "router.ts"))
+check("v1.4.0 图片速记：粘贴/拖入 → captures 端点落盘 → NodeItem 渲染图片",
+      "/api/v1/capture/image" in read("core", "src", "api", "mod.rs")
+      and "captures_dir" in read("core", "src", "config.rs")
+      and "captureImage" in read("apps", "web", "src", "api", "client.ts")
+      and "isCaptureUrl" in read("apps", "web", "src", "components", "NodeItem.vue"))
+check("v1.4.0 本机 OCR：Windows.Media.Ocr 原生 + macOS/Linux tesseract 兜底（含中文包指引）",
+      "OcrEngine" in capture_rs and "ocr_windows" in capture_rs
+      and "ocr_tesseract" in capture_rs and "chi_sim+eng" in capture_rs)
+check("v1.4.0 剪贴板/文件捕捉：桌面命令（arboard）+ 拖放监听",
+      "capture_clipboard_text" in capture_rs and "capture_clipboard_image" in capture_rs
+      and "save_capture_file" in capture_rs
+      and "onDragDropEvent" in quick_vue
+      and "capture_clipboard_text" in read("src-tauri", "build.rs"))
+check("v1.4.0 语音速记：Web Speech 特性探测（不可用自动隐藏）",
+      "speechAvailable" in read("apps", "web", "src", "components", "QuickEntry.vue")
+      and "webkitSpeechRecognition" in read("apps", "web", "src", "components", "QuickEntry.vue"))
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

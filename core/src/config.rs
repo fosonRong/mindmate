@@ -101,6 +101,10 @@ impl AppConfig {
     pub fn log_dir(&self) -> PathBuf {
         self.data_dir.join("logs")
     }
+    /// 捕捉附件目录（v1.4.0：图片速记等原始文件按月分目录存放）
+    pub fn captures_dir(&self) -> PathBuf {
+        self.data_dir.join("captures")
+    }
     /// 实际绑定地址
     pub fn bind_addr(&self) -> &'static str {
         if self.mode.binds_all() || self.lan_enabled {

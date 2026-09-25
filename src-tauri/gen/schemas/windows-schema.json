@@ -195,16 +195,40 @@
           "markdownDescription": "Enables the backend_port command without any pre-configured scope."
         },
         {
+          "description": "Enables the capture_clipboard_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-capture-clipboard-image",
+          "markdownDescription": "Enables the capture_clipboard_image command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the capture_clipboard_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-capture-clipboard-text",
+          "markdownDescription": "Enables the capture_clipboard_text command without any pre-configured scope."
+        },
+        {
           "description": "Enables the close_quick_entry command without any pre-configured scope.",
           "type": "string",
           "const": "allow-close-quick-entry",
           "markdownDescription": "Enables the close_quick_entry command without any pre-configured scope."
         },
         {
+          "description": "Enables the ocr_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-ocr-image",
+          "markdownDescription": "Enables the ocr_image command without any pre-configured scope."
+        },
+        {
           "description": "Enables the open_quick_entry command without any pre-configured scope.",
           "type": "string",
           "const": "allow-open-quick-entry",
           "markdownDescription": "Enables the open_quick_entry command without any pre-configured scope."
+        },
+        {
+          "description": "Enables the save_capture_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-save-capture-file",
+          "markdownDescription": "Enables the save_capture_file command without any pre-configured scope."
         },
         {
           "description": "Denies the autostart_set command without any pre-configured scope.",
@@ -225,16 +249,40 @@
           "markdownDescription": "Denies the backend_port command without any pre-configured scope."
         },
         {
+          "description": "Denies the capture_clipboard_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-capture-clipboard-image",
+          "markdownDescription": "Denies the capture_clipboard_image command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the capture_clipboard_text command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-capture-clipboard-text",
+          "markdownDescription": "Denies the capture_clipboard_text command without any pre-configured scope."
+        },
+        {
           "description": "Denies the close_quick_entry command without any pre-configured scope.",
           "type": "string",
           "const": "deny-close-quick-entry",
           "markdownDescription": "Denies the close_quick_entry command without any pre-configured scope."
         },
         {
+          "description": "Denies the ocr_image command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-ocr-image",
+          "markdownDescription": "Denies the ocr_image command without any pre-configured scope."
+        },
+        {
           "description": "Denies the open_quick_entry command without any pre-configured scope.",
           "type": "string",
           "const": "deny-open-quick-entry",
           "markdownDescription": "Denies the open_quick_entry command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the save_capture_file command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-save-capture-file",
+          "markdownDescription": "Denies the save_capture_file command without any pre-configured scope."
         },
         {
           "description": "This permission set configures if your\napplication can enable or disable auto\nstarting the application on boot.\n\n#### Granted Permissions\n\nIt allows all to check, enable and\ndisable the automatic start on boot.\n\n\n#### This default permission set includes:\n\n- `allow-enable`\n- `allow-disable`\n- `allow-is-enabled`",

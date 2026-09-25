@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-capture-file"
+description = "Enables the save_capture_file command without any pre-configured scope."
+commands.allow = ["save_capture_file"]
+
+[[permission]]
+identifier = "deny-save-capture-file"
+description = "Denies the save_capture_file command without any pre-configured scope."
+commands.deny = ["save_capture_file"]

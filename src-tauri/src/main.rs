@@ -7,6 +7,7 @@
 
 mod assets;
 mod autostart;
+mod capture;
 
 use mindmate_core::config::AppConfig;
 use mindmate_core::reminder;
@@ -178,6 +179,7 @@ fn main() {
         }
     };
 
+
     let assets = if assets::has_assets() { Some(assets::resolver()) } else { None };
     if assets.is_none() {
         tracing::warn!("未检测到内嵌前端产物（apps/web/dist），将回退到 --web-dir");
@@ -239,10 +241,17 @@ fn main() {
             close_quick_entry,
             backend_port,
             autostart_status,
-            autostart_set
+            autostart_set,
+            capture::capture_clipboard_text,
+            capture::capture_clipboard_image,
+            capture::save_capture_file,
+            capture::ocr_image
         ])
         .setup(move |app| {
             let handle = app.handle().clone();
+
+            // 随手捕捉（v1.4.0）：captures 目录与核心 HTTP 静态服务同源
+            app.manage(capture::CapturesDir(cfg.captures_dir()));
 
             // ── 主窗口：加载本机 HTTP 服务（与浏览器端同一份前端）──
             let main_url: tauri::Url = base_url("/").parse()?;

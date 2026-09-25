@@ -1,6 +1,6 @@
 [package]
 name = "mindmate"
-version = "1.2.4"
+version = "1.4.0"
 edition = "2021"
 description = "智伴 Mindmate 桌面端"
 authors = ["Mindmate"]
@@ -17,6 +17,10 @@ tauri-plugin-autostart = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# v1.4.0 随手捕捉：剪贴板读取（文本/图片）、PNG 编码
+arboard = "3"
+chrono = "0.4"
+image = { version = "0.25", default-features = false, features = ["png"] }
 mindmate-core = { path = "../core" }
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
@@ -33,6 +37,15 @@ rust-embed = "8"
 # → auto-launch → winreg），直接声明不会引入新的下载。
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"
+# v1.4.0 本机 OCR（Windows.Media.Ocr，系统自带、离线、中文支持好）
+windows = { version = "0.61", features = [
+    "Foundation",
+    "Globalization",
+    "Graphics_Imaging",
+    "Media_Ocr",
+    "Storage",
+    "Storage_Streams",
+] }
 
 [profile.release]
 # 体积优化（技术设计文档 §11.1）

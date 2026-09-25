@@ -97,10 +97,90 @@ watch(
   }
 )
 
-// ── 🤖 智能拆待办（v1.1.2） ──
+// ── 🎤 语音速记（v1.4.0）：特性探测，WebView2/浏览器可用才显示 ──
+const speechAvailable = ref(false)
+const listening = ref(false)
+let recognition: any = null
+
+function detectSpeech() {
+  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  speechAvailable.value = !!SR
+}
+
+function toggleSpeech() {
+  if (listening.value) {
+    recognition?.stop()
+    return
+  }
+  const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  if (!SR) return
+  recognition = new SR()
+  recognition.lang = 'zh-CN'
+  recognition.interimResults = false
+  recognition.continuous = false
+  recognition.onresult = (ev: any) => {
+    const text = Array.from(ev.results as ArrayLike<any>)
+      .map((r: any) => r[0].transcript)
+      .join('')
+      .trim()
+    if (text) {
+      content.value = content.value ? `${content.value} ${text}` : text
+    }
+  }
+  recognition.onend = () => (listening.value = false)
+  recognition.onerror = () => (listening.value = false)
+  try {
+    recognition.start()
+    listening.value = true
+  } catch {
+    listening.value = false
+    app.toast('error', t('语音识别启动失败（可能需要联网语音服务）'))
+  }
+}
+
+/** 把当前输入的一句话拆成待办（后端 AI 优先、本地规则兜底），弹窗核对后入库 */
 const extracting = ref(false)
 const showExtract = ref(false)
 const extractResult = ref<{ isAi: boolean; todos: ExtractedTodo[] } | null>(null)
+
+/** 粘贴截图 → 存 captures → 直接保存为带图记录（v1.4.0，桌面/浏览器均可用） */
+async function onPaste(e: ClipboardEvent) {
+  const items = e.clipboardData?.items
+  if (!items) return
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      const blob = item.getAsFile()
+      if (!blob) continue
+      e.preventDefault()
+      try {
+        const b64 = await blobToBase64(blob)
+        const ext = item.type === 'image/jpeg' ? 'jpg' : 'png'
+        const resp = await api.captureImage(`paste.${ext}`, b64)
+        await nodes.create(`${t('🖼️ 图片速记')}
+${resp.url}`, [...pickedTags.value], props.date)
+        content.value = ''
+        app.toast('success', t('图片已存为记录'))
+        app.refreshStats()
+        emit('saved')
+      } catch (err: any) {
+        app.toast('error', err?.message || t('保存失败'))
+      }
+      return
+    }
+  }
+}
+
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const s = String(reader.result)
+      resolve(s.slice(s.indexOf(',') + 1))
+    }
+    reader.onerror = reject
+    reader.readAsDataURL(blob)
+  })
+}
 
 /** 把当前输入的一句话拆成待办（后端 AI 优先、本地规则兜底），弹窗核对后入库 */
 async function extractTodos() {
@@ -157,6 +237,7 @@ function onGlobalFocus() {
 
 onMounted(() => {
   if (props.autofocus) nextTick(() => inputEl.value?.focus())
+  detectSpeech()
   tagsStore.load()
   window.addEventListener('mindmate:focus-quick-entry', onGlobalFocus)
 })
@@ -174,8 +255,9 @@ defineExpose({ focus })
       ref="inputEl"
       v-model="content"
       type="text"
-      :placeholder="$t('快速记录此刻的工作 / 生活…')"
+      :placeholder="$t('快速记录此刻的工作 / 生活…（可直接粘贴截图）')"
       @keydown.enter.prevent="submit"
+      @paste="onPaste"
     />
     <div class="tags-row" :style="compact ? 'opacity:1' : ''">
       <button
@@ -206,6 +288,15 @@ defineExpose({ focus })
         @click="suggestTags(true)"
       >
         {{ tagSuggesting ? $t('思考中…') : $t('✨ AI 打标') }}
+      </button>
+      <button
+        v-if="speechAvailable"
+        class="tag-pick"
+        :class="{ on: listening }"
+        :title="$t('语音输入（识别为文字后可再打标/拆待办）')"
+        @click="toggleSpeech"
+      >
+        {{ listening ? $t('🔴 听写中…') : $t('🎤 说') }}
       </button>
       <button
         v-if="content.trim()"

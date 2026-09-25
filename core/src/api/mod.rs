@@ -155,6 +155,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         .route("/api/v1/ai/ollama", get(ai_ollama_probe))
         // 系统集成：用默认浏览器打开外链（仅本地模式）
         .route("/api/v1/system/open-url", post(system_open_url))
+        .route("/api/v1/capture/image", post(capture_image))
         // 今日热点：栏目清单（自动生成）+ 热点抓取（缓存降级）
         .route("/api/v1/news/channels", get(news_channels))
         .route("/api/v1/news/hot", get(news_hot))
@@ -192,6 +193,12 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
 
     // 静态资源（桌面端与浏览器端共用同一份前端产物）
     if let Some(assets) = assets {
+        // 捕捉附件（v1.4.0 图片速记）：本机静态服务，记录内容里以 /captures/... 相对 URL 引用
+        let captures = ctx.cfg.captures_dir();
+        if captures.exists() || std::fs::create_dir_all(&captures).is_ok() {
+            app = app.nest_service("/captures", ServeDir::new(captures));
+        }
+
         // 内嵌资源（打包后单二进制自带前端，无需外部文件）
         app = app.fallback(move |req: axum::extract::Request| {
             let assets = assets.clone();
@@ -1473,6 +1480,57 @@ async fn news_hot(
 
     let result = crate::news::fetch_hot_news(&ctx.db, &channels, limit).await;
     Ok(ApiResp::ok(result))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CaptureImageReq {
+    /// 文件名（含扩展名，如 paste-20260925.png）；服务端会重新生成防冲突名
+    name: String,
+    /// 图片内容（Base64；PNG/JPEG 均可，由扩展名决定存储格式）
+    data_base64: String,
+}
+
+/// 图片速记（v1.4.0）：把粘贴/拖入的图片存到 captures 目录，返回本地路径与相对 URL。
+/// 记录内容里引用相对 URL（/captures/...），桌面与浏览器端都可通过同一服务打开。
+async fn capture_image(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<CaptureImageReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    use base64::Engine as _;
+    // 大小限制：32MB（截屏/照片足够）
+    if req.data_base64.len() > 44_000_000 {
+        return Err(ApiError::bad_request("图片过大（上限 32MB）"));
+    }
+    let data = base64::engine::general_purpose::STANDARD
+        .decode(req.data_base64.as_bytes())
+        .map_err(|_| ApiError::bad_request("图片数据不是合法 Base64"))?;
+    if data.is_empty() {
+        return Err(ApiError::bad_request("图片内容为空"));
+    }
+    // 扩展名白名单
+    let ext = std::path::Path::new(&req.name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("png")
+        .to_lowercase();
+    if !matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "gif" | "bmp") {
+        return Err(ApiError::bad_request(format!("不支持的图片格式：{ext}")));
+    }
+    let dir = ctx.cfg.captures_dir();
+    let month = chrono::Local::now().format("%Y%m").to_string();
+    let dir = dir.join(&month);
+    std::fs::create_dir_all(&dir).map_err(|e| ApiError::internal(e.to_string()))?;
+    let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S%.3f").to_string();
+    let file_name = format!("capture-{stamp}.{ext}");
+    let full = dir.join(&file_name);
+    std::fs::write(&full, &data).map_err(|e| ApiError::internal(e.to_string()))?;
+    let abs = full.to_string_lossy().to_string();
+    let url = format!("/captures/{month}/{file_name}");
+    tracing::info!("图片速记已保存：{abs}（{} KB）", data.len() / 1024);
+    Ok(ApiResp::ok(json!({ "path": abs, "url": url, "bytes": data.len() })))
 }
 
 async fn system_open_url(
