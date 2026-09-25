@@ -178,10 +178,11 @@ button { font-family: inherit; cursor: pointer; border: none; background: none; 
 .quick-entry:focus-within { border-color: var(--primary); background: var(--bg-card); box-shadow: 0 0 0 3px var(--primary-weak); }
 .quick-entry input { border: none; outline: none; background: transparent; font-size: 14px; color: var(--text-strong); width: 100%; }
 .quick-entry input::placeholder { color: var(--text-weak); }
-.quick-entry .tags-row { display: flex; gap: 6px; align-items: center; opacity: 0; transition: opacity .15s; }
+.quick-entry .tags-row { display: flex; flex-wrap: wrap; gap: 6px; row-gap: 6px; align-items: center; opacity: 0; transition: opacity .15s; }
 .quick-entry:focus-within .tags-row { opacity: 1; }
-.quick-entry .hotkey { margin-left: auto; font-size: 11px; color: var(--text-weak); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
-.tag-pick { font-size: 11px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-regular); background: var(--bg-card); }
+.quick-entry .hotkey { flex: none; margin-left: auto; font-size: 11px; color: var(--text-weak); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; white-space: nowrap; }
+/* 标签一多行会被均分挤压成竖排文字（用户反馈截图）：chip 禁止内部换行、禁伸缩，放不下整枚换行 */
+.tag-pick { font-size: 11px; padding: 2px 10px; border-radius: 999px; border: 1px solid var(--border); color: var(--text-regular); background: var(--bg-card); white-space: nowrap; flex: none; }
 .tag-pick.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 
 /* 时间线节点 */

@@ -2657,7 +2657,7 @@ dependencies = [
 
 [[package]]
 name = "mindmate"
-version = "1.2.3"
+version = "1.2.4"
 dependencies = [
  "anyhow",
  "axum",
@@ -2682,7 +2682,7 @@ dependencies = [
 
 [[package]]
 name = "mindmate-core"
-version = "1.2.3"
+version = "1.2.4"
 dependencies = [
  "anyhow",
  "argon2",

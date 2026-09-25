@@ -688,4 +688,11 @@ export default {
   '推送内容与渠道': 'Push kinds & channels',
   '群设置 → 智能群助手 → 添加机器人 → 自定义（安全设置选「加签」可填密钥）': 'Group settings -> Group bot -> Add bot -> Custom (choose "Signing" in security settings to use a secret)',
   '钉钉群机器人': 'DingTalk group bot',
+  '企业微信': 'WeCom',
+  '已配置 {a} 个：{b}': '{a} configured: {b}',
+  '推送渠道': 'Push channels',
+  '未配置 —— 到「📮 推送渠道」两分钟配好邮件/企业微信/Telegram/钉钉，外出也能收到提醒和报告': 'Not configured — set up email/WeCom/Telegram/DingTalk in "📮 Push channels" in two minutes, and get reminders & reports even when away',
+  '邮件': 'Email',
+  '钉钉': 'DingTalk',
+  '📱 想在外出、未打开应用时也收到提醒和报告？配置推送渠道（邮件 / 企业微信 / Telegram / 钉钉），两分钟搞定 →': '📱 Want reminders & reports even when away or with the app closed? Set up push channels (Email / WeCom / Telegram / DingTalk) — two minutes ->',
 } as Record<string, string>

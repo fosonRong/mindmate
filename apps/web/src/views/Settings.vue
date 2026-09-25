@@ -138,6 +138,15 @@ const CHANNEL_NAME: Record<string, string> = {
   telegram: 'Telegram',
   dingtalk: '钉钉'
 }
+/** 是否已配置任一推送渠道（v1.2.4 引导条用）：读响应式 push store + settings 兜底 */
+const pushConfigured = computed(() => {
+  if (push.value?.channels?.length) return true
+  try {
+    return (JSON.parse(app.settings.push_channels || '[]') as string[]).length > 0
+  } catch {
+    return false
+  }
+})
 const todoPushChannels = ref<string[]>(safeParse(app.settings.push_route_todo))
 const reportPushChannels = ref<string[]>(safeParse(app.settings.push_route_report))
 
@@ -739,6 +748,24 @@ async function runDiag() {
   } catch {
     rows.push({ name: t('本地数据'), status: 'err', detail: t('设置读取失败') })
   }
+  // 7 推送渠道（v1.2.4：普通用户不知道有这功能，体检里引导）
+  try {
+    const pc = await api.pushConfig()
+    if (pc.channels.length) {
+      const names = pc.channels
+        .map((c) => ({ wecom: t('企业微信'), email: t('邮件'), telegram: 'Telegram', dingtalk: t('钉钉') })[c] || c)
+        .join('、')
+      rows.push({ name: t('推送渠道'), status: 'ok', detail: t('已配置 {a} 个：{b}', { a: pc.channels.length, b: names }) })
+    } else {
+      rows.push({
+        name: t('推送渠道'),
+        status: 'warn',
+        detail: t('未配置 —— 到「📮 推送渠道」两分钟配好邮件/企业微信/Telegram/钉钉，外出也能收到提醒和报告')
+      })
+    }
+  } catch {
+    rows.push({ name: t('推送渠道'), status: 'err', detail: t('配置读取失败') })
+  }
   diagRows.value = rows
   diagRunning.value = false
 }
@@ -833,6 +860,10 @@ onMounted(() => {
     <div class="col-stack">
       <!-- 提醒 -->
       <template v-if="section === 'remind'">
+        <!-- 推送渠道引导（v1.2.4）：应用内引导用户配置推送 -->
+        <div v-if="!pushConfigured" class="hint-bar info" style="cursor: pointer" @click="section = 'push'">
+          {{ $t('📱 想在外出、未打开应用时也收到提醒和报告？配置推送渠道（邮件 / 企业微信 / Telegram / 钉钉），两分钟搞定 →') }}
+        </div>
         <section class="card stack">
           <div class="card-title" style="font-size: 15px">{{ $t('记录提醒') }}</div>
           <div class="row">

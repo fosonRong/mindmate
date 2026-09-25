@@ -485,6 +485,16 @@ check("v1.2.3 渠道路由：待办提醒/报告推送可指定渠道（push_rou
       "channels_for" in push_rs and "push_route_" in push_rs
       and "savePushRoute" in read("apps", "web", "src", "views", "Settings.vue")
       and "todoPushChannels" in read("apps", "web", "src", "views", "Settings.vue"))
+# ── v1.2.4 体验修复：速记标签行布局 + 推送渠道引导 ──
+base_css = read("apps", "web", "src", "styles", "base.css")
+settings_vue = read("apps", "web", "src", "views", "Settings.vue")
+check("v1.2.4 速记标签行：chip 禁内部换行/禁伸缩 + 行可换行 + 提示固定右侧（修复竖排文字挤压）",
+      "flex-wrap: wrap" in base_css and base_css.count("white-space: nowrap") >= 2
+      and ".quick-entry .hotkey { flex: none" in base_css)
+check("v1.2.4 推送引导：提醒分区引导条（未配置才显示，点击直达）+ 状态自检推送项",
+      "pushConfigured" in settings_vue
+      and "section = 'push'" in settings_vue
+      and "推送渠道" in settings_vue and "runDiag" in settings_vue)
 check("热点：搜索有确定性单测（实体还原/结果解析/相关度排序）",
       "unescape_entities" in news and "必应结果解析_提取标题链接摘要" in news
       and "重点关注_标题命中大小写不敏感" in news)

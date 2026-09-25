@@ -198,7 +198,6 @@ defineExpose({ focus })
         />
       </template>
       <button v-else class="tag-pick tag-add" :title="$t('新增自定义标签')" @click="addingTag = true">＋</button>
-      <span class="hotkey" :title="$t('输入内容后可一键打标，或把一句话拆成待办')">{{ $t('Enter 保存') }}</span>
       <button
         v-if="content.trim()"
         class="tag-pick ai-tag"
@@ -217,6 +216,7 @@ defineExpose({ focus })
       >
         {{ extracting ? $t('拆解中…') : $t('🤖 拆待办') }}
       </button>
+      <span class="hotkey" :title="$t('输入内容后可一键打标，或把一句话拆成待办')">{{ $t('Enter 保存') }}</span>
     </div>
 
     <SmartTodoModal
