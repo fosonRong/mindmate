@@ -591,7 +591,6 @@ export default {
   '先写点想法吧': 'Write your thoughts first',
   '写下你想加强或不满的点；提交后会复制到剪贴板，并可直达 GitHub 反馈页。': 'Write what to improve or what bugs you; on submit it is copied to clipboard and opens the GitHub feedback page.',
   '创建第一个待办': 'Create your first todo',
-  '到点把日报/周报推到下方已启用的渠道（邮件 / 企业微信 / Telegram）；当期已有 AI 报告优先推送，否则用本地模板生成。': 'Push the daily/weekly report to enabled channels (email / WeCom / Telegram) at the set time; an existing AI report is preferred, otherwise a local-template one is generated.',
   '反馈已复制到剪贴板，粘贴到反馈页即可': 'Feedback copied to clipboard — just paste it on the feedback page',
   '启用定时推送': 'Enable scheduled push',
   '周一发周报': 'Weekly report on Monday',
@@ -695,4 +694,5 @@ export default {
   '邮件': 'Email',
   '钉钉': 'DingTalk',
   '📱 想在外出、未打开应用时也收到提醒和报告？配置推送渠道（邮件 / 企业微信 / Telegram / 钉钉），两分钟搞定 →': '📱 Want reminders & reports even when away or with the app closed? Set up push channels (Email / WeCom / Telegram / DingTalk) — two minutes ->',
+  '到点把日报/周报推到下方已启用的渠道（邮件 / 企业微信 / Telegram / 钉钉）；当期已有 AI 报告优先推送，否则用本地模板生成。': 'Push the daily/weekly report to enabled channels (email / WeCom / Telegram / DingTalk) at the set time; an existing AI report is preferred, otherwise a local-template one is generated.',
 } as Record<string, string>

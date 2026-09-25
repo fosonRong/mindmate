@@ -1083,7 +1083,7 @@ onMounted(() => {
         <section class="card stack">
           <div class="card-title" style="font-size: 15px">{{ $t('⏰ 定时推送报告') }}</div>
           <div class="small muted">
-            {{ $t('到点把日报/周报推到下方已启用的渠道（邮件 / 企业微信 / Telegram）；当期已有 AI 报告优先推送，否则用本地模板生成。') }}
+            {{ $t('到点把日报/周报推到下方已启用的渠道（邮件 / 企业微信 / Telegram / 钉钉）；当期已有 AI 报告优先推送，否则用本地模板生成。') }}
           </div>
           <div class="row">
             <span style="flex: 1; font-size: 13px">{{ $t('启用定时推送') }}</span>
