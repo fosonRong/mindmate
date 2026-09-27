@@ -1800,11 +1800,24 @@ async fn schedule_apply(
     Ok(ApiResp::ok(json!({ "applied": applied })))
 }
 
+/// 逾期顺延请求：只需 todoId，目标日期由服务端统一计算（最近工作日）。
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PostponeReq {
+    items: Vec<PostponeItem>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PostponeItem {
+    todo_id: i64,
+}
+
 /// 逾期智能顺延（v1.5.0）：批量顺延到最近工作日（跳周末）。
 async fn smart_postpone(
     State(ctx): State<Arc<AppContext>>,
     headers: HeaderMap,
-    Json(req): Json<ScheduleApplyReq>,
+    Json(req): Json<PostponeReq>,
 ) -> ApiResult<serde_json::Value> {
     ensure_auth(&ctx, &headers)?;
     let target = crate::schedule_engine::next_workday(chrono::Local::now().date_naive())

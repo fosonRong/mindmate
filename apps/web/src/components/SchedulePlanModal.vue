@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// 一键智能排期弹窗（v1.5.0）：预览引擎建议 → 应用/撤销。
+// 智能排期弹窗（v1.5.0）：预览引擎建议 → 应用/撤销。
 // 引擎只产建议，应用才写库；撤销 = 按 from_date 反向应用。
 import { computed, ref } from 'vue'
 import { api } from '@/api/client'
@@ -90,7 +90,7 @@ const today = todayStr()
 <template>
   <div class="modal-mask" @click.self="emit('close')">
     <div class="modal schedule-modal">
-      <h3>{{ $t('🗓️ 一键智能排期') }}</h3>
+      <h3>{{ $t('🗓️ 智能排期') }}</h3>
       <div class="small muted" style="margin-bottom: 8px">
         {{
           $t('把收集箱和逾期/今日未完成的待办，按优先级与截止铺进未来工作日（每天容量 {a} 条）。应用前可逐条勾选。', { a: dailyCapacity })

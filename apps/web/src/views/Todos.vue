@@ -134,7 +134,7 @@ async function onDetailPin(todo: Todo) {
   app.toast('success', pinned ? t('已取消置顶') : t('已置顶，将显示在最前'))
 }
 
-// ── 一键智能排期 + 跟进视图 + 批量顺延（v1.5.0）──
+// ── 智能排期 + 跟进视图 + 批量顺延（v1.5.0）──
 const showPlan = ref(false)
 const showWaiting = ref(false)
 const waitingItems = ref<{ id: number; title: string; dueDate: string; status: string; waitingDays: number }[]>([])
@@ -326,7 +326,7 @@ onUnmounted(() => window.removeEventListener('mindmate:new-todo', onNewTodoEvent
           </div>
           <div class="row" style="margin-top: 8px; gap: 6px">
             <button class="btn btn-sm btn-primary" style="flex: 1; justify-content: center" @click="showPlan = true">
-              🗓️ {{ $t('一键智能排期') }}
+              🗓️ {{ $t('智能排期') }}
             </button>
             <button class="btn btn-sm" @click="openWaiting">⏳ {{ $t('跟进视图') }}</button>
             <button class="btn btn-sm" @click="postponeOverdue">↩️ {{ $t('逾期顺延') }}</button>

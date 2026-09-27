@@ -125,7 +125,7 @@ export const api = {
     post<{ items: { id: number; title: string; kind: 'todo' | 'reference' | 'note' | string; confidence: number }[] }>(
       '/api/v1/smart/classify'
     ),
-  /** 一键智能排期预览（v1.5.0） */
+  /** 智能排期预览（v1.5.0） */
   schedulePlanPreview: () =>
     post<{ items: { todoId: number; title: string; fromDate: string; toDate: string; priority: string; reason: string }[]; dailyCapacity: number; moved: number; total: number }>(
       '/api/v1/smart/schedule/preview'

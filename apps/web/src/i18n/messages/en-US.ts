@@ -732,7 +732,7 @@ export default {
   '自动建议每条是待办、记录还是参考资料': 'Suggest whether each item is a todo, record or reference',
   '🔗 相关事项': '🔗 Related items',
   '⏳ 跟进与等待': '⏳ Follow-ups & waiting',
-  '一键智能排期': 'One-click smart schedule',
+  '智能排期': 'Smart schedule',
   '保持原日期': 'Keep original date',
   '共 {a} 条 · 其中 {b} 条改变日期 · 周末不排': '{a} items · {b} change date · weekends skipped',
   '已排期 {a} 条': '{a} items scheduled',
@@ -756,5 +756,5 @@ export default {
   '逾期顺延': 'Postpone overdue',
   '🗂️ 事项档案 · 来龙去脉': '🗂️ Item archive · full story',
   '🗂️ 本周关键事项与证据': '🗂️ This week: key items & evidence',
-  '🗓️ 一键智能排期': '🗓️ One-click smart schedule',
+  '🗓️ 智能排期': '🗓️ Smart schedule',
 } as Record<string, string>
