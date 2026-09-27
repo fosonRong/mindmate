@@ -20,11 +20,11 @@ fn day_after(n: i64) -> String {
 }
 
 /// 本月内、但不在本周内的一天（用于「本月」归类断言）。
-/// 优先取本月末尾；若末尾恰在本周内，则改取本月开头。
+/// 从月末往前找一个**晚于今天**且不在本周内的日子（classify 规则：过去的日期算「今日」，
+/// 月初作为候选会在今天的日期≥月初那几周误选过去日，导致断言跨月变红）。
 fn day_in_month_not_this_week() -> String {
     use chrono::Datelike;
     let t = today();
-    let first = t.with_day(1).unwrap();
     let last = {
         let next_month = if t.month() == 12 {
             chrono::NaiveDate::from_ymd_opt(t.year() + 1, 1, 1)
@@ -37,13 +37,16 @@ fn day_in_month_not_this_week() -> String {
     };
     let monday = t - chrono::Duration::days(t.weekday().num_days_from_monday() as i64);
     let sunday = monday + chrono::Duration::days(6);
-    for d in [last, first] {
+    let mut d = last;
+    while d > t {
         if d < monday || d > sunday {
             return d.format("%Y-%m-%d").to_string();
         }
+        d -= chrono::Duration::days(1);
     }
-    // 极端情况（整月都在本周内，理论上不可能）：退回本月任意一天
-    first.format("%Y-%m-%d").to_string()
+    // 整个月剩余部分都落在本周内（月末周）：不存在「未来+不在本周」的本月日期，
+    // 返回月末；断言侧按 classify 规则对照，不再写死「本月」。
+    last.format("%Y-%m-%d").to_string()
 }
 
 // ───────────────────────── 上下文智能提醒规则（FR-4.3）─────────────────────────
@@ -466,13 +469,14 @@ fn 数据层_待办改期后重新归类() {
         .unwrap();
     assert_eq!(t.category, "日程");
     // 改到本月内 → 重新归类
+    let target_date = day_in_month_not_this_week();
     let updated = db
         .update_todo(
             t.id,
             TodoPatch {
                 title: None,
                 description: None,
-                due_date: Some(day_in_month_not_this_week()),
+                due_date: Some(target_date.clone()),
                 due_time: None,
                 remind_at: None,
                 recur_type: None,
@@ -489,7 +493,9 @@ fn 数据层_待办改期后重新归类() {
         )
         .unwrap()
         .unwrap();
-    assert_eq!(updated.category, "本月");
+    // 归类结果与 classify 规则一致（月末落在本周内的极端日期会归「本周」而非「本月」）
+    let expected = classify(&target_date, None, &today().format("%Y-%m-%d").to_string());
+    assert_eq!(updated.category, expected, "target={target_date}");
 }
 
 #[test]
@@ -564,7 +570,7 @@ fn 降级_日报模板拼装含记录与待办() {
 }
 
 #[test]
-fn 降级_周报按日聚合() {
+fn 降级_周报汇总平铺() {
     let db = Db::open_memory().unwrap();
     db.seed_defaults().unwrap();
     db.create_node(NewNode {
@@ -583,9 +589,10 @@ fn 降级_周报按日聚合() {
     .unwrap();
     let md = ai::fallback_report(&db, "weekly", "2026-09-12").unwrap();
     assert!(md.contains("周报"));
-    assert!(md.contains("2026-09-07"));
-    assert!(md.contains("2026-09-08"));
-    assert!(md.contains("周一完成 A"));
+    // 汇总平铺：(MM-DD) 前缀逐条列出，不再按天分节（用户反馈）
+    assert!(md.contains("(09-07) 周一完成 A"));
+    assert!(md.contains("(09-08) 周二完成 B"));
+    assert!(!md.contains("## 2026-09-0"), "不应按天分节：{}", md);
 }
 
 #[test]

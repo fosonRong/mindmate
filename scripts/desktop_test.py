@@ -128,6 +128,17 @@ check("存在存量默认模板升级机制（STOCK_TEMPLATES_HISTORY + upgrade_
 check("启动时会执行模板升级", "upgrade_stock_templates" in read("core", "src", "lib.rs"))
 check("模板升级不触碰用户自定义（只匹配历史默认）",
       "stored.trim() == h.trim()" in ai_rs.replace('"', '') or "h.trim()" in ai_rs)
+# 用户反馈：周/月报「工作完成情况」要汇总输出，不按天分节；输入形态决定输出形态
+api_rs2 = read("core", "src", "api", "mod.rs")
+check("周/月报记录改为汇总平铺（format_nodes_flat 注入 {{context}}/{{nodes}}）",
+      "format_nodes_flat" in ai_rs and "format_nodes_flat" in api_rs2
+      and "format_nodes_by_day(&nodes))" not in api_rs2)
+check("降级周/月报同步汇总化（report.h.summary）", "report.h.summary" in read("core", "src", "i18n.rs"))
+# 用户需求：报告模版支持与大模型对话方式生成提示词模板作为自定义输入
+check("AI 对话式生成模板端点 + 设置页弹窗",
+      "ai/template-draft" in api_rs2 and "ai_template_draft" in api_rs2
+      and "TemplateAiModal" in read("apps", "web", "src", "views", "Settings.vue")
+      and "aiTemplateDraft" in read("apps", "web", "src", "api", "client.ts"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

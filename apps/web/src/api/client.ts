@@ -169,6 +169,9 @@ export const api = {
   template: (type: string) =>
     get<{ type: string; content: string; builtin: string; customized: boolean }>(`/api/v1/templates/${type}`),
   setTemplate: (type: string, content: string) => put<{ ok: boolean }>(`/api/v1/templates/${type}`, { content }),
+  /** AI 对话式生成提示词模板（多轮：history 为此前轮次；返回草稿不落库） */
+  aiTemplateDraft: (type: string, message: string, history: { role: 'user' | 'assistant'; content: string }[]) =>
+    post<{ isAi: boolean; content: string }>('/api/v1/ai/template-draft', { type, message, history }),
 
   // AI
   presets: () => get<Preset[]>('/api/v1/ai/presets'),

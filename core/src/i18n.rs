@@ -86,6 +86,7 @@ pub const TABLE: &[(&str, [&str; 4])] = &[
     ("report.h.today_todos", ["今日待办", "Today's todos", "今日の ToDo", "오늘 할 일"]),
     ("report.h.attention", ["需要注意", "Needs attention", "注意点", "주의 필요"]),
     ("report.h.overview", ["概览", "Overview", "概要", "개요"]),
+    ("report.h.summary", ["工作记录汇总", "Work log summary", "作業記録のまとめ", "작업 기록 요약"]),
     ("report.h.by_day", ["按日记录", "Entry by day", "日別の記録", "일자별 기록"]),
     ("report.empty.today", ["（今日暂无记录）", "(no entries today)", "（本日の記録はありません）", "(오늘 기록 없음)"]),
     ("report.empty.none", ["（无）", "(none)", "（なし）", "(없음)"]),

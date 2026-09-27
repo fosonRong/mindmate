@@ -215,7 +215,22 @@ check("日程待办自动计算提醒时刻", bool(sched.get("remindAt")), f"rem
 
 r, _ = call("POST", "/todos", {"title": "完成 Q3 OKR 初稿", "dueDate": date.today().replace(day=28).isoformat()})
 month_todo = r.get("data") or {}
-check("本月待办归类=本月", month_todo.get("category") == "本月", f"category={month_todo.get('category')}")
+# 归类规则（core classify）：今天→今日；本周内→本周；本月内→本月；否则日程。
+# 28 号在不同日期会落入不同类（如 28 号恰为今天/本周内），按同规则算期望值，避免边界脆弱。
+_t = date.today()
+_due = _t.replace(day=28)
+_ws = _t - timedelta(days=_t.weekday())
+_we = _ws + timedelta(days=6)
+if _due == _t or _due < _t:
+    _exp = "今日"
+elif _ws <= _due <= _we:
+    _exp = "本周"
+elif _due.year == _t.year and _due.month == _t.month:
+    _exp = "本月"
+else:
+    _exp = "日程"
+check("月末待办归类符合 classify 规则", month_todo.get("category") == _exp,
+      f"category={month_todo.get('category')} exp={_exp} today={_t}")
 
 # 逾期
 r, _ = call("POST", "/todos", {"title": "逾期的旧任务", "dueDate": YESTERDAY})
@@ -346,10 +361,19 @@ else:
     check("有 Key 时走 AI 生成（非降级文案）", "本地模板生成" not in text, text[:40])
 
 text_w, _ = read_sse("/ai/report", {"type": "weekly", "date": TODAY})
-check("周报生成成功（按日聚合）", len(text_w) > 50 and "周报" in text_w, f"{len(text_w)} 字符")
+check("周报生成成功", len(text_w) > 50 and "周报" in text_w, f"{len(text_w)} 字符")
+if not AI_KEY_READY:
+    # 用户反馈：周报完成情况要汇总输出，不按天分节（降级模板同样遵守）
+    import re as _re
+    check("周报为汇总平铺（无按天分节标题）",
+          not _re.search(r"^## \d{4}-\d{2}-\d{2}", text_w, _re.M), text_w[:60])
 
 text_m, _ = read_sse("/ai/report", {"type": "monthly", "date": TODAY})
 check("月报生成成功", len(text_m) > 50 and "月报" in text_m, f"{len(text_m)} 字符")
+if not AI_KEY_READY:
+    import re as _re
+    check("月报为汇总平铺（无按天分节标题）",
+          not _re.search(r"^## \d{4}-\d{2}-\d{2}", text_m, _re.M), text_m[:60])
 
 text_b, _ = read_sse("/ai/brief", {"date": TODAY})
 check("晨间简报生成成功", len(text_b) > 30, f"{len(text_b)} 字符")
@@ -1211,6 +1235,31 @@ for _i in _po_ids:
     call("DELETE", f"/todos/{_i}")
 _r, _ = call("GET", "/todos")
 check("排期测试数据已清理", not any(t["id"] in _po_ids for t in (_r.get("data") or [])))
+
+# ─────────────────────── 20. AI 对话式生成模板（用户需求）───────────────────────
+section("20. AI 对话式生成提示词模板")
+_r, _ = call("POST", "/ai/template-draft", {"type": "nope", "message": "测试"})
+check("非法模板类型被拒绝", _r.get("code") != 0, f"code={_r.get('code')}")
+_r, _ = call("POST", "/ai/template-draft", {"type": "weekly", "message": ""})
+check("空诉求被拒绝", _r.get("code") != 0, f"code={_r.get('code')}")
+_r, _ = call("POST", "/ai/template-draft", {"type": "weekly", "message": "按主题汇总，突出量化结果"})
+_td = (_r.get("data") or {})
+if AI_KEY_READY:
+    check("AI 生成模板草稿成功", _r.get("code") == 0 and len(_td.get("content") or "") > 30,
+          str(_r.get("message"))[:60])
+    check("草稿含模板变量占位", "{{" in (_td.get("content") or ""), (_td.get("content") or "")[:60])
+else:
+    check("未配 AI 时给出明确业务错误", _r.get("code") != 0, f"code={_r.get('code')}")
+# 多轮：带历史继续修改
+_r, _ = call("POST", "/ai/template-draft", {
+    "type": "weekly", "message": "再简洁一点",
+    "history": [{"role": "user", "content": "按主题汇总"}, {"role": "assistant", "content": (_td.get("content") or "")[:500]}],
+})
+if AI_KEY_READY:
+    check("多轮迭代生成成功", _r.get("code") == 0 and len((_r.get("data") or {}).get("content") or "") > 20,
+          str(_r.get("message"))[:60])
+else:
+    check("未配 AI 多轮同样业务错误", _r.get("code") != 0, f"code={_r.get('code')}")
 
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:

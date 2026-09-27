@@ -8,6 +8,7 @@ import { useUpdateStore } from '@/stores/update'
 import { useTagsStore, DEFAULT_TAGS } from '@/stores/tags'
 import { LOCALE_LABELS, SUPPORTED_LOCALES, applyLocaleMode, loadLocaleMode, resolveLocale, type LocaleMode, t } from '@/i18n'
 import { ref as _ref } from 'vue'
+import TemplateAiModal from '@/components/TemplateAiModal.vue'
 import type { AiConfig, AiFailKind, AiTestResult, OllamaProbe, Preset, PushConfig, NewsChannel, FocusTopic } from '@/api/types'
 
 const app = useAppStore()
@@ -614,6 +615,16 @@ async function saveTemplate() {
   await api.setTemplate(editingTemplate.value, templateDraft.value)
   templateSaved.value = '已自定义'
   app.toast('success', t('模板已保存'))
+}
+
+// ── AI 对话式生成模板（回填到编辑器，是否保存由用户点「保存模板」决定）──
+const showTemplateAi = ref(false)
+
+function applyTemplateDraft(content: string) {
+  templateDraft.value = content
+  showTemplateAi.value = false
+  templateSaved.value = '已生成，待保存'
+  app.toast('info', t('已回填到编辑器，点「保存模板」生效'))
 }
 
 async function resetTemplate() {
@@ -1465,10 +1476,18 @@ onMounted(() => {
             <span class="small muted">{{ $t('可用变量：{a}', { a: templateVars }) }}</span>
             <div class="spacer"></div>
             <span class="small muted">{{ templateSaved }}</span>
+            <button class="btn btn-sm" @click="showTemplateAi = true">🤖 {{ $t('AI 生成') }}</button>
             <button class="btn btn-sm" @click="resetTemplate">{{ $t('恢复默认') }}</button>
             <button class="btn btn-sm btn-primary" @click="saveTemplate">{{ $t('保存模板') }}</button>
           </div>
         </section>
+
+        <TemplateAiModal
+          v-if="showTemplateAi"
+          :type="editingTemplate"
+          @close="showTemplateAi = false"
+          @apply="applyTemplateDraft"
+        />
       </template>
 
       <!-- 每日目标 -->

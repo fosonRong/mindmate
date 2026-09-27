@@ -565,3 +565,39 @@ fn 报告类模板_都带防围栏输出约束() {
         }
     }
 }
+
+// ── 汇总式平铺（周/月报 {{context}}：用户反馈完成情况要汇总，不要按天分节）──
+
+fn flat_node(id: i64, date: &str, created_at: &str, content: &str) -> Node {
+    Node {
+        id,
+        content: content.into(),
+        date: date.into(),
+        created_at: created_at.into(),
+        updated_at: created_at.into(),
+        is_backfill: false,
+        tags: vec![],
+        todo_id: None,
+    }
+}
+
+#[test]
+fn 汇总平铺_逐条带日期前缀且不按天分节() {
+    let nodes = vec![
+        flat_node(1, "2026-09-22", "2026-09-22 10:00:00", "完成登录联调"),
+        flat_node(2, "2026-09-22", "2026-09-22 15:30:00", "参加需求评审"),
+        flat_node(3, "2026-09-24", "2026-09-24 09:00:00", "修复顺延报错"),
+    ];
+    let out = format_nodes_flat(&nodes);
+    // 不出现按天分节的标题
+    assert!(!out.contains("## "), "不应有按天标题：{out}");
+    // 每条一行，带 (MM-DD) 前缀
+    assert_eq!(out.lines().count(), 3);
+    assert!(out.contains("- (09-22) 完成登录联调"));
+    assert!(out.contains("- (09-24) 修复顺延报错"));
+}
+
+#[test]
+fn 汇总平铺_空周期给出占位() {
+    assert_eq!(format_nodes_flat(&[]), "（该周期无记录）");
+}

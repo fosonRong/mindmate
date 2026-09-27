@@ -148,6 +148,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         // 模板
         .route("/api/v1/templates", get(all_templates))
         .route("/api/v1/templates/{type}", get(get_template).put(set_template))
+        .route("/api/v1/ai/template-draft", post(ai_template_draft))
         // AI
         .route("/api/v1/ai/presets", get(ai_presets))
         .route("/api/v1/ai/config", get(ai_config).post(ai_save_config))
@@ -1194,6 +1195,104 @@ async fn set_template(
     Ok(ApiResp::ok(json!({ "ok": true })))
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TemplateDraftReq {
+    /// 模板类型（weekly/monthly/...），决定可用变量与参考模板
+    r#type: String,
+    /// 本轮用户诉求（自然语言）
+    message: String,
+    /// 多轮对话历史（不含本轮与系统提示）
+    #[serde(default)]
+    history: Vec<ChatTurn>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ChatTurn {
+    role: String,
+    content: String,
+}
+
+/// 各模板类型可用的占位变量说明（与 build_report_messages 注入的变量一致）
+const TEMPLATE_VARS_DOC: &[(&str, &[&str])] = &[
+    ("daily", &["{{date}}", "{{nodes}}", "{{todos}}", "{{progress}}"]),
+    ("weekly", &["{{period}}", "{{from}}", "{{to}}", "{{context}}", "{{nodes}}", "{{todos}}", "{{progress}}"]),
+    ("monthly", &["{{period}}", "{{from}}", "{{to}}", "{{context}}", "{{nodes}}", "{{todos}}", "{{progress}}"]),
+    ("brief", &["{{date}}", "{{todos}}"]),
+    ("goodnight", &["{{nodes}}", "{{todos}}"]),
+    ("review", &["{{days}}", "{{todos}}", "{{progress}}"]),
+    ("qa", &[]),
+];
+
+/// AI 对话式生成提示词模板（用户需求：模板支持与大模型对话生成，作为自定义输入）。
+/// 多轮：前端把历史轮次带来，模型据此迭代修改；输出即模板正文（不落库，应用/保存由前端显式完成）。
+async fn ai_template_draft(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Json(req): Json<TemplateDraftReq>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    let ttype = req.r#type.as_str();
+    let valid = ["daily", "weekly", "monthly", "brief", "goodnight", "review", "qa"];
+    if !valid.contains(&ttype) {
+        return Err(ApiError::bad_request("不支持的模板类型"));
+    }
+    let message = req.message.trim().chars().take(2000).collect::<String>();
+    if message.is_empty() {
+        return Err(ApiError::bad_request("请描述你想要的模板"));
+    }
+
+    let cfg = ai::load_config(&ctx.db)?;
+    if !cfg.has_key && cfg.provider != "ollama" {
+        return Err(ApiError::bad_request("生成模板需要先在「AI 设置」里配置模型"));
+    }
+
+    let vars_doc = TEMPLATE_VARS_DOC
+        .iter()
+        .find(|(k, _)| *k == ttype)
+        .map(|(_, v)| v.join("、"))
+        .unwrap_or_default();
+    let current = ctx
+        .db
+        .get_template(ttype)
+        .map_err(|e| ApiError::internal(e.to_string()))?
+        .unwrap_or_else(|| ai::default_template(ttype, ctx.lang()));
+
+    let mut msgs = vec![ChatMsg::system(format!(
+        "你是「智伴 Mindmate」的提示词工程师。用户正在为「{ttype}」报告自定义 AI 提示词模板。\
+可用占位变量：{vars_doc}（渲染时替换为真实数据；周/月报的 {{context}} 与 {{nodes}} 是用户该周期的记录汇总平铺，{{todos}} 是待办完成情况，{{progress}} 是进度统计）。\
+参考当前模板：\n<current_template>\n{current}\n</current_template>\n\
+要求：根据用户诉求输出**完整的模板正文**（不是修改说明），保留仍适用的占位变量；\
+用第二人称向报告模型下达写作要求；简洁要点化；不要把整份模板包在代码块里；除了模板正文不要输出任何解释。"
+    ))];
+    for turn in req.history.iter().rev().take(6).rev() {
+        let content = turn.content.chars().take(3000).collect::<String>();
+        if content.is_empty() {
+            continue;
+        }
+        match turn.role.as_str() {
+            "user" => msgs.push(ChatMsg::user(content)),
+            _ => msgs.push(ChatMsg::assistant(content)),
+        }
+    }
+    msgs.push(ChatMsg::user(message));
+
+    let key = crate::secrets::load_api_key()?;
+    let draft = ai::chat_once(&cfg, msgs, key)
+        .await
+        .map_err(|e| ApiError::ai(e.to_string()))?;
+    // 模型偶尔无视指令用代码块包裹，剥掉
+    let draft = draft
+        .trim()
+        .trim_start_matches("```markdown")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim()
+        .to_string();
+    Ok(ApiResp::ok(json!({ "isAi": true, "content": draft })))
+}
+
 // ───────────────────────── AI ─────────────────────────
 
 async fn ai_presets(
@@ -2155,9 +2254,11 @@ async fn build_report_messages(
                     ("period", label.clone()),
                     ("from", from.clone()),
                     ("to", to.clone()),
-                    ("nodes", ai::format_nodes_by_day(&nodes)),
+                    // 汇总平铺（不按天分节）：输入形态决定输出形态，
+                    // 按天分节会导致模型周/月报也按天输出（用户反馈）
+                    ("nodes", ai::format_nodes_flat(&nodes)),
                     // {{context}}：与 nodes 同源（用户自定义模板常用此名，v1.2.4 反馈）
-                    ("context", ai::format_nodes_by_day(&nodes)),
+                    ("context", ai::format_nodes_flat(&nodes)),
                     ("todos", ai::format_todos(&period_todos)),
                     (
                         "progress",

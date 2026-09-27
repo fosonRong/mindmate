@@ -239,6 +239,9 @@ impl ChatMsg {
     pub fn user(c: impl Into<String>) -> Self {
         Self { role: "user".into(), content: c.into() }
     }
+    pub fn assistant(c: impl Into<String>) -> Self {
+        Self { role: "assistant".into(), content: c.into() }
+    }
 }
 
 /// 可读错误
@@ -834,6 +837,22 @@ pub fn format_nodes_by_day(nodes: &[Node]) -> String {
         .join("\n")
 }
 
+/// 汇总式平铺节点（周报/月报 {{context}}/{{nodes}}）：
+/// 不按天分节，逐条平铺带日期前缀（用户反馈：完成情况要汇总输出，不要按天分节）。
+pub fn format_nodes_flat(nodes: &[Node]) -> String {
+    if nodes.is_empty() {
+        return "（该周期无记录）".into();
+    }
+    nodes
+        .iter()
+        .map(|n| {
+            let d = n.date.get(5..10).unwrap_or("");
+            format!("- ({d}) {}", redact(&n.content))
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// 待办完成情况（已完成 / 进行中 / 逾期）
 pub fn format_todos(todos: &[Todo]) -> String {
     if todos.is_empty() {
@@ -1383,12 +1402,12 @@ pub fn fallback_report_lang(
                     "report.todos_done",
                     &[("done", stats.done_todos.to_string()), ("all", stats.total_todos.to_string())]
                 ),
-                tr(lang, "report.h.by_day")
+                tr(lang, "report.h.summary")
             );
             if nodes.is_empty() {
                 md.push_str(&format!("{}\n", tr(lang, "report.empty.period")));
             } else {
-                md.push_str(&format_nodes_by_day(&nodes));
+                md.push_str(&format_nodes_flat(&nodes));
                 md.push('\n');
             }
             Ok(md)
@@ -1506,7 +1525,9 @@ pub async fn generate_report(
                 ("period", label.clone()),
                 ("from", from.clone()),
                 ("to", to.clone()),
-                ("nodes", format_nodes_by_day(&nodes)),
+                ("nodes", format_nodes_flat(&nodes)),
+                // {{context}}：与 nodes 同源（用户自定义模板常用此名）
+                ("context", format_nodes_flat(&nodes)),
                 ("todos", format_todos(&period_todos)),
                 (
                     "progress",
