@@ -70,6 +70,18 @@ impl Db {
         Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
     }
 
+    /// 某待办直属的子记录（用户反馈：记录可关联待办，OKR 结构——待办为 O、记录为 KR/进展）
+    pub fn list_nodes_by_todo(&self, todo_id: i64) -> Result<Vec<Node>> {
+        let conn = self.lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {NODE_COLS} FROM nodes
+             WHERE todo_id = ?1 AND deleted_at IS NULL
+             ORDER BY created_at ASC"
+        ))?;
+        let rows = stmt.query_map(params![todo_id], row_to_node)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     pub fn get_node(&self, id: i64) -> Result<Option<Node>> {
         let conn = self.lock();
         let node = conn

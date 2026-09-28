@@ -37,10 +37,10 @@ export const useNodesStore = defineStore('nodes', {
     },
 
     /** 录入：一次提交 = 一个节点 */
-    async create(content: string, tags: string[] = [], date?: string) {
+    async create(content: string, tags: string[] = [], date?: string, todoId?: number | null) {
       const text = content.trim()
       if (!text) return null
-      const node = await api.createNode({ content: text, tags, date: date || this.date })
+      const node = await api.createNode({ content: text, tags, date: date || this.date, todoId: todoId ?? null })
       if (node.date === this.date) {
         // 幂等：SSE 事件可能先于 HTTP 响应到达并已插入同一节点
         const exist = this.nodes.findIndex((n) => n.id === node.id)

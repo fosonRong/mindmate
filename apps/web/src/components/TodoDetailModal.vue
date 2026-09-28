@@ -36,6 +36,28 @@ const archiveEmpty = computed(
   () => !archive.value || (!archive.value.nodes.length && !archive.value.todos.length && !archive.value.reports.length),
 )
 
+// ── 子任务记录（v1.5.3）：直属本待办的记录，OKR 结构——待办为 O、记录为 KR/进展 ──
+const subNodes = ref<{ id: number; content: string; date: string; createdAt: string }[]>([])
+
+async function loadSubNodes() {
+  try {
+    const r = await api.todoNodes(props.todo.id)
+    subNodes.value = (r.items || []).map((n) => ({ id: n.id, content: n.content, date: n.date, createdAt: n.createdAt }))
+  } catch {
+    subNodes.value = []
+  }
+}
+
+async function unlinkNode(nodeId: number) {
+  try {
+    await api.updateNode(nodeId, { todoId: null })
+    await loadSubNodes()
+    app.toast('success', t('已解除关联'))
+  } catch (e: any) {
+    app.toast('error', e?.message || t('操作失败'))
+  }
+}
+
 function jumpToRelated(kind: string, id: number) {
   if (kind === 'todo') {
     location.hash = '#/todos'
@@ -72,7 +94,10 @@ function isPinned(todo: Todo) {
   return todo.sortOrder < 0
 }
 
-onMounted(() => loadArchive().catch(() => {}))
+onMounted(() => {
+  loadArchive().catch(() => {})
+  loadSubNodes().catch(() => {})
+})
 </script>
 
 <template>
@@ -126,6 +151,19 @@ onMounted(() => loadArchive().catch(() => {}))
         <div class="detail-item">
           <span class="lbl">{{ $t('创建于') }}</span>
           <span class="mono small muted">{{ todo.createdAt.slice(0, 16) }}</span>
+        </div>
+      </div>
+
+      <!-- 子任务记录（v1.5.3）：OKR 结构——本待办为 O，直属记录为 KR/进展 -->
+      <div v-if="subNodes.length" class="divider" style="margin: 10px 0"></div>
+      <div v-if="subNodes.length">
+        <div class="small muted" style="margin-bottom: 4px">🎯 {{ $t('子任务记录 · {a}', { a: subNodes.length }) }}</div>
+        <div v-for="n in subNodes" :key="'sn' + n.id" class="small related-item">
+          <span style="flex: 1; min-width: 0" @click="jumpToRelated('node', n.id)">
+            <span class="mono muted">{{ n.createdAt.slice(5, 10) }}</span>
+            {{ n.content.slice(0, 48) }}{{ n.content.length > 48 ? '…' : '' }}
+          </span>
+          <span class="link muted" :title="$t('解除关联')" @click.stop="unlinkNode(n.id)">✕</span>
         </div>
       </div>
 

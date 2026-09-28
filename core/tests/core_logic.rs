@@ -3,7 +3,7 @@
 //! 运行：cargo test -p mindmate-core
 
 use mindmate_core::ai;
-use mindmate_core::db::{classify, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, Db, NewNode, NewTodo, TodoPatch};
+use mindmate_core::db::{classify, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, Db, NewNode, NewTodo, NodePatch, TodoPatch};
 use mindmate_core::i18n::Lang;
 use mindmate_core::reminder::{compose, decide, hhmm_to_minutes, ReminderKind};
 
@@ -1025,4 +1025,48 @@ fn 循环待办_停止循环后不再生成() {
     )
     .unwrap();
     assert!(db.ensure_recurring().unwrap().is_empty(), "停止循环后不应再生成");
+}
+
+#[test]
+fn 数据层_记录关联待办_OKR子任务() {
+    let db = Db::open_memory().unwrap();
+    let t = db
+        .create_todo(NewTodo {
+            title: "关联主任务".into(),
+            description: String::new(),
+            due_date: Some(day_after(1)),
+            due_time: None,
+            priority: "中".into(),
+            tags: vec![],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: String::new(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
+            inbox: false,
+        })
+        .unwrap();
+    let n = db
+        .create_node(NewNode {
+            content: "完成 OAuth2 联调".into(),
+            date: Some(today().format("%Y-%m-%d").to_string()),
+            tags: vec![],
+            todo_id: Some(t.id),
+        })
+        .unwrap();
+    assert_eq!(n.todo_id, Some(t.id));
+    let kids = db.list_nodes_by_todo(t.id).unwrap();
+    assert_eq!(kids.len(), 1);
+    assert_eq!(kids[0].id, n.id);
+    // 解除关联（todoId: null）
+    let upd = db
+        .update_node(
+            n.id,
+            NodePatch { content: None, tags: None, todo_id: Some(None) },
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(upd.todo_id, None);
+    assert!(db.list_nodes_by_todo(t.id).unwrap().is_empty());
 }

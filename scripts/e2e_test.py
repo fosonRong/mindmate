@@ -361,7 +361,10 @@ else:
     check("有 Key 时走 AI 生成（非降级文案）", "本地模板生成" not in text, text[:40])
 
 text_w, _ = read_sse("/ai/report", {"type": "weekly", "date": TODAY})
-check("周报生成成功", len(text_w) > 50 and "周报" in text_w, f"{len(text_w)} 字符")
+if AI_KEY_READY:
+    check("周报生成成功（AI 实时流，标题措辞不固定）", len(text_w) > 100 and "本地模板" not in text_w, f"{len(text_w)} 字符")
+else:
+    check("周报生成成功", len(text_w) > 50 and "周报" in text_w, f"{len(text_w)} 字符")
 if not AI_KEY_READY:
     # 用户反馈：周报完成情况要汇总输出，不按天分节（降级模板同样遵守）
     import re as _re
@@ -369,8 +372,10 @@ if not AI_KEY_READY:
           not _re.search(r"^## \d{4}-\d{2}-\d{2}", text_w, _re.M), text_w[:60])
 
 text_m, _ = read_sse("/ai/report", {"type": "monthly", "date": TODAY})
-check("月报生成成功", len(text_m) > 50 and "月报" in text_m, f"{len(text_m)} 字符")
-if not AI_KEY_READY:
+if AI_KEY_READY:
+    check("月报生成成功（AI 实时流，标题措辞不固定）", len(text_m) > 100 and "本地模板" not in text_m, f"{len(text_m)} 字符")
+else:
+    check("月报生成成功", len(text_m) > 50 and "月报" in text_m, f"{len(text_m)} 字符")
     import re as _re
     check("月报为汇总平铺（无按天分节标题）",
           not _re.search(r"^## \d{4}-\d{2}-\d{2}", text_m, _re.M), text_m[:60])
@@ -1279,6 +1284,32 @@ if AI_KEY_READY:
           str(_r.get("message"))[:60])
 else:
     check("未配 AI 多轮同样业务错误", _r.get("code") != 0, f"code={_r.get('code')}")
+
+# ─────────────────────── 21. 记录关联待办（OKR 子任务）───────────────────────
+section("21. 记录关联待办：快速记录作为待办的子任务/进展")
+_r, _ = call("POST", "/todos", {"title": "E2E关联主任务", "dueDate": TOMORROW})
+_okr = _r["data"]["id"]
+_r, _ = call("POST", "/nodes", {"content": "完成 OAuth2 联调", "date": TODAY, "todoId": _okr})
+_kid = _r["data"]["id"]
+check("创建记录带 todoId 成功", _r.get("code") == 0 and (_r.get("data") or {}).get("todoId") == _okr,
+      str(_r)[:80])
+_r, _ = call("POST", "/nodes", {"content": "关联不存在的待办", "date": TODAY, "todoId": 999999})
+check("无效 todoId 被拒绝", _r.get("code") != 0, f"code={_r.get('code')}")
+_r, _ = call("GET", f"/todos/{_okr}/nodes")
+_d21 = (_r.get("data") or {})
+_items21 = _d21.get("items") or []
+check("待办子记录查询", _r.get("code") == 0 and _d21.get("count") == 1
+      and _items21 and _items21[0].get("id") == _kid,
+      str(_d21)[:80])
+_r, _ = call("GET", "/todos/999999/nodes")
+check("不存在待办的子记录 404", _r.get("code") != 0, f"code={_r.get('code')}")
+_r, _ = call("PATCH", f"/nodes/{_kid}", {"todoId": None})
+check("解除关联（todoId=null）", _r.get("code") == 0 and (_r.get("data") or {}).get("todoId") is None,
+      str(_r)[:80])
+_r, _ = call("GET", f"/todos/{_okr}/nodes")
+check("解除后子记录为空", (_r.get("data") or {}).get("count") == 0, str(_r)[:80])
+call("DELETE", f"/nodes/{_kid}")
+call("DELETE", f"/todos/{_okr}")
 
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:

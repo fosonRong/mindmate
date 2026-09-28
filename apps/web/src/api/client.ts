@@ -70,6 +70,9 @@ export const api = {
     patch<Node>(`/api/v1/nodes/${id}`, data),
   deleteNode: (id: number) => del<{ deleted: boolean }>(`/api/v1/nodes/${id}`),
   searchNodes: (q: string) => get<Node[]>(`/api/v1/nodes/search?q=${encodeURIComponent(q)}`),
+  /** 待办的直属子记录（v1.5.3：记录可关联待办，OKR 结构） */
+  todoNodes: (id: number) =>
+    get<{ todoId: number; count: number; items: Node[] }>(`/api/v1/todos/${id}/nodes`),
   /** 统一检索（v1.1.3）：记录+待办+报告，kind/tag/from/to 过滤 */
   search: (params: { q: string; kind?: string; tag?: string; from?: string; to?: string; limit?: number }) => {
     const qs = new URLSearchParams()

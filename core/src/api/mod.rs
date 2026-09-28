@@ -140,6 +140,7 @@ pub fn build_router_with_assets(ctx: Arc<AppContext>, assets: Option<AssetResolv
         )
         .route("/api/v1/todos/{id}/complete", post(complete_todo))
         .route("/api/v1/todos/{id}/reopen", post(reopen_todo))
+        .route("/api/v1/todos/{id}/nodes", get(todo_nodes))
         .route("/api/v1/todos/schedule", get(schedule_for_date))
         .route("/api/v1/todos/suggest", post(suggest_schedule))
         // 设置
@@ -415,6 +416,12 @@ async fn create_node(
     if input.content.trim().is_empty() {
         return Err(ApiError::bad_request("记录内容不能为空"));
     }
+    // 关联校验：todoId 指向的待办必须存在（快速记录关联待办，OKR 结构）
+    if let Some(tid) = input.todo_id {
+        if ctx.db.get_todo(tid)?.is_none() {
+            return Err(ApiError::bad_request("关联的待办不存在"));
+        }
+    }
     let node = ctx.db.create_node(input)?;
     ctx.bus.publish(Event::new(
         "node.created",
@@ -456,6 +463,12 @@ async fn update_node(
     Json(patch): Json<NodePatch>,
 ) -> ApiResult<Node> {
     ensure_auth(&ctx, &headers)?;
+    // 关联校验：todoId 指向的待办必须存在（None = 不改；Some(None) = 解除关联）
+    if let Some(Some(tid)) = &patch.todo_id {
+        if ctx.db.get_todo(*tid)?.is_none() {
+            return Err(ApiError::bad_request("关联的待办不存在"));
+        }
+    }
     let node = ctx
         .db
         .update_node(id, patch)?
@@ -465,6 +478,24 @@ async fn update_node(
         serde_json::to_value(&node).unwrap_or_default(),
     ));
     Ok(ApiResp::ok(node))
+}
+
+/// 待办的直属子记录（v1.5.3：快速记录可关联待办，OKR 结构——待办为 O、记录为 KR/进展）
+async fn todo_nodes(
+    State(ctx): State<Arc<AppContext>>,
+    headers: HeaderMap,
+    Path(id): Path<i64>,
+) -> ApiResult<serde_json::Value> {
+    ensure_auth(&ctx, &headers)?;
+    if ctx.db.get_todo(id)?.is_none() {
+        return Err(ApiError::not_found("待办不存在"));
+    }
+    let nodes = ctx.db.list_nodes_by_todo(id)?;
+    Ok(ApiResp::ok(json!({
+        "todoId": id,
+        "count": nodes.len(),
+        "items": nodes,
+    })))
 }
 
 async fn delete_node(

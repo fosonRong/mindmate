@@ -769,4 +769,12 @@ export default {
   '突出关键产出与下月计划': 'Highlight key outputs and next month\'s plan',
   '面向汇报给领导：结论先行，附风险与求助': 'For reporting to leadership: conclusion first, with risks and asks',
   '生成': 'Generate',
+  '关联到某个待办，作为它的子任务/进展（OKR 结构）': 'Link to a todo as its sub-task / progress note (OKR style)',
+  '取消关联': 'Unlink',
+  '子任务记录 · {a}': 'Sub-task notes · {a}',
+  '已解除关联': 'Link removed',
+  '搜索待办标题…（未完成的待办）': 'Search todo titles… (unfinished todos)',
+  '没有匹配的未完成待办': 'No matching unfinished todos',
+  '解除关联': 'Remove link',
+  '🎯 关联待办': '🎯 Link todo',
 } as Record<string, string>

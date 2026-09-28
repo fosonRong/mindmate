@@ -23,6 +23,39 @@ const pickedTags = ref<string[]>([])
 const inputEl = ref<HTMLInputElement | null>(null)
 const saving = ref(false)
 
+// ── 🎯 关联待办（v1.5.3）：快速记录可作为某待办的子任务/进展（OKR 结构）──
+const linkedTodo = ref<{ id: number; title: string } | null>(null)
+const pickingTodo = ref(false)
+const todoQuery = ref('')
+const todoOptions = ref<{ id: number; title: string; dueDate: string }[]>([])
+
+async function openTodoPicker() {
+  pickingTodo.value = !pickingTodo.value
+  todoQuery.value = ''
+  if (pickingTodo.value) await searchTodos()
+}
+
+async function searchTodos() {
+  try {
+    // 未完成待办优先（子任务挂在未完成事项下才有意义），关键词过滤
+    const params: Record<string, string> = { status: '未完成' }
+    if (todoQuery.value.trim()) params.q = todoQuery.value.trim()
+    const all = await api.todos(params)
+    todoOptions.value = (all as any[]).slice(0, 8).map((t) => ({ id: t.id, title: t.title, dueDate: t.dueDate }))
+  } catch {
+    todoOptions.value = []
+  }
+}
+
+function pickTodo(t: { id: number; title: string }) {
+  linkedTodo.value = { id: t.id, title: t.title }
+  pickingTodo.value = false
+}
+
+function clearLinkedTodo() {
+  linkedTodo.value = null
+}
+
 // ── 新增自定义标签（＋ 展开一行小输入） ──
 const addingTag = ref(false)
 const newTag = ref('')
@@ -242,10 +275,11 @@ async function submit() {
   if (suggestTimer) { clearTimeout(suggestTimer); suggestTimer = null }
   saving.value = true
   try {
-    await nodes.create(content.value, [...pickedTags.value], props.date)
+    await nodes.create(content.value, [...pickedTags.value], props.date, linkedTodo.value?.id ?? null)
     content.value = ''
     lastSuggestedFor = ''
     similarNode.value = null
+    linkedTodo.value = null
     app.toast('success', t('已记录 {a}', { a: new Date().toTimeString().slice(0, 5) }))
     app.refreshStats()
     emit('saved')
@@ -296,6 +330,17 @@ defineExpose({ focus })
     </div>
     <div class="tags-row" :style="compact ? 'opacity:1' : ''">
       <button
+        class="tag-pick todo-link"
+        :class="{ on: !!linkedTodo }"
+        :title="$t('关联到某个待办，作为它的子任务/进展（OKR 结构）')"
+        @click="openTodoPicker"
+      >
+        {{ linkedTodo ? `🎯 ${linkedTodo.title.slice(0, 12)}${linkedTodo.title.length > 12 ? '…' : ''}` : $t('🎯 关联待办') }}
+      </button>
+      <template v-if="linkedTodo">
+        <span class="link small" @click="clearLinkedTodo">{{ $t('取消关联') }}</span>
+      </template>
+      <button
         v-for="t in tagsStore.options"
         :key="t"
         class="tag-pick"
@@ -345,6 +390,27 @@ defineExpose({ focus })
       <span class="hotkey" :title="$t('输入内容后可一键打标，或把一句话拆成待办')">{{ $t('Enter 保存') }}</span>
     </div>
 
+    <div v-if="pickingTodo" class="todo-picker">
+      <input
+        v-model="todoQuery"
+        class="input"
+        type="text"
+        :placeholder="$t('搜索待办标题…（未完成的待办）')"
+        @input="searchTodos"
+        @keydown.enter.prevent="pickTodo(todoOptions[0])"
+      />
+      <div v-if="!todoOptions.length" class="small muted" style="padding: 6px 2px">{{ $t('没有匹配的未完成待办') }}</div>
+      <div
+        v-for="t in todoOptions"
+        :key="t.id"
+        class="todo-option small"
+        @click="pickTodo(t)"
+      >
+        <span>{{ t.title }}</span>
+        <span class="mono muted">{{ t.dueDate.slice(5) }}</span>
+      </div>
+    </div>
+
     <SmartTodoModal
       v-if="showExtract && extractResult"
       :items="extractResult.todos"
@@ -355,3 +421,29 @@ defineExpose({ focus })
     />
   </div>
 </template>
+
+<style scoped>
+.todo-link.on { border-color: var(--primary, #6366f1); color: var(--primary, #6366f1); }
+.todo-picker {
+  margin-top: 6px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--bg-card, #fff);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.todo-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  word-break: break-word;
+}
+.todo-option:hover { background: var(--bg-soft, #f3f4f6); }
+</style>

@@ -35,11 +35,22 @@ pub struct NewNode {
     pub todo_id: Option<i64>,
 }
 
+/// null → Some(None)（解除关联），缺省 → None（不改）；serde 对 Option<Option<T>> 的
+/// JSON null 默认落在外层 None，需要 double_option 包装才能表达「显式置空」。
+fn double_option<'de, T, D>(de: D) -> Result<Option<T>, D::Error>
+where
+    T: serde::Deserialize<'de>,
+    D: serde::Deserializer<'de>,
+{
+    serde::Deserialize::deserialize(de).map(Some)
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodePatch {
     pub content: Option<String>,
     pub tags: Option<Vec<String>>,
+    #[serde(default, deserialize_with = "double_option")]
     pub todo_id: Option<Option<i64>>,
 }
 

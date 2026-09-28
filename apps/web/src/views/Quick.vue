@@ -23,6 +23,38 @@ const savedKind = ref('')
 const inputEl = ref<HTMLInputElement | null>(null)
 const TAG_OPTIONS = ['工作', '生活', '健康', '学习']
 
+// ── 🎯 关联待办（v1.5.3）：记录可作为某待办的子任务/进展（OKR 结构）──
+const linkedTodo = ref<{ id: number; title: string } | null>(null)
+const pickingTodo = ref(false)
+const todoQuery = ref('')
+const todoOptions = ref<{ id: number; title: string; dueDate: string }[]>([])
+
+async function openTodoPicker() {
+  pickingTodo.value = !pickingTodo.value
+  todoQuery.value = ''
+  if (pickingTodo.value) await searchTodos()
+}
+
+async function searchTodos() {
+  try {
+    const params: Record<string, string> = { status: '未完成' }
+    if (todoQuery.value.trim()) params.q = todoQuery.value.trim()
+    const all = await api.todos(params)
+    todoOptions.value = (all as any[]).slice(0, 8).map((x) => ({ id: x.id, title: x.title, dueDate: x.dueDate }))
+  } catch {
+    todoOptions.value = []
+  }
+}
+
+function pickTodo(x: { id: number; title: string }) {
+  linkedTodo.value = { id: x.id, title: x.title }
+  pickingTodo.value = false
+}
+
+function clearLinkedTodo() {
+  linkedTodo.value = null
+}
+
 // ── 智能分流（v1.4.0）──
 const routing = ref(false)
 const draftTodos = ref<ExtractedTodo[]>([])
@@ -52,7 +84,7 @@ function isUrl(text: string) {
 async function saveNode(finalText: string, from = '') {
   const text = finalText.trim()
   if (!text) return
-  await nodes.create(text, [...tags.value], today)
+  await nodes.create(text, [...tags.value], today, linkedTodo.value?.id ?? null)
   finishCapture(from || t('已记录'))
 }
 
@@ -390,6 +422,15 @@ const pickedCount = computed(() => draftChecked.value.filter(Boolean).length)
 
         <div class="row wrap" style="gap: 6px">
           <button
+            class="tag-pick"
+            :class="{ on: !!linkedTodo }"
+            :title="$t('关联到某个待办，作为它的子任务/进展（OKR 结构）')"
+            @click="openTodoPicker"
+          >
+            {{ linkedTodo ? `🎯 ${linkedTodo.title.slice(0, 10)}${linkedTodo.title.length > 10 ? '…' : ''}` : $t('🎯 关联待办') }}
+          </button>
+          <span v-if="linkedTodo" class="link small" @click="clearLinkedTodo">{{ $t('取消关联') }}</span>
+          <button
             v-for="t in TAG_OPTIONS"
             :key="t"
             class="tag-pick"
@@ -402,6 +443,21 @@ const pickedCount = computed(() => draftChecked.value.filter(Boolean).length)
           <button class="btn btn-sm" :title="$t('不打日期，之后拖进日历排期')" @click="collectInbox">
             {{ $t('📥 收集箱') }}
           </button>
+        </div>
+        <div v-if="pickingTodo" class="todo-picker">
+          <input
+            v-model="todoQuery"
+            class="input"
+            type="text"
+            :placeholder="$t('搜索待办标题…（未完成的待办）')"
+            @input="searchTodos"
+            @keydown.enter.prevent="pickTodo(todoOptions[0])"
+          />
+          <div v-if="!todoOptions.length" class="small muted" style="padding: 4px 2px">{{ $t('没有匹配的未完成待办') }}</div>
+          <div v-for="x in todoOptions" :key="x.id" class="todo-option small" @click="pickTodo(x)">
+            <span>{{ x.title }}</span>
+            <span class="mono muted">{{ x.dueDate.slice(5) }}</span>
+          </div>
         </div>
       </template>
 
@@ -472,4 +528,26 @@ const pickedCount = computed(() => draftChecked.value.filter(Boolean).length)
   padding: 5px 8px;
   background: var(--bg-hover);
 }
+.todo-picker {
+  margin-top: 6px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--bg-card, #fff);
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.todo-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  word-break: break-word;
+}
+.todo-option:hover { background: var(--bg-soft, #f3f4f6); }
 </style>

@@ -144,6 +144,12 @@ check("事项档案相关性打分过滤（archive_features/archive_score + 门�
       "archive_features" in api_rs2 and "archive_score" in api_rs2
       and "archive_score_tests" in read("core", "src", "api", "mod.rs")
       and "min_report_hits" in api_rs2)
+# 用户需求：快速记录可关联待办（OKR 结构——待办为 O，记录为 KR/进展）
+check("记录关联待办：查询/端点/捕捉选择器/详情子任务区",
+      "list_nodes_by_todo" in queries_rs and "todos/{id}/nodes" in api_rs2
+      and "todoNodes" in read("apps", "web", "src", "api", "client.ts")
+      and "关联待办" in read("apps", "web", "src", "components", "QuickEntry.vue")
+      and "子任务记录" in read("apps", "web", "src", "components", "TodoDetailModal.vue"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)
