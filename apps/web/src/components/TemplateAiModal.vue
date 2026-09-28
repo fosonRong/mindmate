@@ -112,15 +112,15 @@ function apply() {
 .tpl-head h3 { margin: 0; font-size: 16px; display: flex; align-items: center; gap: 8px; }
 .tpl-type {
   font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px;
-  background: var(--primary-soft, #eef2ff); color: var(--primary, #6366f1);
+  background: var(--primary-weak); color: var(--primary);
 }
 .tpl-log {
   height: 300px;
   overflow-y: auto;
   padding: 10px;
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--bg-soft, #f9fafb);
+  background: var(--bg-page);
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -130,12 +130,14 @@ function apply() {
   max-width: 90%;
   padding: 8px 12px;
   border-radius: 999px;
-  border: 1px dashed var(--border, #d1d5db);
+  border: 1px dashed var(--border-strong);
   cursor: pointer;
   font-size: 13px;
   line-height: 1.5;
+  color: var(--text-regular);
+  background: var(--bg-card);
 }
-.tpl-chip:hover { background: #fff; border-color: var(--primary, #6366f1); color: var(--primary, #6366f1); }
+.tpl-chip:hover { border-color: var(--primary); color: var(--primary); }
 .tpl-msg { display: flex; }
 .tpl-msg.user { justify-content: flex-end; }
 .tpl-bubble {
@@ -146,13 +148,14 @@ function apply() {
   border-radius: 12px;
   font-size: 13px;
   line-height: 1.6;
-  background: #fff;
-  border: 1px solid var(--border, #e5e7eb);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-strong);
 }
-.tpl-msg.user .tpl-bubble { background: var(--primary-soft, #eef2ff); border-color: transparent; }
+.tpl-msg.user .tpl-bubble { background: var(--primary-weak); border-color: transparent; }
 .tpl-typing { display: flex; align-items: center; gap: 6px; padding: 2px; }
 .tpl-dot {
-  width: 8px; height: 8px; border-radius: 50%; background: var(--primary, #6366f1);
+  width: 8px; height: 8px; border-radius: 50%; background: var(--primary);
   animation: tpl-pulse 1s ease-in-out infinite;
 }
 @keyframes tpl-pulse { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
@@ -171,8 +174,9 @@ function apply() {
   font-family: ui-monospace, monospace;
   font-size: 12px;
   line-height: 1.6;
-  border: 1px solid var(--border, #e5e7eb);
+  border: 1px solid var(--border);
   border-radius: 12px;
-  background: var(--bg-soft, #f9fafb);
+  background: var(--bg-page);
+  color: var(--text-strong);
 }
 </style>
