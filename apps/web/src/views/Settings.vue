@@ -619,6 +619,8 @@ async function saveTemplate() {
 
 // ── AI 对话式生成模板（回填到编辑器，是否保存由用户点「保存模板」决定）──
 const showTemplateAi = ref(false)
+const TPL_LABELS: Record<string, string> = { daily: '日报', weekly: '周报', monthly: '月报', brief: '我的简报', goodnight: '晚安总结', review: '复盘', qa: '问答' }
+const tplLabel = computed(() => TPL_LABELS[editingTemplate.value] || '')
 
 function applyTemplateDraft(content: string) {
   templateDraft.value = content
@@ -1485,6 +1487,7 @@ onMounted(() => {
         <TemplateAiModal
           v-if="showTemplateAi"
           :type="editingTemplate"
+          :label="tplLabel"
           @close="showTemplateAi = false"
           @apply="applyTemplateDraft"
         />
