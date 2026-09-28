@@ -53,3 +53,4 @@ canary.json
 SHA256SUMS.txt
 release/
 artifacts/
+.e2e-tmp/
