@@ -1942,7 +1942,83 @@ async fn smart_postpone(
     Ok(ApiResp::ok(json!({ "postponed": results.len(), "items": results })))
 }
 
-/// 事项档案（v1.5.0「有迹可循」）：相关记录/待办 + 涉及报告，一条链路看完来龙去脉。
+/// 事项档案相关性打分（用户反馈：按相关性关联，不是全部都查出来）。
+/// 从锚点标题提取强特征：标点分段（完整片段）+ 3 字滑窗；2 字滑窗仅在标题极短时兜底召回。
+fn archive_features(anchor_title: &str) -> (Vec<String>, Vec<String>) {
+    let is_sep = |c: char| !(c.is_alphanumeric() || ('一'..='龯').contains(&c));
+    let segs: Vec<String> = anchor_title
+        .split(is_sep)
+        .map(|s| s.trim().to_lowercase())
+        .filter(|s| s.chars().count() >= 2)
+        .collect();
+    let mut grams: Vec<String> = Vec::new();
+    for seg in &segs {
+        let cs: Vec<char> = seg.chars().collect();
+        if cs.len() >= 3 {
+            for w in cs.windows(3) {
+                let g: String = w.iter().collect();
+                if !grams.contains(&g) {
+                    grams.push(g);
+                }
+            }
+        }
+    }
+    // 标题过短（3 字窗不足 3 个）：退回 2 字滑窗保证召回
+    if grams.len() < 3 {
+        let cs: Vec<char> = segs.concat().chars().collect();
+        for w in cs.windows(2) {
+            let g: String = w.iter().collect();
+            if !grams.contains(&g) {
+                grams.push(g);
+            }
+        }
+    }
+    (segs, grams)
+}
+
+/// 单条候选的相关性：标签重合 ×3 + 词窗命中 ×0.8 + 完整片段包含 ×1.5（上限 3）+ 30 天时间邻近 ≤2。
+/// 返回 (总分, 词窗命中数, 标签命中数)；词窗与标签都为 0 时调用方必须排除（时间邻近不能单独成立）。
+fn archive_score(
+    segs: &[String],
+    grams: &[String],
+    anchor_tags: &[String],
+    anchor_date: &str,
+    other_text: &str,
+    other_tags: &[String],
+    other_date: &str,
+) -> (f64, usize, usize) {
+    let lower = other_text.to_lowercase();
+    let hits = grams.iter().filter(|g| lower.contains(g.as_str())).count();
+    let seg_bonus = segs
+        .iter()
+        .filter(|s| s.chars().count() >= 3 && lower.contains(s.as_str()))
+        .count()
+        .min(2) as f64
+        * 1.5;
+    let tag_hits = anchor_tags
+        .iter()
+        .filter(|t| other_tags.iter().any(|o| o == *t))
+        .count();
+    let time = match (
+        chrono::NaiveDate::parse_from_str(anchor_date, "%Y-%m-%d"),
+        chrono::NaiveDate::parse_from_str(other_date, "%Y-%m-%d"),
+    ) {
+        (Ok(a), Ok(b)) => {
+            let diff = (a - b).num_days().abs();
+            if diff <= 30 {
+                2.0 * (1.0 - diff as f64 / 30.0)
+            } else {
+                0.0
+            }
+        }
+        _ => 0.0,
+    };
+    let score = tag_hits as f64 * 3.0 + hits as f64 * 0.8 + seg_bonus + time;
+    (score, hits, tag_hits)
+}
+
+/// 事项档案（v1.5.0「有迹可循」）：相关记录/待办 + 涉及报告，按相关性打分关联（v1.5.3 起
+/// 不再全量罗列——此前 2 字滑窗 any 命中导致任意泛词都算相关，连 2023 年的旧周报都进档案）。
 async fn item_archive(
     State(ctx): State<Arc<AppContext>>,
     headers: HeaderMap,
@@ -1971,74 +2047,134 @@ async fn item_archive(
         (n.content.clone(), n.tags.clone())
     };
 
-    // 复用统一检索做主题串联（2 字滑窗取标题关键词）
-    let words: Vec<String> = anchor_title
-        .chars()
-        .collect::<Vec<_>>()
-        .windows(2)
-        .map(|w| w.iter().collect::<String>())
-        .take(40)
-        .collect();
-    let related_nodes: Vec<serde_json::Value> = words
-        .iter()
-        .filter_map(|w| ctx.db.search_nodes(w, 5).ok())
-        .flat_map(|v| v)
-        .filter(|n| !(kind == "node" && n.id == id))
-        .map(|n| {
-            json!({
-                "id": n.id, "kind": "node",
-                "title": n.content.chars().take(80).collect::<String>(),
-                "date": n.date,
-            })
-        })
-        .collect::<Vec<_>>();
-    let related_todos: Vec<serde_json::Value> = words
-        .iter()
-        .filter_map(|w| ctx.db.search_todos(w, 5).ok())
-        .flat_map(|v| v)
-        .filter(|t| !(kind == "todo" && t.id == id))
-        .map(|t| {
-            json!({
-                "id": t.id, "kind": "todo", "title": t.title, "date": t.due_date,
-            })
-        })
-        .collect::<Vec<_>>();
+    let anchor_date = if kind == "todo" {
+        ctx.db
+            .get_todo(id)
+            .map_err(|e| ApiError::internal(e.to_string()))?
+            .map(|t| t.due_date.clone())
+            .unwrap_or_default()
+    } else {
+        ctx.db
+            .get_node(id)
+            .map_err(|e| ApiError::internal(e.to_string()))?
+            .map(|n| n.date.clone())
+            .unwrap_or_default()
+    };
+    let (segs, grams) = archive_features(&anchor_title);
 
-    // 涉及报告：内容命中关键词
-    let reports = ctx
+    // 记录：全量在内存里打分排序（本地库量级小），只留真正相关的
+    let month_all = ctx
+        .db
+        .list_nodes_range("2000-01-01", "2999-12-31")
+        .map_err(|e| ApiError::internal(e.to_string()))?;
+    let mut related_nodes: Vec<serde_json::Value> = month_all
+        .iter()
+        .filter(|n| !(kind == "node" && n.id == id))
+        .filter_map(|n| {
+            let (score, hits, tag_hits) = archive_score(
+                &segs,
+                &grams,
+                &anchor_tags,
+                &anchor_date,
+                &n.content,
+                &n.tags,
+                &n.date,
+            );
+            // 词窗或标签至少一个命中才可能是相关（时间邻近不能单独成立），总分 ≥2.5
+            if (hits > 0 || tag_hits > 0) && score >= 2.5 {
+                Some(json!({
+                    "id": n.id, "kind": "node",
+                    "title": n.content.chars().take(80).collect::<String>(),
+                    "date": n.date, "score": (score * 10.0).round() / 10.0,
+                }))
+            } else {
+                None
+            }
+        })
+        .collect();
+    related_nodes.sort_by(|a, b| {
+        b["score"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .partial_cmp(&a["score"].as_f64().unwrap_or(0.0))
+            .unwrap()
+    });
+    related_nodes.truncate(5);
+
+    let mut related_todos: Vec<serde_json::Value> = Vec::new();
+    if let Ok(all) = ctx.db.list_todos(Some("全部"), Some("全部"), None, None, None) {
+        for t in &all {
+            if kind == "todo" && t.id == id {
+                continue;
+            }
+            let (score, hits, tag_hits) = archive_score(
+                &segs,
+                &grams,
+                &anchor_tags,
+                &anchor_date,
+                &t.title,
+                &t.tags,
+                &t.due_date,
+            );
+            if (hits > 0 || tag_hits > 0) && score >= 2.5 {
+                related_todos.push(json!({
+                    "id": t.id, "kind": "todo", "title": t.title,
+                    "date": t.due_date, "score": (score * 10.0).round() / 10.0,
+                }));
+            }
+        }
+    }
+    related_todos.sort_by(|a, b| {
+        b["score"]
+            .as_f64()
+            .unwrap_or(0.0)
+            .partial_cmp(&a["score"].as_f64().unwrap_or(0.0))
+            .unwrap()
+    });
+    related_todos.truncate(5);
+
+    // 涉及报告：须命中 ≥2 个词窗才算涉及（长报告天然含大量泛词，单一泛词命中即排除）；
+    // 锚点本身词窗极少（短标题）时放宽到 ≥1。按命中数排序取前 3。
+    let min_report_hits = if grams.len() < 4 { 1 } else { 2 };
+    let mut scored_reports: Vec<(usize, serde_json::Value)> = ctx
         .db
         .list_reports(None, 100)
         .map_err(|e| ApiError::internal(e.to_string()))?
         .into_iter()
-        .filter(|r| words.iter().any(|w| r.content.contains(w.as_str())))
-        .take(5)
-        .map(|r| {
-            json!({
-                "id": r.id, "type": r.r#type, "period": r.period,
-                "createdAt": r.created_at,
-                "snippet": crate::db::Db::make_snippet(
-                    &r.content,
-                    words.first().map(String::as_str).unwrap_or(""),
-                    20,
-                    40
-                ),
-            })
+        .filter_map(|r| {
+            let lower = r.content.to_lowercase();
+            let hits = grams.iter().filter(|g| lower.contains(g.as_str())).count();
+            if hits >= min_report_hits {
+                let first = grams
+                    .iter()
+                    .find(|g| lower.contains(g.as_str()))
+                    .map(String::as_str)
+                    .unwrap_or("");
+                Some((
+                    hits,
+                    json!({
+                        "id": r.id, "type": r.r#type, "period": r.period,
+                        "createdAt": r.created_at,
+                        "snippet": crate::db::Db::make_snippet(&r.content, first, 20, 40),
+                    }),
+                ))
+            } else {
+                None
+            }
         })
-        .collect::<Vec<_>>();
-
-    let dedup = |v: Vec<serde_json::Value>| -> Vec<serde_json::Value> {
-        let mut seen = std::collections::HashSet::new();
-        v.into_iter()
-            .filter(|x| seen.insert(x["id"].as_i64().unwrap_or(0)))
-            .take(8)
-            .collect()
-    };
+        .collect();
+    scored_reports.sort_by(|a, b| b.0.cmp(&a.0));
+    let reports: Vec<serde_json::Value> = scored_reports
+        .into_iter()
+        .take(3)
+        .map(|(_, v)| v)
+        .collect();
 
     Ok(ApiResp::ok(json!({
         "title": anchor_title.chars().take(60).collect::<String>(),
         "tags": anchor_tags,
-        "nodes": dedup(related_nodes),
-        "todos": dedup(related_todos),
+        "nodes": related_nodes,
+        "todos": related_todos,
         "reports": reports,
     })))
 }
@@ -3172,5 +3308,70 @@ mod ai_tag_tests {
     fn 解析_不是数组就为空() {
         assert!(parse_tag_array("工作、生活").is_empty());
         assert!(parse_tag_array("").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod archive_score_tests {
+    use super::{archive_features, archive_score};
+
+    fn score(anchor: &str, other: &str, anchor_date: &str, other_date: &str) -> (f64, usize, usize) {
+        let (segs, grams) = archive_features(anchor);
+        archive_score(&segs, &grams, &[], anchor_date, other, &[], other_date)
+    }
+
+    #[test]
+    fn 特征_同主题条目强相关() {
+        // 用户场景：锚点「个人版开通北极星-与各平台打通…」，同系列记录（含「北极星」实体 + 近期）
+        let (s, h, t) = score(
+            "个人版开通北极星-与各平台打通（不在平台购买情况下）",
+            "钉钉北极星OKR定时任务经常性崩溃问题排查",
+            "2026-09-28",
+            "2026-09-28",
+        );
+        assert!(h >= 1 && s >= 2.5, "应关联：score={s} hits={h} tags={t}");
+    }
+
+    #[test]
+    fn 特征_泛词报告不因单一弱词命中() {
+        // 2023 年旧周报只含「完成/问题」类泛词：不得命中档案词窗（3 字窗不含这些泛 2 字词）
+        let (s, h, _) = score(
+            "个人版开通北极星-与各平台打通（不在平台购买情况下）",
+            "## 周报：2023年9月21日 - 2023年9月24日 已完成多项工作，遇到问题若干，进度正常推进完毕",
+            "2026-09-28",
+            "2026-09-24",
+        );
+        assert_eq!(h, 0, "泛词不应命中词窗");
+        assert!(s < 2.5, "纯时间邻近不得过门槛：score={s}");
+    }
+
+    #[test]
+    fn 特征_无关条目被排除() {
+        let (s, h, _) = score(
+            "个人版开通北极星-与各平台打通（不在平台购买情况下）",
+            "采购牛奶和鸡蛋",
+            "2026-09-28",
+            "2026-09-28",
+        );
+        assert_eq!(h, 0);
+        assert!(s < 2.5, "无关条目总分应低于门槛：score={s}");
+    }
+
+    #[test]
+    fn 特征_短标题回退2字窗保证召回() {
+        let (segs, grams) = archive_features("立项书");
+        assert!(!grams.is_empty(), "短标题应有兜底词窗");
+        let (s, h, _) = archive_score(&segs, &grams, &[], "2026-09-28", "立项书评审通过", &[], "2026-09-28");
+        assert!(h >= 1 && s >= 2.5, "同题记录应关联：score={s} hits={h}");
+    }
+
+    #[test]
+    fn 特征_标签重合可独立成立() {
+        let (segs, grams) = archive_features("完全不同的标题文本");
+        let (s, _, t) = archive_score(
+            &segs, &grams, &["北极星".to_string()], "2026-09-28",
+            "随便什么内容", &["北极星".to_string(), "工作".to_string()], "2026-09-28",
+        );
+        assert!(t == 1 && s >= 3.0, "标签重合应过门槛：score={s} tags={t}");
     }
 }

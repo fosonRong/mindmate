@@ -139,6 +139,11 @@ check("AI 对话式生成模板端点 + 设置页弹窗",
       "ai/template-draft" in api_rs2 and "ai_template_draft" in api_rs2
       and "TemplateAiModal" in read("apps", "web", "src", "views", "Settings.vue")
       and "aiTemplateDraft" in read("apps", "web", "src", "api", "client.ts"))
+# 用户反馈：事项档案按相关性关联，不是全部都查出来（泛词 any 命中导致 2023 旧周报都进档案）
+check("事项档案相关性打分过滤（archive_features/archive_score + 门槛）",
+      "archive_features" in api_rs2 and "archive_score" in api_rs2
+      and "archive_score_tests" in read("core", "src", "api", "mod.rs")
+      and "min_report_hits" in api_rs2)
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

@@ -1230,6 +1230,25 @@ _r, _ = call("GET", f"/smart/archive?kind=todo&id={_po_ids[0]}")
 check("事项档案返回三段结构",
       _r.get("code") == 0 and all(k in (_r.get("data") or {}) for k in ("nodes", "todos", "reports")),
       str(_r)[:80])
+# 相关性回归（用户反馈：档案按相关性关联，不是全部都查出来）
+_r, _ = call("POST", "/nodes", {"content": "E2E档案项目α评审通过，进入下一阶段", "date": TODAY})
+_arc_node = _r["data"]["id"]
+_r, _ = call("POST", "/todos", {"title": "E2E档案项目α立项", "dueDate": TODAY})
+_arc_anchor = _r["data"]["id"]
+_r, _ = call("POST", "/todos", {"title": "采购牛奶和鸡蛋", "dueDate": YESTERDAY})
+_arc_noise = _r["data"]["id"]
+_r, _ = call("GET", f"/smart/archive?kind=todo&id={_arc_anchor}")
+_ad = (_r.get("data") or {})
+_arc_node_ids = [n["id"] for n in _ad.get("nodes", [])]
+_arc_todo_ids = [t["id"] for t in _ad.get("todos", [])]
+check("档案关联同主题记录", _arc_node in _arc_node_ids, f"nodes={_arc_node_ids}")
+check("档案排除无关待办（仅时间近不算相关）", _arc_noise not in _arc_todo_ids, f"todos={_arc_todo_ids}")
+check("档案条目带相关性得分",
+      all("score" in x for x in _ad.get("nodes", []) + _ad.get("todos", [])),
+      str(_ad.get("nodes", []))[:60])
+call("DELETE", f"/nodes/{_arc_node}")
+call("DELETE", f"/todos/{_arc_anchor}")
+call("DELETE", f"/todos/{_arc_noise}")
 # 清理
 for _i in _po_ids:
     call("DELETE", f"/todos/{_i}")
