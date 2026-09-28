@@ -150,11 +150,6 @@ export const api = {
     get<{ from: string; to: string; items: { id: number; title: string; dueDate: string; tags: string[] }[] }>(
       `/api/v1/report/evidence${date ? `?date=${date}` : ''}`
     ),
-  /** 相关事项（v1.4.1）：标签/关键词/时间邻近打分 */
-  relatedItems: (kind: 'todo' | 'node', id: number, limit = 5) =>
-    get<{ nodes: { id: number; title: string; date: string; score: number }[]; todos: { id: number; title: string; date: string; score: number }[] }>(
-      `/api/v1/smart/related?kind=${kind}&id=${id}&limit=${limit}`
-    ),
   /** 提炼行动项（v1.4.1）：AI 优先本地规则兜底 */
   aiActionItems: (contents: string[]) =>
     post<{ isAi: boolean; items: ExtractedTodo[] }>('/api/v1/ai/action-items', { contents }),

@@ -20,24 +20,21 @@ const emit = defineEmits<{
 const todos = useTodosStore()
 const app = useAppStore()
 
-// ── 相关事项（v1.4.1）：标签/关键词/时间邻近串联 ──
-const related = ref<{ nodes: { id: number; title: string; date: string }[]; todos: { id: number; title: string; date: string }[] } | null>(null)
-const relatedLoading = ref(false)
-
+// ── 事项档案（v1.5.0，v1.5.3 起合并原「相关事项」）：相关性打分串联记录/待办 + 报告证据 ──
 const archive = ref<Awaited<ReturnType<typeof api.itemArchive>> | null>(null)
 
-async function loadRelated() {
+async function loadArchive() {
   if (props.todo.inbox) return
-  relatedLoading.value = true
   try {
-    related.value = await api.relatedItems('todo', props.todo.id, 4)
-    archive.value = await api.itemArchive('todo', props.todo.id).catch(() => null)
+    archive.value = await api.itemArchive('todo', props.todo.id)
   } catch {
-    related.value = null
-  } finally {
-    relatedLoading.value = false
+    archive.value = null
   }
 }
+
+const archiveEmpty = computed(
+  () => !archive.value || (!archive.value.nodes.length && !archive.value.todos.length && !archive.value.reports.length),
+)
 
 function jumpToRelated(kind: string, id: number) {
   if (kind === 'todo') {
@@ -75,7 +72,7 @@ function isPinned(todo: Todo) {
   return todo.sortOrder < 0
 }
 
-onMounted(() => loadRelated().catch(() => {}))
+onMounted(() => loadArchive().catch(() => {}))
 </script>
 
 <template>
@@ -132,13 +129,13 @@ onMounted(() => loadRelated().catch(() => {}))
         </div>
       </div>
 
-      <!-- 相关事项（v1.4.1） -->
-      <div v-if="related && (related.nodes.length || related.todos.length)" class="divider" style="margin: 10px 0"></div>
-      <div v-if="related && (related.nodes.length || related.todos.length)">
-        <div class="small muted" style="margin-bottom: 4px">{{ $t('🔗 相关事项') }}</div>
+      <!-- 事项档案（v1.5.3 合并原「相关事项」）：记录/待办可点击跳转，报告带证据摘要 -->
+      <div v-if="!archiveEmpty" class="divider" style="margin: 10px 0"></div>
+      <div v-if="!archiveEmpty">
+        <div class="small muted" style="margin-bottom: 4px">{{ $t('🗂️ 事项档案 · 来龙去脉') }}</div>
         <div
-          v-for="n in related.nodes"
-          :key="'n' + n.id"
+          v-for="n in archive!.nodes"
+          :key="'an' + n.id"
           class="small related-item"
           @click="jumpToRelated('node', n.id)"
         >
@@ -146,27 +143,15 @@ onMounted(() => loadRelated().catch(() => {}))
           <span class="mono muted">{{ n.date.slice(5) }}</span>
         </div>
         <div
-          v-for="x in related.todos"
-          :key="'t' + x.id"
+          v-for="x in archive!.todos"
+          :key="'at' + x.id"
           class="small related-item"
           @click="jumpToRelated('todo', x.id)"
         >
           ✅ {{ x.title.slice(0, 40) }}{{ x.title.length > 40 ? '…' : '' }}
           <span class="mono muted">{{ x.date.slice(5) }}</span>
         </div>
-      </div>
-
-      <!-- 事项档案（v1.5.0） -->
-      <div v-if="archive" class="divider" style="margin: 10px 0"></div>
-      <div v-if="archive">
-        <div class="small muted" style="margin-bottom: 4px">{{ $t('🗂️ 事项档案 · 来龙去脉') }}</div>
-        <div v-for="n in archive.nodes" :key="'an' + n.id" class="small related-item">
-          📝 {{ n.title.slice(0, 36) }}{{ n.title.length > 36 ? '…' : '' }} <span class="mono muted">{{ n.date.slice(5) }}</span>
-        </div>
-        <div v-for="t in archive.todos" :key="'at' + t.id" class="small related-item">
-          ✅ {{ t.title.slice(0, 36) }} <span class="mono muted">{{ t.date.slice(5) }}</span>
-        </div>
-        <div v-for="r in archive.reports" :key="'ar' + r.id" class="small related-item">
+        <div v-for="r in archive!.reports" :key="'ar' + r.id" class="small related-item">
           📄 {{ r.type }} · {{ r.period }} — {{ r.snippet.slice(0, 30) }}…
         </div>
       </div>

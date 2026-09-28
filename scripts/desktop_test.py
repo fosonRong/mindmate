@@ -539,9 +539,11 @@ todos_vue2 = read("apps", "web", "src", "views", "Todos.vue")
 check("v1.4.1 收集箱智能归类：规则引擎（链接/日期/动作词）+ 端点 + 一键采纳",
       "suggest_kind" in smart_rs and "smart/classify" in read("core", "src", "api", "mod.rs")
       and "applySuggestion" in todos_vue2 and "smartClassify" in todos_vue2)
-check("v1.4.1 事项串联：打分（标签/关键词/邻近）+ 端点 + 详情展示",
+check("v1.4.1 事项串联端点保留；详情弹窗档案合一（v1.5.3：可点击 + 报告证据）",
       "channels_for" not in smart_rs and "smart/related" in read("core", "src", "api", "mod.rs")
-      and "relatedItems" in read("apps", "web", "src", "components", "TodoDetailModal.vue"))
+      and "itemArchive" in read("apps", "web", "src", "components", "TodoDetailModal.vue")
+      and "relatedItems" not in read("apps", "web", "src", "components", "TodoDetailModal.vue")
+      and "archiveEmpty" in read("apps", "web", "src", "components", "TodoDetailModal.vue"))
 check("v1.4.1 提炼行动项：规则/AI 双路 + 今日页选择模式 + 跟进识别",
       "suggest_action_items" in smart_rs and "follow_up_todo" in smart_rs
       and "ai/action-items" in read("core", "src", "api", "mod.rs")

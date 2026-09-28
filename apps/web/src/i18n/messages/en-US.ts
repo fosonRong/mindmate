@@ -730,7 +730,6 @@ export default {
   '智能归类建议': 'Smart classify suggestion',
   '没有提炼出行动项': 'No action items extracted',
   '自动建议每条是待办、记录还是参考资料': 'Suggest whether each item is a todo, record or reference',
-  '🔗 相关事项': '🔗 Related items',
   '⏳ 跟进与等待': '⏳ Follow-ups & waiting',
   '智能排期': 'Smart schedule',
   '保持原日期': 'Keep original date',
