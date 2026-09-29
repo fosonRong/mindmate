@@ -37,16 +37,21 @@ async function openTodoPicker() {
 
 async function searchTodos() {
   try {
-    const params: Record<string, string> = { status: '未完成' }
+    // 状态值需客户端过滤（后端 status 精确匹配：待处理/进行中/已完成/已逾期）
+    const params: Record<string, string> = {}
     if (todoQuery.value.trim()) params.q = todoQuery.value.trim()
     const all = await api.todos(params)
-    todoOptions.value = (all as any[]).slice(0, 8).map((x) => ({ id: x.id, title: x.title, dueDate: x.dueDate }))
+    todoOptions.value = (all as any[])
+      .filter((x) => x.status !== '已完成')
+      .slice(0, 8)
+      .map((x) => ({ id: x.id, title: x.title, dueDate: x.dueDate }))
   } catch {
     todoOptions.value = []
   }
 }
 
-function pickTodo(x: { id: number; title: string }) {
+function pickTodo(x?: { id: number; title: string }) {
+  if (!x) return
   linkedTodo.value = { id: x.id, title: x.title }
   pickingTodo.value = false
 }

@@ -37,17 +37,22 @@ async function openTodoPicker() {
 
 async function searchTodos() {
   try {
-    // 未完成待办优先（子任务挂在未完成事项下才有意义），关键词过滤
-    const params: Record<string, string> = { status: '未完成' }
+    // 未完成待办优先（子任务挂在未完成事项下才有意义）；状态值需客户端过滤
+    // （后端 status 是精确匹配：待处理/进行中/已完成/已逾期，没有「未完成」这个值）
+    const params: Record<string, string> = {}
     if (todoQuery.value.trim()) params.q = todoQuery.value.trim()
     const all = await api.todos(params)
-    todoOptions.value = (all as any[]).slice(0, 8).map((t) => ({ id: t.id, title: t.title, dueDate: t.dueDate }))
+    todoOptions.value = (all as any[])
+      .filter((t) => t.status !== '已完成')
+      .slice(0, 8)
+      .map((t) => ({ id: t.id, title: t.title, dueDate: t.dueDate }))
   } catch {
     todoOptions.value = []
   }
 }
 
-function pickTodo(t: { id: number; title: string }) {
+function pickTodo(t?: { id: number; title: string }) {
+  if (!t) return
   linkedTodo.value = { id: t.id, title: t.title }
   pickingTodo.value = false
 }
