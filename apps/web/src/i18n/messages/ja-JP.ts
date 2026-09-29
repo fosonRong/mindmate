@@ -778,4 +778,5 @@ export default {
   '没有匹配的未完成待办': '一致する未完了 ToDo がありません',
   '解除关联': '紐付け解除',
   '🎯 关联待办': '🎯 ToDo 紐付け',
+  '关联待办': '紐付け ToDo',
 } as Record<string, string>

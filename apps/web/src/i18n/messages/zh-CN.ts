@@ -778,4 +778,5 @@ export default {
   '周五': '周五',
   '周六': '周六',
   '周日': '周日',
+  '关联待办': '关联待办',
 } as Record<string, string>

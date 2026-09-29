@@ -150,6 +150,10 @@ check("记录关联待办：查询/端点/捕捉选择器/详情子任务区",
       and "todoNodes" in read("apps", "web", "src", "api", "client.ts")
       and "关联待办" in read("apps", "web", "src", "components", "QuickEntry.vue")
       and "子任务记录" in read("apps", "web", "src", "components", "TodoDetailModal.vue"))
+check("记录时间线显示关联待办徽标（todoTitle 填充 + NodeItem 徽标）",
+      "fill_todo_titles" in queries_rs and "todo_title" in read("core", "src", "db", "models.rs")
+      and "chip-linked" in read("apps", "web", "src", "components", "NodeItem.vue")
+      and "todoTitle" in read("apps", "web", "src", "api", "types.ts"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

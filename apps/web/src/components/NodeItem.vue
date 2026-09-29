@@ -59,6 +59,11 @@ function isCaptureUrl(line: string) {
   return line.trim().startsWith('/captures/')
 }
 
+/** 点击 🎯 徽标 → 待办页（记录关联待办 v1.5.3） */
+function goLinkedTodo() {
+  location.hash = '#/todos'
+}
+
 function tagClass(t: string) {
   const map: Record<string, string> = { 工作: 'work', 生活: 'life', 健康: 'health', 学习: 'study' }
   return map[t] || 'none'
@@ -78,7 +83,13 @@ function tagClass(t: string) {
           <button @click="startEdit">{{ $t('编辑') }}</button>
           <button class="danger" @click="remove">{{ $t('删除') }}</button>
         </span>
-        <div v-if="node.tags.length || node.isBackfill" class="tl-meta">
+        <div v-if="node.tags.length || node.isBackfill || node.todoTitle" class="tl-meta">
+          <span
+            v-if="node.todoTitle"
+            class="chip chip-linked"
+            :title="$t('关联待办') + '：' + node.todoTitle"
+            @click="goLinkedTodo"
+          >🎯 {{ node.todoTitle.slice(0, 12) }}{{ node.todoTitle.length > 12 ? '…' : '' }}</span>
           <span v-for="t in node.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
           <span v-if="node.isBackfill" class="small muted">{{ $t('补录') }}</span>
         </div>
@@ -109,3 +120,17 @@ function tagClass(t: string) {
     </div>
   </div>
 </template>
+
+<style scoped>
+.chip-linked {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+  background: var(--primary-soft, #eef2ff);
+  color: var(--primary, #6366f1);
+  border: 1px solid transparent;
+}
+.chip-linked:hover { border-color: var(--primary, #6366f1); }
+</style>

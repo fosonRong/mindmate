@@ -1293,6 +1293,14 @@ _r, _ = call("POST", "/nodes", {"content": "完成 OAuth2 联调", "date": TODAY
 _kid = _r["data"]["id"]
 check("创建记录带 todoId 成功", _r.get("code") == 0 and (_r.get("data") or {}).get("todoId") == _okr,
       str(_r)[:80])
+check("记录响应带待办标题（时间线徽标展示用）",
+      (_r.get("data") or {}).get("todoTitle") == "E2E关联主任务",
+      f"todoTitle={(_r.get('data') or {}).get('todoTitle')}")
+_r, _ = call("GET", "/nodes?date=" + TODAY)
+_nlist = (_r.get("data") or [])
+check("列表查询同样填充待办标题",
+      any(n["id"] == _kid and n.get("todoTitle") == "E2E关联主任务" for n in _nlist),
+      str([(n['id'], n.get('todoTitle')) for n in _nlist if n['id'] == _kid]))
 _r, _ = call("POST", "/nodes", {"content": "关联不存在的待办", "date": TODAY, "todoId": 999999})
 check("无效 todoId 被拒绝", _r.get("code") != 0, f"code={_r.get('code')}")
 _r, _ = call("GET", f"/todos/{_okr}/nodes")

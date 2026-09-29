@@ -9,6 +9,8 @@ export interface Node {
   isBackfill: boolean
   tags: string[]
   todoId: number | null
+  /** 关联待办标题（服务端填充，v1.5.3 记录关联待办） */
+  todoTitle?: string | null
 }
 
 /** 统一检索的报告命中（v1.1.3）：只带片段不带回全文 */

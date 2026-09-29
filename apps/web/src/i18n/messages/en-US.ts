@@ -777,4 +777,5 @@ export default {
   '没有匹配的未完成待办': 'No matching unfinished todos',
   '解除关联': 'Remove link',
   '🎯 关联待办': '🎯 Link todo',
+  '关联待办': 'Linked todo',
 } as Record<string, string>

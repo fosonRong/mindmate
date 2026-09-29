@@ -22,6 +22,9 @@ pub struct Node {
     pub is_backfill: bool,
     pub tags: Vec<String>,
     pub todo_id: Option<i64>,
+    /// 关联待办的标题（展示用，服务端填充；v1.5.3 记录关联待办）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub todo_title: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]

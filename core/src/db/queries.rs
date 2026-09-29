@@ -20,7 +20,35 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<Node> {
         is_backfill: row.get::<_, i64>(5)? != 0,
         tags: parse_tags(&row.get::<_, String>(6)?),
         todo_id: row.get(7)?,
+        todo_title: None,
     })
+}
+
+/// 批量填充关联待办标题（展示用）：一次 IN 查询，避免 N+1
+fn fill_todo_titles(conn: &rusqlite::Connection, nodes: &mut [Node]) {
+    let ids: Vec<i64> = nodes.iter().filter_map(|n| n.todo_id).collect();
+    if ids.is_empty() {
+        return;
+    }
+    let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+    let sql = format!(
+        "SELECT id, title FROM todos WHERE deleted_at IS NULL AND id IN ({placeholders})"
+    );
+    let Ok(mut stmt) = conn.prepare(&sql) else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+    }) else {
+        return;
+    };
+    let map: std::collections::HashMap<i64, String> =
+        rows.filter_map(|r| r.ok()).collect();
+    for n in nodes.iter_mut() {
+        if let Some(tid) = n.todo_id {
+            n.todo_title = map.get(&tid).cloned();
+        }
+    }
 }
 
 const NODE_COLS: &str = "id, content, date, created_at, updated_at, is_backfill, tags, todo_id";
@@ -41,11 +69,12 @@ impl Db {
             params![input.content, date, now, now, is_backfill, tags, input.todo_id],
         )?;
         let id = conn.last_insert_rowid();
-        let node = conn.query_row(
+        let mut node = conn.query_row(
             &format!("SELECT {NODE_COLS} FROM nodes WHERE id = ?1"),
             params![id],
             row_to_node,
         )?;
+        fill_todo_titles(&conn, std::slice::from_mut(&mut node));
         Ok(node)
     }
 
@@ -55,7 +84,9 @@ impl Db {
             "SELECT {NODE_COLS} FROM nodes WHERE date = ?1 AND deleted_at IS NULL ORDER BY created_at ASC"
         ))?;
         let rows = stmt.query_map(params![date], row_to_node)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut out: Vec<Node> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        fill_todo_titles(&conn, &mut out);
+        Ok(out)
     }
 
     /// 周期内的节点（周/月视图一次拉取）
@@ -67,7 +98,9 @@ impl Db {
              ORDER BY date ASC, created_at ASC"
         ))?;
         let rows = stmt.query_map(params![from, to], row_to_node)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut out: Vec<Node> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        fill_todo_titles(&conn, &mut out);
+        Ok(out)
     }
 
     /// 某待办直属的子记录（用户反馈：记录可关联待办，OKR 结构——待办为 O、记录为 KR/进展）
@@ -79,18 +112,23 @@ impl Db {
              ORDER BY created_at ASC"
         ))?;
         let rows = stmt.query_map(params![todo_id], row_to_node)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut out: Vec<Node> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        fill_todo_titles(&conn, &mut out);
+        Ok(out)
     }
 
     pub fn get_node(&self, id: i64) -> Result<Option<Node>> {
         let conn = self.lock();
-        let node = conn
+        let mut node = conn
             .query_row(
                 &format!("SELECT {NODE_COLS} FROM nodes WHERE id = ?1 AND deleted_at IS NULL"),
                 params![id],
                 row_to_node,
             )
             .optional()?;
+        if let Some(n) = node.as_mut() {
+            fill_todo_titles(&conn, std::slice::from_mut(n));
+        }
         Ok(node)
     }
 
@@ -120,6 +158,7 @@ impl Db {
             ],
         )?;
         node.updated_at = now;
+        fill_todo_titles(&conn, std::slice::from_mut(&mut node));
         Ok(Some(node))
     }
 
@@ -177,7 +216,9 @@ impl Db {
              ORDER BY date DESC, created_at DESC LIMIT ?2"
         ))?;
         let rows = stmt.query_map(params![format!("%{query}%"), limit], row_to_node)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut out: Vec<Node> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        fill_todo_titles(&conn, &mut out);
+        Ok(out)
     }
 
     // ───────────────── 统一检索（v1.1.3：记录+待办+报告，类型/标签/日期过滤） ─────────────────

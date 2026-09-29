@@ -578,6 +578,7 @@ fn flat_node(id: i64, date: &str, created_at: &str, content: &str) -> Node {
         is_backfill: false,
         tags: vec![],
         todo_id: None,
+        todo_title: None,
     }
 }
 
