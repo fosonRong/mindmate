@@ -131,6 +131,11 @@ async function suggest() {
           {{ todo.category === '日程' && todo.dueTime ? friendlyDate(todo.dueDate) : friendlyDate(todo.dueDate) }}
         </span>
         <span
+          v-if="todo.subNodeCount"
+          class="chip chip-sub"
+          :title="$t('子任务记录 · {a}', { a: todo.subNodeCount }) + ' · ' + $t('点击查看详情')"
+        >📝 {{ todo.subNodeCount }}</span>
+        <span
           v-if="todo.recurType"
           class="chip recur"
           :title="recurTip(todo)"
@@ -154,3 +159,13 @@ async function suggest() {
     </div>
   </div>
 </template>
+
+<style scoped>
+.chip-sub {
+  cursor: pointer;
+  background: var(--primary-soft, #eef2ff);
+  color: var(--primary, #6366f1);
+  border: 1px solid transparent;
+}
+.chip-sub:hover { border-color: var(--primary, #6366f1); }
+</style>

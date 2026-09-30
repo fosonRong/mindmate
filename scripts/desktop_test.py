@@ -154,6 +154,10 @@ check("记录时间线显示关联待办徽标（todoTitle 填充 + NodeItem 徽
       "fill_todo_titles" in queries_rs and "todo_title" in read("core", "src", "db", "models.rs")
       and "chip-linked" in read("apps", "web", "src", "components", "NodeItem.vue")
       and "todoTitle" in read("apps", "web", "src", "api", "types.ts"))
+check("待办列表显示子记录数徽标（sub_node_count + TodoItem）",
+      "fill_sub_node_counts" in queries_rs and "sub_node_count" in read("core", "src", "db", "models.rs")
+      and "chip-sub" in read("apps", "web", "src", "components", "TodoItem.vue")
+      and "subNodeCount" in read("apps", "web", "src", "api", "types.ts"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

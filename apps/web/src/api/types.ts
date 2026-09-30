@@ -101,6 +101,8 @@ export interface Todo {
   /** 收集箱（未排期）：不进日程/统计，拖到周视图某天即排期 */
   inbox: boolean
   overdue: boolean
+  /** 直属子记录数（记录关联待办，服务端填充） */
+  subNodeCount?: number | null
 }
 
 export interface NewsItem {

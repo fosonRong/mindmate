@@ -398,7 +398,35 @@ impl Db {
             recur_skip_rest: row.get::<_, i64>(19)? != 0,
             inbox: row.get::<_, i64>(20)? != 0,
             overdue: is_overdue(&due_date, due_time.as_deref(), &status),
+            sub_node_count: None,
         })
+    }
+
+    /// 批量填充待办的直属子记录数（记录关联待办，展示用）
+    fn fill_sub_node_counts(conn: &rusqlite::Connection, todos: &mut [Todo]) {
+        let ids: Vec<i64> = todos.iter().map(|t| t.id).collect();
+        if ids.is_empty() {
+            return;
+        }
+        let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT todo_id, COUNT(*) FROM nodes
+             WHERE deleted_at IS NULL AND todo_id IN ({placeholders}) GROUP BY todo_id"
+        );
+        let Ok(mut stmt) = conn.prepare(&sql) else {
+            return;
+        };
+        let Ok(rows) = stmt.query_map(rusqlite::params_from_iter(ids.iter()), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+        }) else {
+            return;
+        };
+        let map: std::collections::HashMap<i64, i64> = rows.filter_map(|r| r.ok()).collect();
+        for t in todos.iter_mut() {
+            if let Some(c) = map.get(&t.id) {
+                t.sub_node_count = Some(*c);
+            }
+        }
     }
 
     const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest, inbox";
@@ -498,12 +526,14 @@ impl Db {
         let params_ref: Vec<&dyn rusqlite::ToSql> =
             args.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
         let rows = stmt.query_map(params_ref.as_slice(), Self::row_to_todo)?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        let mut out: Vec<Todo> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        Self::fill_sub_node_counts(&conn, &mut out);
+        Ok(out)
     }
 
     pub fn get_todo(&self, id: i64) -> Result<Option<Todo>> {
         let conn = self.lock();
-        let t = conn
+        let mut t = conn
             .query_row(
                 &format!(
                     "SELECT {} FROM todos WHERE id=?1 AND deleted_at IS NULL",
@@ -513,6 +543,9 @@ impl Db {
                 Self::row_to_todo,
             )
             .optional()?;
+        if let Some(todo) = t.as_mut() {
+            Self::fill_sub_node_counts(&conn, std::slice::from_mut(todo));
+        }
         Ok(t)
     }
 

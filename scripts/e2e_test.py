@@ -1296,6 +1296,11 @@ check("创建记录带 todoId 成功", _r.get("code") == 0 and (_r.get("data") o
 check("记录响应带待办标题（时间线徽标展示用）",
       (_r.get("data") or {}).get("todoTitle") == "E2E关联主任务",
       f"todoTitle={(_r.get('data') or {}).get('todoTitle')}")
+_r, _ = call("GET", "/todos")
+_okr_in_list = [t for t in (_r.get("data") or []) if t["id"] == _okr]
+check("待办列表带子记录数（TodoItem 徽标展示用）",
+      _okr_in_list and _okr_in_list[0].get("subNodeCount") == 1,
+      f"subNodeCount={_okr_in_list[0].get('subNodeCount') if _okr_in_list else 'N/A'}")
 _r, _ = call("GET", "/nodes?date=" + TODAY)
 _nlist = (_r.get("data") or [])
 check("列表查询同样填充待办标题",

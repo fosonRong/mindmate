@@ -92,6 +92,9 @@ pub struct Todo {
     pub inbox: bool,
     /// 是否已逾期（服务端计算，仅展示用）
     pub overdue: bool,
+    /// 直属子记录数（记录关联待办，展示用；v1.5.3）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sub_node_count: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]
