@@ -158,6 +158,15 @@ check("待办列表显示子记录数徽标（sub_node_count + TodoItem）",
       "fill_sub_node_counts" in queries_rs and "sub_node_count" in read("core", "src", "db", "models.rs")
       and "chip-sub" in read("apps", "web", "src", "components", "TodoItem.vue")
       and "subNodeCount" in read("apps", "web", "src", "api", "types.ts"))
+# 用户需求：①待办有效期时间段（超过截止才逾期）②待办列表目录树展示关联记录
+check("待办有效期 start_date（V5 迁移 + 读写 + 逾期仍按截止）",
+      "SCHEMA_V5" in read("core", "src", "db", "mod.rs") and "start_date" in read("core", "src", "db", "models.rs")
+      and "startDate" in read("apps", "web", "src", "components", "TodoEditModal.vue")
+      and "dateRangeText" in read("apps", "web", "src", "components", "TodoItem.vue"))
+check("待办列表目录树子记录（展开懒加载 + 解除关联）",
+      "toggleSub" in read("apps", "web", "src", "components", "TodoItem.vue")
+      and "subtree" in read("apps", "web", "src", "components", "TodoItem.vue")
+      and "unlinkSub" in read("apps", "web", "src", "components", "TodoItem.vue"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

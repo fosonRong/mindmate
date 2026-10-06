@@ -40,6 +40,15 @@ function priClass(p: string) {
   return p === '高' ? 'pri-h' : p === '中' ? 'pri-m' : 'pri-l'
 }
 
+/** 有效期展示：有开始日期显示区间，否则单日（v1.5.3） */
+function dateRangeText(todo: Todo) {
+  const due = friendlyDate(todo.dueDate)
+  if (todo.startDate && todo.startDate !== todo.dueDate) {
+    return `${todo.startDate.slice(5)} ~ ${due}`
+  }
+  return due
+}
+
 function recurLabel(rt: string) {
   const map: Record<string, string> = { daily: '每天', weekly: '每周', monthly: '每月' }
   return map[rt] || rt
@@ -101,6 +110,44 @@ function onDragStart(e: DragEvent) {
   if (e.dataTransfer) e.dataTransfer.effectAllowed = 'move'
 }
 
+// ── 子记录目录树（v1.5.3）：📝 徽标点击展开/收起，懒加载直属记录 ──
+const subExpanded = ref(false)
+const subNodes = ref<{ id: number; content: string; createdAt: string; date: string }[]>([])
+const subLoading = ref(false)
+
+async function toggleSub() {
+  subExpanded.value = !subExpanded.value
+  if (subExpanded.value && !subNodes.value.length) {
+    subLoading.value = true
+    try {
+      const r = await (await import('@/api/client')).api.todoNodes(props.todo.id)
+      subNodes.value = (r.items || []).map((n) => ({ id: n.id, content: n.content, createdAt: n.createdAt, date: n.date }))
+    } catch {
+      subNodes.value = []
+    } finally {
+      subLoading.value = false
+    }
+  }
+}
+
+async function unlinkSub(nodeId: number) {
+  try {
+    const api = (await import('@/api/client')).api
+    await api.updateNode(nodeId, { todoId: null })
+    subNodes.value = subNodes.value.filter((n) => n.id !== nodeId)
+    if (!subNodes.value.length) subExpanded.value = false
+    await todos.load()
+    app.toast('success', t('已解除关联'))
+  } catch (e: any) {
+    app.toast('error', e?.message || t('操作失败'))
+  }
+}
+
+function jumpSub(n: { date: string }) {
+  window.dispatchEvent(new CustomEvent('mindmate:open-day', { detail: { date: n.date } }))
+  location.hash = '#/month'
+}
+
 async function suggest() {
   try {
     const res = await (await import('@/api/client')).api.suggestSchedule(props.todo.id)
@@ -128,13 +175,14 @@ async function suggest() {
         <span class="pri-dot" :class="priClass(todo.priority)" :title="`优先级${todo.priority}`"></span>
         <span v-if="todo.dueTime" class="mono">{{ todo.dueTime }}</span>
         <span :class="{ 'due-late': todo.overdue }">
-          {{ todo.category === '日程' && todo.dueTime ? friendlyDate(todo.dueDate) : friendlyDate(todo.dueDate) }}
+          {{ dateRangeText(todo) }}
         </span>
         <span
           v-if="todo.subNodeCount"
           class="chip chip-sub"
-          :title="$t('子任务记录 · {a}', { a: todo.subNodeCount }) + ' · ' + $t('点击查看详情')"
-        >📝 {{ todo.subNodeCount }}</span>
+          :title="$t('子任务记录 · {a}', { a: todo.subNodeCount })"
+          @click.stop="toggleSub"
+        >{{ subExpanded ? '▾' : '▸' }} 📝 {{ todo.subNodeCount }}</span>
         <span
           v-if="todo.recurType"
           class="chip recur"
@@ -143,6 +191,19 @@ async function suggest() {
         <span v-if="isPinned()" class="badge pin" :title="$t('已置顶')">★ {{ $t('置顶') }}</span>
         <span v-if="todo.status === '已逾期'" class="badge danger">{{ $t('逾期') }}</span>
         <span v-for="t in todo.tags" :key="t" class="chip" :class="tagClass(t)">{{ t }}</span>
+      </div>
+    </div>
+    <!-- 子记录目录树：缩进 + 竖线，OKR 结构（记录 = 待办的 KR/进展） -->
+    <div v-if="subExpanded" class="subtree" @click.stop>
+      <div v-if="subLoading" class="small muted sub-row">{{ $t('加载中…') }}</div>
+      <div v-else-if="!subNodes.length" class="small muted sub-row">{{ $t('没有子记录') }}</div>
+      <div v-for="n in subNodes" :key="n.id" class="sub-row small">
+        <span class="sub-rail"></span>
+        <span class="sub-content" :title="n.content" @click="jumpSub(n)">
+          <span class="mono muted">{{ n.date.slice(5) }}</span>
+          {{ n.content.slice(0, 60) }}{{ n.content.length > 60 ? '…' : '' }}
+        </span>
+        <span class="link muted sub-unlink" :title="$t('解除关联')" @click="unlinkSub(n.id)">✕</span>
       </div>
     </div>
     <!-- .stop：删除/建议按钮的点击不能冒泡到外层（待办页在行上绑了「点击=编辑」，否则点删除会弹出编辑框） -->
@@ -161,6 +222,36 @@ async function suggest() {
 </template>
 
 <style scoped>
+.subtree {
+  flex-basis: 100%;
+  margin: 2px 0 4px 30px;
+  padding: 4px 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sub-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+.sub-rail {
+  width: 1px;
+  align-self: stretch;
+  background: var(--border, #e5e7eb);
+  flex: none;
+}
+.sub-content {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.sub-content:hover { color: var(--primary, #6366f1); }
+.sub-unlink { flex: none; cursor: pointer; }
 .chip-sub {
   cursor: pointer;
   background: var(--primary-soft, #eef2ff);

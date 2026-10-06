@@ -76,6 +76,8 @@ export interface Todo {
   /** 详细说明（可为空） */
   description: string
   dueDate: string
+  /** 有效期开始日期（''=单日；截止=dueDate，超过才逾期） */
+  startDate?: string
   dueTime: string | null
   remindAt: string | null
   priority: '高' | '中' | '低' | string

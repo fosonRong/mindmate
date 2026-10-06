@@ -25,6 +25,8 @@ const tagsStore = useTagsStore()
 const title = ref(props.todo?.title || props.preset?.title || '')
 const description = ref(props.todo?.description || props.preset?.description || '')
 const dueDate = ref(props.todo?.dueDate || props.defaultDate || todayStr())
+// 有效期开始日期（v1.5.3）：空 = 单日；[startDate, dueDate] 窗口内可做，超过截止才逾期
+const startDate = ref(props.todo?.startDate || '')
 const dueTime = ref(props.todo?.dueTime || '')
 const priority = ref(props.todo?.priority || '中')
 const tags = ref<string[]>(
@@ -130,6 +132,7 @@ async function save() {
         title: title.value.trim(),
         description: description.value,
         dueDate: dueDate.value,
+        startDate: startDate.value || '',
         dueTime: dueTime.value || null,
         priority: priority.value,
         tags: tags.value,
@@ -145,6 +148,7 @@ async function save() {
         title: title.value.trim(),
         description: description.value,
         dueDate: dueDate.value,
+        startDate: startDate.value || '',
         dueTime: dueTime.value || null,
         priority: priority.value,
         tags: tags.value,
@@ -185,13 +189,20 @@ onMounted(() => tagsStore.load())
 
       <div class="row" style="gap: 12px">
         <div class="form-row" style="flex: 1">
+          <label class="form-label">{{ $t('开始日期（可选）') }}</label>
+          <input v-model="startDate" type="date" class="input" />
+        </div>
+        <div class="form-row" style="flex: 1">
           <label class="form-label">{{ $t('截止日期') }}</label>
           <input v-model="dueDate" type="date" class="input" />
         </div>
+      </div>
+      <div class="row" style="gap: 12px">
         <div class="form-row" style="flex: 1">
           <label class="form-label">{{ $t('时间（填了即归入日程）') }}</label>
           <input v-model="dueTime" type="time" class="input" />
         </div>
+        <div class="form-row" style="flex: 1"></div>
       </div>
 
       <!-- 重复独占一行：四个选项完整展示（此前与优先级挤一行，「不循环」被压成竖排） -->

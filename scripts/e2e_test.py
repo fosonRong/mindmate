@@ -1324,6 +1324,29 @@ check("解除后子记录为空", (_r.get("data") or {}).get("count") == 0, str(
 call("DELETE", f"/nodes/{_kid}")
 call("DELETE", f"/todos/{_okr}")
 
+# ─────────────────────── 22. 待办有效期时间段（v1.5.3）───────────────────────
+section("22. 待办有效期：开始日期-截止日期，超过截止才逾期")
+_r, _ = call("POST", "/todos", {"title": "E2E有效期任务", "dueDate": TOMORROW, "startDate": TODAY})
+_w = (_r.get("data") or {})
+check("创建带 startDate 成功", _r.get("code") == 0 and _w.get("startDate") == TODAY,
+      f"startDate={_w.get('startDate')}")
+check("窗口内未逾期", _w.get("overdue") is False and _w.get("status") == "待处理",
+      f"status={_w.get('status')}")
+_win_id = _w.get("id")
+_r, _ = call("PATCH", f"/todos/{_win_id}", {"startDate": ""})
+check("清除开始日期（startDate 空串）", (_r.get("data") or {}).get("startDate") == "",
+      f"startDate={(_r.get('data') or {}).get('startDate')}")
+_r, _ = call("POST", "/todos", {"title": "E2E过期窗口", "dueDate": YESTERDAY, "startDate": "2026-09-01"})
+_o = (_r.get("data") or {})
+# 逾期由列表读取时统一刷新（refresh_overdue），先 GET 触发再断言
+call("GET", "/todos")
+_r, _ = call("GET", "/todos")
+_o2 = [t for t in (_r.get("data") or []) if t["id"] == _o.get("id")]
+check("超过截止才算逾期", bool(_o2) and _o2[0].get("overdue") is True and _o2[0].get("status") == "已逾期",
+      f"status={_o2[0].get('status') if _o2 else 'N/A'}")
+call("DELETE", f"/todos/{_win_id}")
+call("DELETE", f"/todos/{_o.get('id')}")
+
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：")

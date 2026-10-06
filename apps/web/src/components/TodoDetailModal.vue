@@ -117,7 +117,11 @@ onMounted(() => {
         </div>
         <div class="detail-item">
           <span class="lbl">{{ $t('日期') }}</span>
-          <span>{{ todo.dueDate }} · {{ weekdayLabel(todo.dueDate) }}</span>
+          <span>
+            <template v-if="todo.startDate && todo.startDate !== todo.dueDate">{{ todo.startDate }} ~ {{ todo.dueDate }}</template>
+            <template v-else>{{ todo.dueDate }}</template>
+            · {{ weekdayLabel(todo.dueDate) }}
+          </span>
         </div>
         <div class="detail-item" v-if="todo.dueTime">
           <span class="lbl">{{ $t('时间') }}</span>

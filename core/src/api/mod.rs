@@ -3107,6 +3107,7 @@ async fn data_import(
                 description: t["description"].as_str().unwrap_or("").to_string(),
                 due_date: t["dueDate"].as_str().map(String::from),
                 due_time: t["dueTime"].as_str().map(String::from),
+                start_date: t["startDate"].as_str().map(String::from),
                 priority: t["priority"].as_str().unwrap_or("中").to_string(),
                 recur_type: String::new(),
                 recur_until: String::new(),

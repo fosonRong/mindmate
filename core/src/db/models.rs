@@ -66,6 +66,9 @@ pub struct Todo {
     pub description: String,
     pub due_date: String,
     pub due_time: Option<String>,
+    /// 有效期开始日期（''=单日；截止=due_date，超过才逾期）
+    #[serde(default)]
+    pub start_date: String,
     pub remind_at: Option<String>,
     pub priority: String,
     pub tags: Vec<String>,
@@ -105,6 +108,9 @@ pub struct NewTodo {
     pub description: String,
     pub due_date: Option<String>,
     pub due_time: Option<String>,
+    /// 有效期开始日期（空 = 单日；截止 = due_date，超过才逾期）
+    #[serde(default)]
+    pub start_date: Option<String>,
     #[serde(default = "default_priority")]
     pub priority: String,
     #[serde(default)]
@@ -144,6 +150,7 @@ pub struct TodoPatch {
     pub title: Option<String>,
     pub description: Option<String>,
     pub due_date: Option<String>,
+    pub start_date: Option<String>,
     pub due_time: Option<Option<String>>,
     pub remind_at: Option<Option<String>>,
     pub priority: Option<String>,

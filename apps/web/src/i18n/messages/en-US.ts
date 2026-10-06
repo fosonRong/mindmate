@@ -778,4 +778,6 @@ export default {
   '解除关联': 'Remove link',
   '🎯 关联待办': '🎯 Link todo',
   '关联待办': 'Linked todo',
+  '开始日期（可选）': 'Start date (optional)',
+  '没有子记录': 'No sub-records',
 } as Record<string, string>

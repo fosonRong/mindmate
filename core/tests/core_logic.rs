@@ -409,6 +409,7 @@ fn 数据层_待办完成与撤销流转() {
             recur_interval: 1,
             recur_skip_rest: false,
             inbox: false,
+            start_date: None,
         })
         .unwrap();
     assert_eq!(t.status, "待处理");
@@ -440,6 +441,7 @@ fn 数据层_逾期刷新标记() {
         recur_interval: 1,
         recur_skip_rest: false,
         inbox: false,
+            start_date: None,
     })
     .unwrap();
     let overdue = db.refresh_overdue().unwrap();
@@ -465,6 +467,7 @@ fn 数据层_待办改期后重新归类() {
             recur_interval: 1,
             recur_skip_rest: false,
             inbox: false,
+            start_date: None,
         })
         .unwrap();
     assert_eq!(t.category, "日程");
@@ -484,6 +487,7 @@ fn 数据层_待办改期后重新归类() {
                 recur_interval: None,
                 recur_skip_rest: None,
                 inbox: Some(false),
+                start_date: None,
                 priority: None,
                 tags: None,
                 status: None,
@@ -558,6 +562,7 @@ fn 降级_日报模板拼装含记录与待办() {
         recur_interval: 1,
         recur_skip_rest: false,
         inbox: false,
+            start_date: None,
     })
     .unwrap();
 
@@ -640,6 +645,7 @@ fn 月度小结_记录天数与完成待办与最长连续() {
                 recur_interval: 1,
                 recur_skip_rest: false,
                 inbox: false,
+            start_date: None,
             })
             .unwrap();
         if title != "任务C" {
@@ -811,6 +817,7 @@ fn 循环待办_删除整个循环() {
             recur_interval: 1,
             recur_skip_rest: false,
             inbox: false,
+            start_date: None,
         })
         .unwrap();
     let _ = db.ensure_recurring().unwrap();
@@ -931,6 +938,7 @@ fn 循环待办_创建根实例即补齐下一期() {
             recur_interval: 1,
             recur_skip_rest: false,
             inbox: false,
+            start_date: None,
         })
         .unwrap();
     assert_eq!(root.recur_type, "weekly");
@@ -970,6 +978,7 @@ fn 循环待办_完成最后一期后生成下一期() {
             recur_interval: 1,
             recur_skip_rest: false,
             inbox: false,
+            start_date: None,
         })
         .unwrap();
     let today = mindmate_core::db::today_string();
@@ -1012,6 +1021,7 @@ fn 循环待办_停止循环后不再生成() {
             recur_interval: 1,
             recur_skip_rest: false,
             inbox: false,
+            start_date: None,
         })
         .unwrap();
     let _ = db.ensure_recurring().unwrap();
@@ -1045,6 +1055,7 @@ fn 数据层_记录关联待办_OKR子任务() {
             recur_interval: 1,
             recur_skip_rest: false,
             inbox: false,
+            start_date: None,
         })
         .unwrap();
     let n = db
@@ -1069,4 +1080,55 @@ fn 数据层_记录关联待办_OKR子任务() {
         .unwrap();
     assert_eq!(upd.todo_id, None);
     assert!(db.list_nodes_by_todo(t.id).unwrap().is_empty());
+}
+
+#[test]
+fn 数据层_待办有效期时间段() {
+    let db = Db::open_memory().unwrap();
+    let t = db
+        .create_todo(NewTodo {
+            title: "有效期任务".into(),
+            description: String::new(),
+            due_date: Some(day_after(7)),
+            start_date: Some(today().format("%Y-%m-%d").to_string()),
+            due_time: None,
+            priority: "中".into(),
+            tags: vec![],
+            remind_offset_min: None,
+            remind_at: None,
+            recur_type: String::new(),
+            recur_until: String::new(),
+            recur_interval: 1,
+            recur_skip_rest: false,
+            inbox: false,
+        })
+        .unwrap();
+    // 窗口内未逾期（截止在未来）
+    assert_eq!(t.start_date, today().format("%Y-%m-%d").to_string());
+    assert!(!t.overdue);
+    // 改截止到昨天 → 逾期（逾期仍只按截止判定）
+    let yesterday = (today() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string();
+    let upd = db
+        .update_todo(
+            t.id,
+            TodoPatch {
+                due_date: Some(yesterday),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert!(upd.overdue);
+    // 清除开始日期（Some("")）
+    let upd = db
+        .update_todo(
+            t.id,
+            TodoPatch {
+                start_date: Some(String::new()),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(upd.start_date, "");
 }

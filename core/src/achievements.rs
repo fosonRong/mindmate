@@ -294,6 +294,7 @@ mod tests {
                 title: "写方案".into(),
                 description: String::new(),
                 due_date: Some(crate::db::today_string()),
+            start_date: None,
                 due_time: None,
                 priority: "中".into(),
                 tags: vec![],

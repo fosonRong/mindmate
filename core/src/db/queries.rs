@@ -397,6 +397,7 @@ impl Db {
             recur_interval: row.get(18)?,
             recur_skip_rest: row.get::<_, i64>(19)? != 0,
             inbox: row.get::<_, i64>(20)? != 0,
+            start_date: row.get(21)?,
             overdue: is_overdue(&due_date, due_time.as_deref(), &status),
             sub_node_count: None,
         })
@@ -429,7 +430,7 @@ impl Db {
         }
     }
 
-    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest, inbox";
+    const TODO_COLS: &'static str = "id, title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, completed_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest, inbox, start_date";
 
     pub fn create_todo(&self, input: NewTodo) -> Result<Todo> {
         let now = now_string();
@@ -458,9 +459,10 @@ impl Db {
         let recur_until = normalize_date_opt(&input.recur_until);
         let recur_interval = if input.recur_interval < 1 { 1 } else { input.recur_interval };
         conn.execute(
-            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_until, recur_interval, recur_skip_rest, inbox)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?3,?11,?12,?13,?14)",
-            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now, recur_type, recur_until, recur_interval, input.recur_skip_rest as i64, input.inbox as i64],
+            "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_until, recur_interval, recur_skip_rest, inbox, start_date)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?3,?11,?12,?13,?14,?15)",
+            params![input.title, input.description, due_date, input.due_time, remind_at, input.priority, tags, category, now, recur_type, recur_until, recur_interval, input.recur_skip_rest as i64, input.inbox as i64,
+                input.start_date.clone().unwrap_or_default()],
         )?;
         let id = conn.last_insert_rowid();
         let todo = conn.query_row(
@@ -562,6 +564,10 @@ impl Db {
         if let Some(v) = patch.due_date {
             t.due_date = v;
         }
+        // 有效期开始日期：None=不改；Some("")=清除（回到单日）
+        if let Some(v) = patch.start_date {
+            t.start_date = v;
+        }
         if let Some(v) = patch.due_time {
             t.due_time = v;
         }
@@ -605,8 +611,9 @@ impl Db {
         conn.execute(
             "UPDATE todos SET title=?1, description=?2, due_date=?3, due_time=?4, remind_at=?5,
                     priority=?6, tags=?7, status=?8, category=?9, sort_order=?10, updated_at=?11,
-                    recur_type=?12, recur_until=?13, recur_interval=?14, recur_skip_rest=?15, inbox=?16
-             WHERE id=?17",
+                    recur_type=?12, recur_until=?13, recur_interval=?14, recur_skip_rest=?15, inbox=?16,
+                    start_date=?17
+             WHERE id=?18",
             params![
                 t.title,
                 t.description,
@@ -624,6 +631,7 @@ impl Db {
                 t.recur_interval,
                 t.recur_skip_rest as i64,
                 t.inbox as i64,
+                t.start_date.clone(),
                 id
             ],
         )?;
@@ -863,11 +871,26 @@ impl Db {
             let tags = serde_json::to_string(&root.tags)?;
             let category = classify(&next_date, root.due_time.as_deref(), &today);
             let now = now_string();
+            // 有效期窗口随期次平移：下一期 start/due 保持与上一期相同的窗口长度
+            let next_start: String = if root.start_date.is_empty() {
+                        String::new()
+                    } else {
+                        match (
+                            chrono::NaiveDate::parse_from_str(&root.start_date, "%Y-%m-%d"),
+                            chrono::NaiveDate::parse_from_str(&root.due_date, "%Y-%m-%d"),
+                            chrono::NaiveDate::parse_from_str(&next_date, "%Y-%m-%d"),
+                        ) {
+                            (Ok(sd), Ok(dd), Ok(nd)) => {
+                                (nd + (dd - sd)).format("%Y-%m-%d").to_string()
+                            }
+                    _ => String::new(),
+                }
+            };
             let id = {
                 let conn = self.lock();
                 conn.execute(
-                    "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?11,?12,?13,?14,?15)",
+                    "INSERT INTO todos(title, description, due_date, due_time, remind_at, priority, tags, status, category, sort_order, created_at, updated_at, recur_type, recur_anchor, recur_source_id, recur_until, recur_interval, recur_skip_rest, start_date)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,'待处理',?8,0,?9,?9,?10,?11,?12,?13,?14,?15,?16)",
                     params![
                         root.title,
                         root.description,
@@ -883,7 +906,8 @@ impl Db {
                         root.id,
                         root.recur_until,
                         root.recur_interval,
-                        root.recur_skip_rest as i64
+                        root.recur_skip_rest as i64,
+                        next_start
                     ],
                 )?;
                 conn.last_insert_rowid()
@@ -1739,6 +1763,7 @@ mod unified_search_tests {
             title: "交房租".into(),
             description: "十月底前转账".into(),
             due_date: Some("2026-10-25".into()),
+            start_date: None,
             due_time: None,
             priority: "高".into(),
             tags: vec!["生活".into()],
@@ -1755,6 +1780,7 @@ mod unified_search_tests {
             title: "AI 项目立项".into(),
             description: "".into(),
             due_date: Some("2026-09-05".into()),
+            start_date: None,
             due_time: None,
             priority: "中".into(),
             tags: vec!["工作".into()],

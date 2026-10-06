@@ -319,6 +319,7 @@ mod tests {
                 title: "写技术方案".into(),
                 description: String::new(),
                 due_date: Some("2026-09-12".into()),
+            start_date: None,
                 due_time: None,
                 priority: "高".into(),
                 tags: vec!["工作".into()],
