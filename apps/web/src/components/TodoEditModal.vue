@@ -25,8 +25,9 @@ const tagsStore = useTagsStore()
 const title = ref(props.todo?.title || props.preset?.title || '')
 const description = ref(props.todo?.description || props.preset?.description || '')
 const dueDate = ref(props.todo?.dueDate || props.defaultDate || todayStr())
-// 有效期开始日期（v1.5.3）：空 = 单日；[startDate, dueDate] 窗口内可做，超过截止才逾期
-const startDate = ref(props.todo?.startDate || '')
+// 有效期开始日期（v1.5.3）：[startDate, dueDate] 窗口内可做，超过截止才逾期。
+// 新建默认今天（与截止一致，用户反馈）；编辑保持原值（旧单日待办不凭空注入开始日期）
+const startDate = ref(props.todo ? (props.todo.startDate || '') : todayStr())
 const dueTime = ref(props.todo?.dueTime || '')
 const priority = ref(props.todo?.priority || '中')
 const tags = ref<string[]>(
