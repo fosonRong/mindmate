@@ -23,19 +23,28 @@ const calAnchor = ref(todayStr())
 
 const today = todayStr()
 
+/** 生效归类（v1.5.3）：有效期窗口覆盖今天 → 今日（与后端 classify_window 一致）；
+ * 其余沿用库里存的归类。修复窗口待办不进「今日待办」分组（用户反馈）。 */
+function effectiveCategory(t: Todo): '今日' | '本周' | '本月' | '日程' {
+  if (t.startDate && t.startDate <= today && t.dueDate >= today) {
+    return t.dueTime ? '日程' : '今日'
+  }
+  return (t.category as '今日' | '本周' | '本月' | '日程') || '日程'
+}
+
 /** 按分类分组展示 */
 const grouped = computed(() => {
   const cats: Array<'今日' | '本周' | '本月' | '日程'> = ['今日', '本周', '本月', '日程']
   return cats
     .map((c) => ({
       category: c,
-      list: todos.todos.filter((t) => t.category === c)
+      list: todos.todos.filter((t) => effectiveCategory(t) === c)
     }))
     .filter((g) => g.list.length > 0)
 })
 
 const progress = computed(() => {
-  const list = tab.value === '全部' ? todos.todos : todos.todos.filter((t) => t.category === tab.value)
+  const list = tab.value === '全部' ? todos.todos : todos.todos.filter((t) => effectiveCategory(t) === tab.value)
   const total = list.length
   const done = list.filter((t) => t.status === '已完成').length
   return { total, done, percent: total ? Math.round((done / total) * 100) : 0 }
