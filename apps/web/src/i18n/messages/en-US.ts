@@ -780,4 +780,9 @@ export default {
   '关联待办': 'Linked todo',
   '开始日期（可选）': 'Start date (optional)',
   '没有子记录': 'No sub-records',
+  '前一天': 'Previous day',
+  '后一天': 'Next day',
+  '该日暂无记录': 'No records for this date',
+  '回到今天': 'Back to today',
+  '记录': 'Records',
 } as Record<string, string>

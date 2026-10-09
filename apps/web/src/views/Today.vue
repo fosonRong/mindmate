@@ -231,6 +231,30 @@ async function loadBadges() {
 const today = computed(() => todayStr())
 const dateLabel = computed(() => `${today.value} · ${weekdayLabel(today.value)}`)
 
+// ── 记录日期切换（用户需求）：今日记录列表可切换查看其他日期 ──
+const viewDate = ref(todayStr())
+const isToday = computed(() => viewDate.value === today.value)
+const viewDateLabel = computed(() =>
+  isToday.value ? t('今日记录') : `${friendlyDate(viewDate.value)} · ${t('记录')}`
+)
+
+async function shiftViewDate(days: number) {
+  viewDate.value = addDays(viewDate.value, days)
+  await nodes.load(viewDate.value)
+}
+
+async function setViewDate(e: Event) {
+  const v = (e.target as HTMLInputElement).value
+  if (!v) return
+  viewDate.value = v
+  await nodes.load(v)
+}
+
+async function backToToday() {
+  viewDate.value = today.value
+  await nodes.load(today.value)
+}
+
 const todayTodoList = computed(() =>
   todos.todos
     .filter((t) => {
@@ -312,7 +336,7 @@ onMounted(async () => {
   }
   nodes.date = today.value
   await Promise.all([
-    nodes.load(today.value),
+    nodes.load(viewDate.value),
     todos.load(),
     loadBrief(),
     app.refreshStats(),
@@ -541,13 +565,19 @@ async function completeTodo(id: number) {
       </section>
 
       <!-- 速记 -->
-      <QuickEntry :date="today" autofocus />
+      <QuickEntry :date="viewDate" autofocus />
 
       <!-- 时间线 -->
       <section class="card">
         <div class="row" style="margin-bottom: 10px">
-          <div class="card-title" style="font-size: 15px">{{ $t('今日记录') }}</div>
+          <div class="card-title" style="font-size: 15px">{{ viewDateLabel }}</div>
           <span class="card-sub">{{ $t('{a} 条', { a: nodes.nodes.length }) }}</span>
+          <div class="row" style="gap: 4px; align-items: center">
+            <button class="icon-btn" :title="$t('前一天')" @click="shiftViewDate(-1)">◀</button>
+            <input type="date" class="input" style="width: 148px" :value="viewDate" @change="setViewDate" />
+            <button class="icon-btn" :title="$t('后一天')" @click="shiftViewDate(1)">▶</button>
+            <button v-if="!isToday" class="btn btn-sm" @click="backToToday">{{ $t('回到今天') }}</button>
+          </div>
           <div class="spacer"></div>
           <span v-if="!selecting" class="small muted">{{ $t('按时刻排列 · 一次录入即一个节点') }}</span>
           <button
@@ -572,7 +602,7 @@ async function completeTodo(id: number) {
         </div>
         <div v-if="nodes.nodes.length === 0" class="empty">
           <div class="ill">📝</div>
-          <div class="t">{{ $t('今天还没有记录') }}</div>
+          <div class="t">{{ isToday ? $t('今天还没有记录') : $t('该日暂无记录') }}</div>
           <div class="d">{{ $t('记下第一笔，10 秒就好') }}</div>
         </div>
         <div v-else class="tl">
