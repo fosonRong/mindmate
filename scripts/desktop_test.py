@@ -167,6 +167,10 @@ check("待办列表目录树子记录（展开懒加载 + 解除关联）",
       "toggleSub" in read("apps", "web", "src", "components", "TodoItem.vue")
       and "subtree" in read("apps", "web", "src", "components", "TodoItem.vue")
       and "unlinkSub" in read("apps", "web", "src", "components", "TodoItem.vue"))
+# 用户反馈：有效期窗口覆盖今天的待办也要出现在今日待办（Today 过滤 + classify_window）
+check("有效期窗口覆盖今天进今日待办（Today 过滤 + classify_window 归类）",
+      "classify_window" in queries_rs and "classify_window" in read("core", "src", "db", "mod.rs")
+      and "t.startDate <= today.value" in read("apps", "web", "src", "views", "Today.vue"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

@@ -3,7 +3,7 @@
 //! 运行：cargo test -p mindmate-core
 
 use mindmate_core::ai;
-use mindmate_core::db::{classify, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, Db, NewNode, NewTodo, NodePatch, TodoPatch};
+use mindmate_core::db::{classify, classify_window, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, Db, NewNode, NewTodo, NodePatch, TodoPatch};
 use mindmate_core::i18n::Lang;
 use mindmate_core::reminder::{compose, decide, hhmm_to_minutes, ReminderKind};
 
@@ -1131,4 +1131,19 @@ fn 数据层_待办有效期时间段() {
         .unwrap()
         .unwrap();
     assert_eq!(upd.start_date, "");
+}
+
+#[test]
+fn 归类_有效期窗口覆盖今天() {
+    let t = today().format("%Y-%m-%d").to_string();
+    let future = day_after(5);
+    // 窗口覆盖今天（开始 ≤ 今天 < 截止）→ 今日
+    assert_eq!(classify_window(&future, None, &t, &t), "今日");
+    // 窗口未开始（开始在未来）→ 按截止归类
+    let start_future = day_after(1);
+    assert_ne!(classify_window(&future, None, &t, &start_future), "今日");
+    // 带具体时间 → 仍是日程
+    assert_eq!(classify_window(&future, Some("09:00"), &t, &t), "日程");
+    // 无开始日期 → 原归类逻辑（落到哪个常规组取决于今天星期几，只要求不进今日）
+    assert_ne!(classify_window(&future, None, &t, ""), "今日");
 }

@@ -233,7 +233,11 @@ const dateLabel = computed(() => `${today.value} · ${weekdayLabel(today.value)}
 
 const todayTodoList = computed(() =>
   todos.todos
-    .filter((t) => t.dueDate <= today.value || t.status === '已逾期')
+    .filter((t) => {
+      if (t.dueDate <= today.value || t.status === '已逾期') return true
+      // 有效期窗口覆盖今天也算今日可做（v1.5.3：startDate ≤ 今天 ≤ dueDate，用户反馈）
+      return !!t.startDate && t.startDate <= today.value && t.dueDate >= today.value
+    })
     .sort((a, b) => (a.status === '已完成' ? 1 : 0) - (b.status === '已完成' ? 1 : 0))
 )
 const todoDone = computed(() => todayTodoList.value.filter((t) => t.status === '已完成').length)

@@ -11,7 +11,7 @@ use std::path::Path;
 use std::sync::Mutex;
 
 pub use models::*;
-pub use queries::{classify, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, summarize};
+pub use queries::{classify, classify_window, compute_remind_at, is_overdue, next_recur_date, normalize_recur_type, summarize};
 
 pub struct Db {
     pub(crate) conn: Mutex<Connection>,

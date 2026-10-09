@@ -1332,6 +1332,8 @@ check("创建带 startDate 成功", _r.get("code") == 0 and _w.get("startDate") 
       f"startDate={_w.get('startDate')}")
 check("窗口内未逾期", _w.get("overdue") is False and _w.get("status") == "待处理",
       f"status={_w.get('status')}")
+check("窗口覆盖今天归类为今日", _w.get("category") == "今日",
+      f"category={_w.get('category')}")
 _win_id = _w.get("id")
 _r, _ = call("PATCH", f"/todos/{_win_id}", {"startDate": ""})
 check("清除开始日期（startDate 空串）", (_r.get("data") or {}).get("startDate") == "",

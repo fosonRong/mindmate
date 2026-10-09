@@ -436,7 +436,12 @@ impl Db {
         let now = now_string();
         let today = today_string();
         let due_date = input.due_date.clone().unwrap_or_else(|| today.clone());
-        let category = classify(&due_date, input.due_time.as_deref(), &today);
+        let category = classify_window(
+            &due_date,
+            input.due_time.as_deref(),
+            &today,
+            input.start_date.as_deref().unwrap_or(""),
+        );
         // 提醒时刻：优先显式 remind_at；否则按提前 N 分钟（或全局默认）计算
         let remind_at = match (&input.remind_at, &input.due_time) {
             (Some(ra), _) => Some(ra.clone()),
@@ -602,10 +607,10 @@ impl Db {
             t.inbox = v;
         }
         let today = today_string();
-        // 归类：显式指定优先，否则按截止日期重算
+        // 归类：显式指定优先，否则按截止日期重算（有效期窗口感知）
         t.category = patch
             .category
-            .unwrap_or_else(|| classify(&t.due_date, t.due_time.as_deref(), &today));
+            .unwrap_or_else(|| classify_window(&t.due_date, t.due_time.as_deref(), &today, &t.start_date));
         let now = now_string();
         let conn = self.lock();
         conn.execute(
@@ -1540,6 +1545,18 @@ pub fn classify(due_date: &str, due_time: Option<&str>, today: &str) -> String {
         return "本月".into();
     }
     "日程".into()
+}
+
+/// 有效期窗口感知的归类：开始 ≤ 今天 ≤ 截止（未到截止）→「今日」（窗口内每天都可做）。
+/// 其余与 classify 一致；start_date 空 = 单日语义，走原逻辑。
+pub fn classify_window(due_date: &str, due_time: Option<&str>, today: &str, start_date: &str) -> String {
+    if !start_date.is_empty() && start_date <= today && due_date > today {
+        if due_time.is_some() {
+            return "日程".into();
+        }
+        return "今日".into();
+    }
+    classify(due_date, due_time, today)
 }
 
 pub fn is_overdue(due_date: &str, due_time: Option<&str>, status: &str) -> bool {
