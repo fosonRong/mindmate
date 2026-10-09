@@ -10,6 +10,7 @@ import { useTagsStore } from '@/stores/tags'
 import { api } from '@/api/client'
 import type { ExtractedTodo } from '@/api/types'
 import SmartTodoModal from '@/components/SmartTodoModal.vue'
+import { isDesktop } from '@/lib/desktop'
 import { t } from '@/i18n'
 
 const props = defineProps<{ date?: string; autofocus?: boolean; compact?: boolean }>()
@@ -171,6 +172,12 @@ const listening = ref(false)
 let recognition: any = null
 
 function detectSpeech() {
+  // 桌面端 WebView2 没有语音识别后端（API 对象可能存在但识别永远无效，用户反馈
+  // 「语音输入无效」）→ 不展示；浏览器端可用。桌面离线语音列入后备池（sherpa/whisper）。
+  if (isDesktop()) {
+    speechAvailable.value = false
+    return
+  }
   const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   speechAvailable.value = !!SR
 }
@@ -196,7 +203,17 @@ function toggleSpeech() {
     }
   }
   recognition.onend = () => (listening.value = false)
-  recognition.onerror = () => (listening.value = false)
+  recognition.onerror = (ev: any) => {
+    listening.value = false
+    const reason: Record<string, string> = {
+      'not-allowed': t('麦克风权限被拒绝，请在浏览器地址栏允许麦克风后重试'),
+      'service-not-allowed': t('语音服务被浏览器策略阻止'),
+      'network': t('语音识别需要联网（浏览器端走在线语音服务）'),
+      'audio-capture': t('未检测到麦克风设备'),
+      'language-not-supported': t('当前环境不支持中文语音识别'),
+    }
+    app.toast('error', reason[ev?.error] || t('语音识别启动失败（可能需要联网语音服务）'))
+  }
   try {
     recognition.start()
     listening.value = true

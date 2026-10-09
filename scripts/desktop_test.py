@@ -562,8 +562,9 @@ check("v1.4.0 剪贴板/文件捕捉：桌面命令（arboard）+ 拖放监听",
       and "save_capture_file" in capture_rs
       and "onDragDropEvent" in quick_vue
       and "capture_clipboard_text" in read("src-tauri", "build.rs"))
-check("v1.4.0 语音速记：Web Speech 特性探测（不可用自动隐藏）",
+check("v1.4.0 语音速记：Web Speech 特性探测（不可用自动隐藏；桌面 WebView2 无识别后端，隐藏按钮）",
       "speechAvailable" in read("apps", "web", "src", "components", "QuickEntry.vue")
+      and "isDesktop()" in read("apps", "web", "src", "components", "QuickEntry.vue")
       and "webkitSpeechRecognition" in read("apps", "web", "src", "components", "QuickEntry.vue"))
 # ── v1.4.1 智能整理 ──
 smart_rs = read("core", "src", "smart_organize.rs")

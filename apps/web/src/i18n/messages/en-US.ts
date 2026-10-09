@@ -785,4 +785,9 @@ export default {
   '该日暂无记录': 'No records for this date',
   '回到今天': 'Back to today',
   '记录': 'Records',
+  '麦克风权限被拒绝，请在浏览器地址栏允许麦克风后重试': 'Microphone permission denied — allow it in the browser address bar and retry',
+  '语音服务被浏览器策略阻止': 'Speech service blocked by browser policy',
+  '语音识别需要联网（浏览器端走在线语音服务）': 'Speech recognition requires internet (browser mode uses an online service)',
+  '未检测到麦克风设备': 'No microphone found',
+  '当前环境不支持中文语音识别': 'Chinese speech recognition is not supported here',
 } as Record<string, string>
