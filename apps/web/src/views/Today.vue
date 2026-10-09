@@ -569,17 +569,17 @@ async function completeTodo(id: number) {
 
       <!-- 时间线 -->
       <section class="card">
-        <div class="row" style="margin-bottom: 10px">
-          <div class="card-title" style="font-size: 15px">{{ viewDateLabel }}</div>
-          <span class="card-sub">{{ $t('{a} 条', { a: nodes.nodes.length }) }}</span>
-          <div class="row" style="gap: 4px; align-items: center">
+        <div class="row" style="margin-bottom: 6px; flex-wrap: wrap; row-gap: 6px">
+          <div class="card-title" style="font-size: 15px; white-space: nowrap">{{ viewDateLabel }}</div>
+          <span class="card-sub" style="white-space: nowrap">{{ $t('{a} 条', { a: nodes.nodes.length }) }}</span>
+          <div class="row" style="gap: 4px; align-items: center; flex: none">
             <button class="icon-btn" :title="$t('前一天')" @click="shiftViewDate(-1)">◀</button>
-            <input type="date" class="input" style="width: 148px" :value="viewDate" @change="setViewDate" />
+            <input type="date" class="input" style="width: 140px" :value="viewDate" @change="setViewDate" />
             <button class="icon-btn" :title="$t('后一天')" @click="shiftViewDate(1)">▶</button>
-            <button v-if="!isToday" class="btn btn-sm" @click="backToToday">{{ $t('回到今天') }}</button>
+            <button v-if="!isToday" class="btn btn-sm" style="white-space: nowrap" @click="backToToday">{{ $t('回到今天') }}</button>
           </div>
           <div class="spacer"></div>
-          <span v-if="!selecting" class="small muted">{{ $t('按时刻排列 · 一次录入即一个节点') }}</span>
+          <span v-if="!selecting" class="small muted rec-hint">{{ $t('按时刻排列 · 一次录入即一个节点') }}</span>
           <button
             v-if="nodes.nodes.length"
             class="btn btn-sm"
@@ -713,3 +713,12 @@ async function completeTodo(id: number) {
       @saved="showEditModal = false; editingTodo = null; todos.load(); app.refreshStats()"
     />
 </template>
+
+<style scoped>
+.rec-hint {
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+</style>
