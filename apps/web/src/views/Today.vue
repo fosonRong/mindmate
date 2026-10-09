@@ -255,6 +255,31 @@ async function backToToday() {
   await nodes.load(today.value)
 }
 
+/** 记录转待办（用户需求）：首行做标题、其余做描述，原记录挂为新待办的子记录保留痕迹 */
+async function convertNode(n: { id: number; content: string; tags: string[] }) {
+  const lines = n.content.split('\n').map((x) => x.trim()).filter(Boolean)
+  const title = (lines[0] || '').slice(0, 60)
+  if (!title) {
+    app.toast('warning', t('记录内容为空，无法转换'))
+    return
+  }
+  try {
+    const todo = await api.createTodo({
+      title,
+      description: lines.slice(1).join('\n'),
+      dueDate: viewDate.value,
+      startDate: viewDate.value,
+      tags: [...n.tags],
+    })
+    await api.updateNode(n.id, { todoId: (todo as any).id })
+    await todos.load()
+    app.toast('success', t('已转为待办：{a}', { a: title.slice(0, 12) }))
+    app.refreshStats()
+  } catch (e: any) {
+    app.toast('error', e?.message || t('操作失败'))
+  }
+}
+
 const todayTodoList = computed(() =>
   todos.todos
     .filter((t) => {
@@ -620,7 +645,7 @@ async function completeTodo(id: number) {
               @change="toggleSelect(n.id)"
             />
             <div style="flex: 1; min-width: 0">
-              <NodeItem :node="n" :show-line="i < nodes.nodes.length - 1" />
+              <NodeItem :node="n" :show-line="i < nodes.nodes.length - 1" @convert="convertNode" />
             </div>
           </div>
         </div>

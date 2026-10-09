@@ -176,6 +176,10 @@ check("记录列表日期切换（◀▶/日期选择/回到今天 + 补录跟�
       "shiftViewDate" in read("apps", "web", "src", "views", "Today.vue")
       and "backToToday" in read("apps", "web", "src", "views", "Today.vue")
       and ':date="viewDate"' in read("apps", "web", "src", "views", "Today.vue"))
+# 用户需求：今日记录列表支持记录转待办（悬停操作，原记录挂为新待办子记录）
+check("记录转待办（NodeItem 操作 + Today 处理：首行标题/子记录关联）",
+      "convertNode" in read("apps", "web", "src", "views", "Today.vue")
+      and "convert" in read("apps", "web", "src", "components", "NodeItem.vue"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

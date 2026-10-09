@@ -790,4 +790,7 @@ export default {
   '语音识别需要联网（浏览器端走在线语音服务）': 'Speech recognition requires internet (browser mode uses an online service)',
   '未检测到麦克风设备': 'No microphone found',
   '当前环境不支持中文语音识别': 'Chinese speech recognition is not supported here',
+  '转待办': 'To todo',
+  '记录内容为空，无法转换': 'Record is empty - nothing to convert',
+  '已转为待办：{a}': 'Converted to todo: {a}',
 } as Record<string, string>

@@ -8,6 +8,7 @@ import { useTagsStore } from '@/stores/tags'
 import { t } from '@/i18n'
 
 const props = defineProps<{ node: Node; showLine?: boolean }>()
+const emit = defineEmits<{ (e: 'convert', node: Node): void }>()
 const nodes = useNodesStore()
 const app = useAppStore()
 const tagsStore = useTagsStore()
@@ -80,6 +81,7 @@ function tagClass(t: string) {
     <div class="tl-bubble">
       <template v-if="!editing">
         <span class="tl-actions">
+          <button v-if="!node.todoId" @click="emit('convert', node)">{{ $t('转待办') }}</button>
           <button @click="startEdit">{{ $t('编辑') }}</button>
           <button class="danger" @click="remove">{{ $t('删除') }}</button>
         </span>
