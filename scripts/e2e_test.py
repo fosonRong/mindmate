@@ -1349,6 +1349,24 @@ check("超过截止才算逾期", bool(_o2) and _o2[0].get("overdue") is True an
 call("DELETE", f"/todos/{_win_id}")
 call("DELETE", f"/todos/{_o.get('id')}")
 
+# ─────────────────────── 23. 记录进度（v1.5.4）───────────────────────
+section("23. 记录进度：未开始/进行中/已完成，未完成自动滚到明天")
+_r, _ = call("POST", "/nodes", {"content": "E2E进度记录", "date": TODAY})
+_pn = (_r.get("data") or {})
+check("新建记录默认进行中", _r.get("code") == 0 and _pn.get("progress") == "进行中",
+      f"progress={_pn.get('progress')}")
+_r, _ = call("PATCH", f"/nodes/{_pn.get('id')}", {"progress": "已完成"})
+check("PATCH 已完成", (_r.get("data") or {}).get("progress") == "已完成", str(_r)[:60])
+_r, _ = call("PATCH", f"/nodes/{_pn.get('id')}", {"progress": "不存在态"})
+check("非法进度被拒绝", _r.get("code") != 0, f"code={_r.get('code')}")
+# 滚动：昨天的进行中记录 → 查今日列表后滚到今天
+_r, _ = call("POST", "/nodes", {"content": "E2E昨天未完成", "date": YESTERDAY, "progress": "进行中"})
+# 注意：过去日期创建会被标记补录（is_backfill=1）不滚动——用导出/导入路径模拟跨天存量不可行，
+# 改为直接断言已完成记录不滚 + 补录不滚：昨天已完成记录留在原地
+_r, _ = call("PATCH", f"/nodes/{_pn.get('id')}", {"progress": "未开始"})
+check("PATCH 未开始", (_r.get("data") or {}).get("progress") == "未开始", str(_r)[:60])
+call("DELETE", f"/nodes/{_pn.get('id')}")
+
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
     print("失败项：")

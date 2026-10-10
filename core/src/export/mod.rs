@@ -305,6 +305,7 @@ mod tests {
             date: Some("2026-09-12".into()),
             tags: vec!["工作".into()],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
         db.create_node(NewNode {
@@ -312,6 +313,7 @@ mod tests {
             date: Some("2026-09-13".into()),
             tags: vec!["健康".into()],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
         let t = db

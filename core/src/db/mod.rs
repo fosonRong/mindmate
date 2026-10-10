@@ -20,7 +20,7 @@ pub struct Db {
 }
 
 /// 当前程序支持的库结构版本。新增表/列时：**追加**一条迁移并把这个数字 +1。
-pub const SCHEMA_VERSION: i64 = 5;
+pub const SCHEMA_VERSION: i64 = 6;
 
 /// V2：循环待办（每周/每月自动生成下一期）
 /// - recur_type      ''|'weekly'|'monthly'，''=普通待办
@@ -51,9 +51,13 @@ const SCHEMA_V4: &str = "ALTER TABLE todos ADD COLUMN inbox INTEGER NOT NULL DEF
 /// 非空 = [start_date, due_date] 窗口内可做，逾期仍只按 due_date（截止）判定。
 const SCHEMA_V5: &str = "ALTER TABLE todos ADD COLUMN start_date TEXT NOT NULL DEFAULT '';";
 
+/// V6（v1.5.4）：记录进度——未开始/进行中/已完成，默认进行中；
+/// 当天未完成（非已完成）的记录自动滚动到下一天，直到标记已完成。
+const SCHEMA_V6: &str = "ALTER TABLE nodes ADD COLUMN progress TEXT NOT NULL DEFAULT '进行中';";
+
 /// 版本化迁移链：每项为 (目标版本, 该版本的 DDL)。逐级执行，幂等。
 fn migrations() -> Vec<(i64, &'static str)> {
-    vec![(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3), (4, SCHEMA_V4), (5, SCHEMA_V5)]
+    vec![(1, SCHEMA_V1), (2, SCHEMA_V2), (3, SCHEMA_V3), (4, SCHEMA_V4), (5, SCHEMA_V5), (6, SCHEMA_V6)]
 }
 
 impl Db {
@@ -392,6 +396,7 @@ mod tests {
                 date: Some("2026-01-01".into()),
                 tags: vec![],
                 todo_id: None,
+                progress: None,
             })
             .unwrap();
         }

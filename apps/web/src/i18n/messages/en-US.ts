@@ -793,4 +793,6 @@ export default {
   '转待办': 'To todo',
   '记录内容为空，无法转换': 'Record is empty - nothing to convert',
   '已转为待办：{a}': 'Converted to todo: {a}',
+  '已标记{a}': 'Marked as {a}',
+  '记录进度（点击切换：未开始/进行中/已完成）': 'Record progress (click to cycle: not started / in progress / done)',
 } as Record<string, string>

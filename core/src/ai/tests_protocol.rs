@@ -447,6 +447,7 @@ fn 简报模板渲染_今日记录会真正进入提示词() {
             date: Some("2026-09-14".into()),
             tags: vec!["工作".into()],
             todo_id: None,
+            progress: None,
         })
         .unwrap();
     let nodes = db.list_nodes_by_date("2026-09-14").unwrap();
@@ -579,6 +580,7 @@ fn flat_node(id: i64, date: &str, created_at: &str, content: &str) -> Node {
         tags: vec![],
         todo_id: None,
         todo_title: None,
+        progress: "进行中".to_string(),
     }
 }
 

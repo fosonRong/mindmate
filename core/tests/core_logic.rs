@@ -294,6 +294,7 @@ fn 模板_节点按日聚合格式正确() {
         date: Some("2026-09-12".into()),
         tags: vec!["工作".into()],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     db.create_node(NewNode {
@@ -301,6 +302,7 @@ fn 模板_节点按日聚合格式正确() {
         date: Some("2026-09-13".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     let nodes = db.list_nodes_range("2026-09-12", "2026-09-13").unwrap();
@@ -321,6 +323,7 @@ fn 数据层_一次录入生成一个节点() {
             date: Some("2026-09-12".into()),
             tags: vec![],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
     }
@@ -340,6 +343,7 @@ fn 数据层_补录标记() {
             date: Some(today),
             tags: vec![],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
     assert!(!n.is_backfill);
@@ -349,6 +353,7 @@ fn 数据层_补录标记() {
             date: Some("2020-01-01".into()),
             tags: vec![],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
     assert!(b.is_backfill);
@@ -363,6 +368,7 @@ fn 数据层_软删除不影响其它节点() {
             date: Some("2026-09-12".into()),
             tags: vec![],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
     db.create_node(NewNode {
@@ -370,6 +376,7 @@ fn 数据层_软删除不影响其它节点() {
         date: Some("2026-09-12".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     assert!(db.delete_node(a.id).unwrap());
@@ -384,6 +391,7 @@ fn 数据层_全文检索记录() {
         date: Some("2026-09-12".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     let hits = db.search_nodes("登录", 10).unwrap();
@@ -526,6 +534,7 @@ fn 数据层_备份导出包含全部分区() {
         date: Some("2026-09-12".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     db.save_report("daily", "2026-09-12", "# 日报", true).unwrap();
@@ -546,6 +555,7 @@ fn 降级_日报模板拼装含记录与待办() {
         date: Some("2026-09-12".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     db.create_todo(NewTodo {
@@ -583,6 +593,7 @@ fn 降级_周报汇总平铺() {
         date: Some("2026-09-07".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     db.create_node(NewNode {
@@ -590,6 +601,7 @@ fn 降级_周报汇总平铺() {
         date: Some("2026-09-08".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     let md = ai::fallback_report(&db, "weekly", "2026-09-12").unwrap();
@@ -625,6 +637,7 @@ fn 月度小结_记录天数与完成待办与最长连续() {
             date: Some(date.into()),
             tags: vec![],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
     }
@@ -686,6 +699,7 @@ fn 月度小结_月底标记与边界() {
         date: Some("2026-10-01".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
     let sep = db.monthly_summary("2026-09-15").unwrap();
@@ -702,6 +716,7 @@ fn 月度小结_月末当天连续跨月累计逻辑正确() {
             date: Some(d.into()),
             tags: vec![],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
     }
@@ -723,6 +738,7 @@ fn 降级报告_按语言生成标题与章节() {
         date: Some("2026-09-13".into()),
         tags: vec![],
         todo_id: None,
+                progress: None,
     })
     .unwrap();
 
@@ -1064,6 +1080,7 @@ fn 数据层_记录关联待办_OKR子任务() {
             date: Some(today().format("%Y-%m-%d").to_string()),
             tags: vec![],
             todo_id: Some(t.id),
+            progress: None,
         })
         .unwrap();
     assert_eq!(n.todo_id, Some(t.id));
@@ -1074,7 +1091,7 @@ fn 数据层_记录关联待办_OKR子任务() {
     let upd = db
         .update_node(
             n.id,
-            NodePatch { content: None, tags: None, todo_id: Some(None) },
+            NodePatch { content: None, tags: None, todo_id: Some(None), progress: None },
         )
         .unwrap()
         .unwrap();
@@ -1146,4 +1163,39 @@ fn 归类_有效期窗口覆盖今天() {
     assert_eq!(classify_window(&future, Some("09:00"), &t, &t), "日程");
     // 无开始日期 → 原归类逻辑（落到哪个常规组取决于今天星期几，只要求不进今日）
     assert_ne!(classify_window(&future, None, &t, ""), "今日");
+}
+
+#[test]
+fn 数据层_未完成记录滚动到下一天() {
+    let db = Db::open_memory().unwrap();
+    let t = today().format("%Y-%m-%d").to_string();
+    let tomorrow = day_after(1);
+    // 今天创建的四条（is_backfill=0）：进行中（默认）/已完成/未开始
+    let a = db.create_node(NewNode {
+        content: "进行中记录".into(), date: Some(t.clone()), tags: vec![], todo_id: None, progress: None,
+    }).unwrap();
+    assert_eq!(a.progress, "进行中");
+    let b = db.create_node(NewNode {
+        content: "已完成记录".into(), date: Some(t.clone()), tags: vec![], todo_id: None, progress: Some("已完成".into()),
+    }).unwrap();
+    let c = db.create_node(NewNode {
+        content: "未开始记录".into(), date: Some(t.clone()), tags: vec![], todo_id: None, progress: Some("未开始".into()),
+    }).unwrap();
+    // 补录（过去日期创建 → is_backfill=1）→ 不滚
+    let d = db.create_node(NewNode {
+        content: "补录的历史".into(), date: Some((today() - chrono::Duration::days(1)).format("%Y-%m-%d").to_string()),
+        tags: vec![], todo_id: None, progress: None,
+    }).unwrap();
+    assert!(d.is_backfill);
+    // 以「明天」为滚动目标：进行中+未开始滚动，已完成/补录不滚
+    let rolled = db.roll_unfinished_nodes(&tomorrow).unwrap();
+    assert_eq!(rolled, 2, "进行中+未开始滚动，已完成/补录不滚");
+    let tmrs = db.list_nodes_by_date(&tomorrow).unwrap();
+    let ids: Vec<i64> = tmrs.iter().map(|n| n.id).collect();
+    assert!(ids.contains(&a.id) && ids.contains(&c.id), "滚动到明天");
+    let todays = db.list_nodes_by_date(&t).unwrap();
+    let tids: Vec<i64> = todays.iter().map(|n| n.id).collect();
+    assert!(!tids.contains(&a.id) && !tids.contains(&c.id), "滚出今天");
+    assert!(tids.contains(&b.id), "已完成原地保留");
+    assert!(!tmrs.iter().any(|n| n.id == b.id || n.id == d.id), "已完成/补录不出现");
 }

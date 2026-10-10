@@ -65,6 +65,23 @@ function goLinkedTodo() {
   location.hash = '#/todos'
 }
 
+// ── 进度状态（v1.5.4）：未开始/进行中/已完成，默认进行中；未完成自动滚到明天 ──
+const PROGRESS = ['未开始', '进行中', '已完成'] as const
+const progressLabel = computed(() => props.node.progress || '进行中')
+function progressClass(p: string) {
+  return p === '已完成' ? 'prog-done' : p === '未开始' ? 'prog-todo' : 'prog-doing'
+}
+async function cycleProgress() {
+  const i = PROGRESS.indexOf(progressLabel.value as any)
+  const next = PROGRESS[(i + 1) % PROGRESS.length]
+  try {
+    await nodes.updateProgress(props.node.id, next)
+    app.toast('success', t('已标记{a}', { a: next }))
+  } catch (e: any) {
+    app.toast('error', e?.message || '操作失败')
+  }
+}
+
 function tagClass(t: string) {
   const map: Record<string, string> = { 工作: 'work', 生活: 'life', 健康: 'health', 学习: 'study' }
   return map[t] || 'none'
@@ -72,7 +89,7 @@ function tagClass(t: string) {
 </script>
 
 <template>
-  <div class="tl-item" :class="{ backfill: node.isBackfill }">
+  <div class="tl-item" :class="{ backfill: node.isBackfill, done: progressLabel === '已完成' }">
     <div class="tl-time mono">{{ timeOf(node.createdAt) }}</div>
     <div class="tl-rail">
       <div class="tl-dot"></div>
@@ -85,7 +102,13 @@ function tagClass(t: string) {
           <button @click="startEdit">{{ $t('编辑') }}</button>
           <button class="danger" @click="remove">{{ $t('删除') }}</button>
         </span>
-        <div v-if="node.tags.length || node.isBackfill || node.todoTitle" class="tl-meta">
+        <div v-if="node.tags.length || node.isBackfill || node.todoTitle || true" class="tl-meta">
+          <span
+            class="chip prog"
+            :class="progressClass(node.progress || '进行中')"
+            :title="$t('记录进度（点击切换：未开始/进行中/已完成）')"
+            @click="cycleProgress"
+          >{{ progressLabel }}</span>
           <span
             v-if="node.todoTitle"
             class="chip chip-linked"
@@ -124,6 +147,12 @@ function tagClass(t: string) {
 </template>
 
 <style scoped>
+.tl-item.done .tl-content { opacity: 0.55; text-decoration: line-through; }
+.chip.prog { cursor: pointer; border: 1px solid transparent; }
+.chip.prog.prog-doing { background: var(--primary-soft, #eef2ff); color: var(--primary, #6366f1); }
+.chip.prog.prog-done { background: rgba(34, 197, 94, 0.12); color: #16a34a; }
+.chip.prog.prog-todo { background: rgba(234, 179, 8, 0.14); color: #b45309; }
+.chip.prog:hover { border-color: currentColor; }
 .chip-linked {
   max-width: 140px;
   overflow: hidden;

@@ -442,6 +442,10 @@ async fn list_nodes(
         .get("date")
         .cloned()
         .unwrap_or_else(crate::db::today_string);
+    // 未完成记录滚动：查看今日列表时，把过去未完成的滚到今天（v1.5.4 用户需求）
+    if date == crate::db::today_string() {
+        ctx.db.roll_unfinished_nodes(&date).ok();
+    }
     Ok(ApiResp::ok(ctx.db.list_nodes_by_date(&date)?))
 }
 
@@ -467,6 +471,12 @@ async fn update_node(
     if let Some(Some(tid)) = &patch.todo_id {
         if ctx.db.get_todo(*tid)?.is_none() {
             return Err(ApiError::bad_request("关联的待办不存在"));
+        }
+    }
+    // 进度校验：仅允许 未开始/进行中/已完成
+    if let Some(p) = &patch.progress {
+        if !["未开始", "进行中", "已完成"].contains(&p.as_str()) {
+            return Err(ApiError::bad_request("进度状态不合法（未开始/进行中/已完成）"));
         }
     }
     let node = ctx
@@ -3092,6 +3102,7 @@ async fn data_import(
                     .map(|a| a.iter().filter_map(|v| v.as_str().map(String::from)).collect())
                     .unwrap_or_default(),
                 todo_id: None,
+                progress: None,
             })?;
             imported += 1;
         }

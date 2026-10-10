@@ -278,6 +278,7 @@ mod tests {
             date: Some("2026-03-01".into()),
             tags: vec![],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
         {

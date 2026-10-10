@@ -21,6 +21,10 @@ fn row_to_node(row: &rusqlite::Row) -> rusqlite::Result<Node> {
         tags: parse_tags(&row.get::<_, String>(6)?),
         todo_id: row.get(7)?,
         todo_title: None,
+        progress: {
+            let v: String = row.get(8)?;
+            if v.is_empty() { "进行中".to_string() } else { v }
+        },
     })
 }
 
@@ -51,7 +55,7 @@ fn fill_todo_titles(conn: &rusqlite::Connection, nodes: &mut [Node]) {
     }
 }
 
-const NODE_COLS: &str = "id, content, date, created_at, updated_at, is_backfill, tags, todo_id";
+const NODE_COLS: &str = "id, content, date, created_at, updated_at, is_backfill, tags, todo_id, progress";
 
 impl Db {
     // ───────────────────────── 节点 ─────────────────────────
@@ -64,9 +68,10 @@ impl Db {
         let tags = serde_json::to_string(&input.tags)?;
         let conn = self.lock();
         conn.execute(
-            "INSERT INTO nodes(content, date, created_at, updated_at, is_backfill, tags, todo_id)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![input.content, date, now, now, is_backfill, tags, input.todo_id],
+            "INSERT INTO nodes(content, date, created_at, updated_at, is_backfill, tags, todo_id, progress)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            params![input.content, date, now, now, is_backfill, tags, input.todo_id,
+                input.progress.clone().filter(|v| !v.trim().is_empty()).unwrap_or_else(|| "进行中".to_string())],
         )?;
         let id = conn.last_insert_rowid();
         let mut node = conn.query_row(
@@ -101,6 +106,19 @@ impl Db {
         let mut out: Vec<Node> = rows.collect::<rusqlite::Result<Vec<_>>>()?;
         fill_todo_titles(&conn, &mut out);
         Ok(out)
+    }
+
+    /// 未完成记录滚动（v1.5.4）：昨天及更早的「未开始/进行中」记录自动滚到今天，
+    /// 直到标记已完成（补录 is_backfill=1 的历史条目不滚，保留用户指定的日期）。
+    pub fn roll_unfinished_nodes(&self, today: &str) -> Result<usize> {
+        let conn = self.lock();
+        let n = conn.execute(
+            "UPDATE nodes SET date=?1, updated_at=?2
+             WHERE deleted_at IS NULL AND is_backfill = 0
+               AND progress != '已完成' AND date < ?1",
+            rusqlite::params![today, now_string()],
+        )?;
+        Ok(n)
     }
 
     /// 某待办直属的子记录（用户反馈：记录可关联待办，OKR 结构——待办为 O、记录为 KR/进展）
@@ -145,14 +163,18 @@ impl Db {
         if let Some(tid) = patch.todo_id {
             node.todo_id = tid;
         }
+        if let Some(p) = patch.progress {
+            node.progress = p;
+        }
         let now = now_string();
         let conn = self.lock();
         conn.execute(
-            "UPDATE nodes SET content=?1, tags=?2, todo_id=?3, updated_at=?4 WHERE id=?5",
+            "UPDATE nodes SET content=?1, tags=?2, todo_id=?3, progress=?4, updated_at=?5 WHERE id=?6",
             params![
                 node.content,
                 serde_json::to_string(&node.tags)?,
                 node.todo_id,
+                node.progress,
                 now,
                 id
             ],
@@ -1767,6 +1789,7 @@ mod unified_search_tests {
             date: Some("2026-09-01".into()),
             tags: vec!["工作".into()],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
         db.create_node(crate::db::models::NewNode {
@@ -1774,6 +1797,7 @@ mod unified_search_tests {
             date: Some("2026-09-10".into()),
             tags: vec!["生活".into()],
             todo_id: None,
+                progress: None,
         })
         .unwrap();
         db.create_todo(NewTodo {

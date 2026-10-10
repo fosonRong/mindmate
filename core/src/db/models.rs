@@ -25,6 +25,9 @@ pub struct Node {
     /// 关联待办的标题（展示用，服务端填充；v1.5.3 记录关联待办）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub todo_title: Option<String>,
+    /// 进度状态：未开始/进行中/已完成（默认进行中；未完成自动滚动）
+    #[serde(default)]
+    pub progress: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -36,6 +39,9 @@ pub struct NewNode {
     #[serde(default)]
     pub tags: Vec<String>,
     pub todo_id: Option<i64>,
+    /// 进度状态（缺省进行中）
+    #[serde(default)]
+    pub progress: Option<String>,
 }
 
 /// null → Some(None)（解除关联），缺省 → None（不改）；serde 对 Option<Option<T>> 的
@@ -55,6 +61,9 @@ pub struct NodePatch {
     pub tags: Option<Vec<String>>,
     #[serde(default, deserialize_with = "double_option")]
     pub todo_id: Option<Option<i64>>,
+    /// 进度状态（未开始/进行中/已完成；None=不改）
+    #[serde(default)]
+    pub progress: Option<String>,
 }
 
 /// 待办

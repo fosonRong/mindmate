@@ -180,6 +180,13 @@ check("记录列表日期切换（◀▶/日期选择/回到今天 + 补录跟�
 check("记录转待办（NodeItem 操作 + Today 处理：首行标题/子记录关联）",
       "convertNode" in read("apps", "web", "src", "views", "Today.vue")
       and "convert" in read("apps", "web", "src", "components", "NodeItem.vue"))
+# 用户需求：今日记录进度（未开始/进行中/已完成，默认进行中，未完成自动滚到明天）
+check("记录进度：V6 迁移 + 滚动清除 + 芯片切换",
+      "SCHEMA_V6" in read("core", "src", "db", "mod.rs")
+      and "roll_unfinished_nodes" in read("core", "src", "db", "queries.rs")
+      and "updateProgress" in read("apps", "web", "src", "stores", "nodes.ts")
+      and "cycleProgress" in read("apps", "web", "src", "components", "NodeItem.vue")
+      and "progress" in read("core", "src", "db", "models.rs"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)
@@ -339,7 +346,7 @@ check("循环待办：库迁移 V2+V3 加循环字段（类型/锚点/来源/截
       "recur_type" in read("core", "src", "db", "mod.rs")
       and "SCHEMA_V2" in read("core", "src", "db", "mod.rs")
       and "SCHEMA_V3" in read("core", "src", "db", "mod.rs")
-      and any(f"SCHEMA_VERSION: i64 = {n}" in read("core", "src", "db", "mod.rs") for n in (3, 4, 5)))
+      and any(f"SCHEMA_VERSION: i64 = {n}" in read("core", "src", "db", "mod.rs") for n in (3, 4, 5, 6)))
 check("循环待办：补期引擎（每天/每周/每月 + 月末截断）",
       "ensure_recurring" in read("core", "src", "db", "queries.rs")
       and '"daily"' in read("core", "src", "db", "queries.rs")
@@ -631,7 +638,7 @@ check("删除待办：前端循环待办二选一（删整个循环/仅此一条
       and "确认删除？" in read("apps", "web", "src", "components", "TodoItem.vue"))
 check("循环增强：迁移 V3（结束日期/间隔/跳过休息日）",
       "SCHEMA_V3" in read("core", "src", "db", "mod.rs")
-      and any(f"SCHEMA_VERSION: i64 = {n}" in read("core", "src", "db", "mod.rs") for n in (3, 4, 5)))
+      and any(f"SCHEMA_VERSION: i64 = {n}" in read("core", "src", "db", "mod.rs") for n in (3, 4, 5, 6)))
 check("循环增强：生成规则支持间隔/截止/跳过休息日（Rust 侧法定假期表）",
       "HOLIDAY_OFF" in read("core", "src", "db", "queries.rs")
       and "is_rest_day" in read("core", "src", "db", "queries.rs"))

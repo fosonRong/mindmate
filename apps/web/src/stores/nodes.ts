@@ -60,6 +60,13 @@ export const useNodesStore = defineStore('nodes', {
       this.rangeCache = {}
       return node
     },
+    /** 进度状态调整（v1.5.4：未开始/进行中/已完成；未完成自动滚到明天） */
+    async updateProgress(id: number, progress: string) {
+      const node = await api.updateNode(id, { progress })
+      const i = this.nodes.findIndex((n) => n.id === id)
+      if (i >= 0) this.nodes[i] = node
+      return node
+    },
 
     async remove(id: number) {
       await api.deleteNode(id)

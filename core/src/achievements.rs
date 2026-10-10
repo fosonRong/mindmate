@@ -174,6 +174,7 @@ mod tests {
                     date: Some((*d).to_string()),
                     tags: vec![],
                     todo_id: None,
+                progress: None,
                 })
                 .unwrap();
             }
