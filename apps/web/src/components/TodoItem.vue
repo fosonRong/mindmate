@@ -222,8 +222,13 @@ async function suggest() {
 </template>
 
 <style scoped>
+/* 子记录树独占一行：todo-row 默认不换行，flex-basis:100% 不生效会挤压标题列（用户反馈截图） */
+.todo-row { flex-wrap: wrap; }
 .subtree {
   flex-basis: 100%;
+  width: 100%;
+  min-width: 0;
+  flex: none;
   margin: 2px 0 4px 30px;
   padding: 4px 0 2px;
   display: flex;
