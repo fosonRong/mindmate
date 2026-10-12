@@ -193,6 +193,11 @@ check("简报进度拆分：已完成单列计数，不进遗留/重点",
       and "done_nodes" in read("core", "src", "api", "mod.rs")
       and "{{done}}" in read("core", "src", "ai", "mod.rs")
       and "严禁出现在「昨日遗留」或「今日重点」" in read("core", "src", "ai", "mod.rs"))
+# 用户反馈：模型把未开始记录叙述成"已完成"——报告上下文必须带进度标记
+check("报告记录上下文带进度标记 + 五模板进度规则",
+      "进度标记规则" in read("core", "src", "ai", "mod.rs")
+      and "[{prog}]" in read("core", "src", "ai", "mod.rs")
+      and read("core", "src", "ai", "mod.rs").count("进度标记规则") >= 5)
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

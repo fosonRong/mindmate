@@ -559,16 +559,15 @@ fn 报告类模板_都带防围栏输出约束() {
     // 历史清单里登记的旧版本不含该约束（这正是要升级它们的原因）。
     // 例外：brief 的最新历史条目登记于该约束加入之后（v1.5.5 拆分 {{done}} 时追加），
     // 它本身带该约束——升级匹配是逐字比对，不受此断言影响。
+    // 早期约定「历史版本不含最新约束」已不适用：模板每次迭代都把上一版原样登记进
+    // 历史清单（升级按逐字比对，登记内容本身带约束是常态）。改为校验真正的不变量：
+    // 同一类型的历史条目不得重复（重复登记是失误），且至少有一条历史（否则升级无从生效）。
     for (kind, history) in STOCK_TEMPLATES_HISTORY {
+        let mut seen = std::collections::HashSet::new();
         for h in *history {
-            if *kind == "brief" {
-                continue;
-            }
-            assert!(
-                !h.contains("不要把整份内容包在"),
-                "{kind} 的历史版本不应含新约束（它应该是改动前的旧版）"
-            );
+            assert!(seen.insert(h.trim()), "{kind} 历史条目重复");
         }
+        assert!(!history.is_empty(), "{kind} 历史清单为空");
     }
 }
 
@@ -601,8 +600,8 @@ fn 汇总平铺_逐条带日期前缀且不按天分节() {
     assert!(!out.contains("## "), "不应有按天标题：{out}");
     // 每条一行，带 (MM-DD) 前缀
     assert_eq!(out.lines().count(), 3);
-    assert!(out.contains("- (09-22) 完成登录联调"));
-    assert!(out.contains("- (09-24) 修复顺延报错"));
+    assert!(out.contains("- (09-22) [进行中] 完成登录联调"));
+    assert!(out.contains("- (09-24) [进行中] 修复顺延报错"));
 }
 
 #[test]

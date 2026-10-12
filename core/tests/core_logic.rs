@@ -607,8 +607,8 @@ fn 降级_周报汇总平铺() {
     let md = ai::fallback_report(&db, "weekly", "2026-09-12").unwrap();
     assert!(md.contains("周报"));
     // 汇总平铺：(MM-DD) 前缀逐条列出，不再按天分节（用户反馈）
-    assert!(md.contains("(09-07) 周一完成 A"));
-    assert!(md.contains("(09-08) 周二完成 B"));
+    assert!(md.contains("(09-07) [进行中] 周一完成 A"));
+    assert!(md.contains("(09-08) [进行中] 周二完成 B"));
     assert!(!md.contains("## 2026-09-0"), "不应按天分节：{}", md);
 }
 
