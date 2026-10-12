@@ -2632,11 +2632,16 @@ async fn ai_brief(
                 .cloned()
                 .collect();
             // 今天已录入的记录节点：简报要「汇总待办 + 今日记录」再润色，
-            // 缺了它就会出现「刚记完却不在简报里」的错觉（用户实际反馈过）
+            // 缺了它就会出现「刚记完却不在简报里」的错觉（用户实际反馈过）。
+            // 已完成记录单独分组（用户反馈：已完成的不能再被写进遗留/重点）
             let today_nodes = ctx
                 .db
                 .list_nodes_by_date(&date)
                 .map_err(|e| e.to_string())?;
+            let (open_nodes, done_nodes): (Vec<Node>, Vec<Node>) = today_nodes
+                .iter()
+                .cloned()
+                .partition(|n| n.progress != "已完成");
 
             if !cfg.has_key && cfg.provider != "ollama" {
                 // 降级：规则拼装简报（落库由 ai_stream_from 统一处理）
@@ -2644,9 +2649,12 @@ async fn ai_brief(
                     format!("# ☀️ 今日简报\n\n> 本地模板生成（未配置 AI 模型）\n\n");
                 // 今天已记录的内容：使用者希望简报能反映当日实际录入，
                 // 因此降级模板也必须包含（否则「录入了却看不到」）
-                if !today_nodes.is_empty() {
+                if !open_nodes.is_empty() {
                     md.push_str("## 今日进展\n\n");
-                    md.push_str(&ai::format_nodes(&today_nodes));
+                    md.push_str(&ai::format_nodes(&open_nodes));
+                    if !done_nodes.is_empty() {
+                        md.push_str(&format!("\n- ✅ 今日已完成 {} 项记录\n", done_nodes.len()));
+                    }
                     md.push_str("\n\n");
                 }
                 md.push_str("## 昨日遗留\n\n");
@@ -2689,7 +2697,15 @@ async fn ai_brief(
                 &tpl,
                 &[
                     ("date", date.clone()),
-                    ("nodes", ai::format_nodes(&today_nodes)),
+                    ("nodes", ai::format_nodes(&open_nodes)),
+                    (
+                        "done",
+                        if done_nodes.is_empty() {
+                            "（今日暂无已完成记录）".to_string()
+                        } else {
+                            ai::format_nodes(&done_nodes)
+                        },
+                    ),
                     ("todos", ai::format_todos(&pending)),
                     ("today", ai::format_todos(&today_todos)),
                 ],

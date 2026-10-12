@@ -187,6 +187,12 @@ check("记录进度：V6 迁移 + 滚动清除 + 芯片切换",
       and "updateProgress" in read("apps", "web", "src", "stores", "nodes.ts")
       and "cycleProgress" in read("apps", "web", "src", "components", "NodeItem.vue")
       and "progress" in read("core", "src", "db", "models.rs"))
+# 用户反馈：已完成记录不得被简报归入遗留/重点（上下文按进度拆分 open/done）
+check("简报进度拆分：已完成单列计数，不进遗留/重点",
+      "open_nodes" in read("core", "src", "api", "mod.rs")
+      and "done_nodes" in read("core", "src", "api", "mod.rs")
+      and "{{done}}" in read("core", "src", "ai", "mod.rs")
+      and "严禁出现在「昨日遗留」或「今日重点」" in read("core", "src", "ai", "mod.rs"))
 # 报告防源码显示（真机踩过：模型把整份日报包在 ```markdown 里，界面显示源码）
 md_view = read("apps", "web", "src", "components", "MarkdownView.vue")
 check("渲染层会剥掉包裹全文的 ```markdown 围栏", "unwrapMarkdownFence" in md_view)

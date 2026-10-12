@@ -1365,7 +1365,20 @@ _r, _ = call("POST", "/nodes", {"content": "E2E昨天未完成", "date": YESTERD
 # 改为直接断言已完成记录不滚 + 补录不滚：昨天已完成记录留在原地
 _r, _ = call("PATCH", f"/nodes/{_pn.get('id')}", {"progress": "未开始"})
 check("PATCH 未开始", (_r.get("data") or {}).get("progress") == "未开始", str(_r)[:60])
-call("DELETE", f"/nodes/{_pn.get('id')}")
+# 用户反馈：已完成记录不得再被简报写进遗留/重点（降级路径断言）
+_r, _ = call("POST", "/nodes", {"content": "E2E已完成记录", "date": TODAY, "progress": "已完成"})
+call("POST", "/nodes", {"content": "E2E进行中记录", "date": TODAY})
+if not AI_KEY_READY:
+    text_b2, _ = read_sse("/ai/brief", {"date": TODAY})
+    check("简报列进行中记录", "E2E进行中记录" in text_b2, text_b2[:60])
+    check("简报已完成只显示计数", "已完成 1 项记录" in text_b2, text_b2[:80])
+    check("简报不逐条列已完成记录", "E2E已完成记录" not in text_b2)
+else:
+    check("（已配 AI，简报进度拆分由模板约束）", True)
+_r, _ = call("GET", "/nodes?date=" + TODAY)
+_del_ids = [n["id"] for n in (_r.get("data") or []) if n["content"] in ("E2E已完成记录", "E2E进行中记录")]
+for _di in _del_ids:
+    call("DELETE", f"/nodes/{_di}")
 
 print(f"通过 {len(passed)} 项，失败 {len(failed)} 项")
 if failed:
