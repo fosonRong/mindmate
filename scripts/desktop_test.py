@@ -193,6 +193,12 @@ check("简报进度拆分：已完成单列计数，不进遗留/重点",
       and "done_nodes" in read("core", "src", "api", "mod.rs")
       and "{{done}}" in read("core", "src", "ai", "mod.rs")
       and "严禁出现在「昨日遗留」或「今日重点」" in read("core", "src", "ai", "mod.rs"))
+# 用户反馈：月报标题年份幻觉成 2023——prompt 日期锚点 + 落库前标题纠偏
+check("报告日期锚点 + 标题年份纠偏",
+      "date_anchor" in read("core", "src", "ai", "mod.rs")
+      and "fix_title_year" in read("core", "src", "ai", "mod.rs")
+      and read("core", "src", "api", "mod.rs").count("ai::date_anchor") >= 4
+      and "period_year" in read("core", "src", "api", "mod.rs"))
 # 用户反馈：模型把未开始记录叙述成"已完成"——报告上下文必须带进度标记
 check("报告记录上下文带进度标记 + 五模板进度规则",
       "进度标记规则" in read("core", "src", "ai", "mod.rs")

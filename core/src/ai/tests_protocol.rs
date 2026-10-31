@@ -608,3 +608,34 @@ fn 汇总平铺_逐条带日期前缀且不按天分节() {
 fn 汇总平铺_空周期给出占位() {
     assert_eq!(format_nodes_flat(&[]), "（该周期无记录）");
 }
+
+// ── 日期锚点 + 标题年份纠偏（v1.5.6：月报标题年份幻觉成 2023）──
+
+#[test]
+fn 日期锚点_含系统日期与周期() {
+    let a = date_anchor("2026-10-31", "2026年10月");
+    assert!(a.contains("2026-10-31") && a.contains("2026年10月"));
+    assert!(a.contains("日期锚点"));
+}
+
+#[test]
+fn 标题纠偏_月报年份幻觉修正() {
+    // 用户场景：模型把标题年份写成 2023
+    let src = "# 月报：2023年10月\n\n## 本月工作完成情况\n- 记录";
+    let fixed = fix_title_year(src, 2026);
+    assert!(fixed.starts_with("# 月报：2026年10月"), "{fixed}");
+    // 正文不受影响
+    assert!(fixed.contains("## 本月工作完成情况"));
+}
+
+#[test]
+fn 标题纠偏_正确年份不动_无标题不动() {
+    let ok = "# 月报：2026年10月\n正文 2023 年历史引用保留";
+    assert_eq!(fix_title_year(ok, 2026), ok);
+    // 首行不是标题（无 #）→ 不动
+    let plain = "月报：2023年10月\n正文";
+    assert_eq!(fix_title_year(plain, 2026), plain);
+    // 标题不含报告类型词（如会议记录）→ 不动，避免误伤普通文档
+    let other = "# 2023年会议记录\n正文";
+    assert_eq!(fix_title_year(other, 2026), other);
+}

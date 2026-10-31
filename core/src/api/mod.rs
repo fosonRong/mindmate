@@ -2460,6 +2460,11 @@ async fn build_report_messages(
         .unwrap_or_else(|| ai::default_template(tpl_key, ctx.lang()));
     let prompt = ai::render_template(&tpl, &vars);
     let period = if rtype == "daily" { date.to_string() } else { label };
+    // 日期锚点（v1.5.6）：无论模板怎么写，强制标题/正文周期与系统日期一致，防年份幻觉
+    let prompt = format!(
+        "{prompt}{}",
+        ai::date_anchor(&date, &period)
+    );
     Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report(rtype, &period))
 }
 
@@ -2509,6 +2514,22 @@ impl StreamPlan {
 }
 
 /// 通用 SSE 流式封装：消息构造 → 上游流式 → 转发 → 落库（统一在此处理持久化，避免路径分叉）
+
+/// 从周期标签提取 4 位年份（标题纠偏用）：取标签中出现的第一个 19xx/20xx
+fn period_year(period: &str) -> i64 {
+    let bytes = period.as_bytes();
+    let n = bytes.len();
+    for i in 0..n.saturating_sub(3) {
+        let w = &period[i..i + 4];
+        if w.bytes().all(|b| b.is_ascii_digit())
+            && (w.starts_with('1') || w.starts_with('2'))
+        {
+            return w.parse().unwrap_or(2026);
+        }
+    }
+    chrono::Local::now().year() as i64
+}
+
 async fn ai_stream_from<F, Fut>(ctx: Arc<AppContext>, build: F) -> Result<SseStream, ApiError>
 where
     F: FnOnce(Arc<AppContext>) -> Fut + Send + 'static,
@@ -2574,6 +2595,8 @@ where
         // 落库：报告归档 / 问答助手回复（此前 AI 路径遗漏，导致历史缺失）
         if !acc.is_empty() {
             if let Some((rtype, period)) = &save_as {
+                // 标题年份纠偏（v1.5.6）：模型偶发把标题年份幻觉成其他年份（如 2023）
+                let acc = ai::fix_title_year(&acc, period_year(period));
                 if let Err(e) = db.save_report(rtype, period, &acc, true) {
                     tracing::warn!("报告落库失败: {e}");
                 }
@@ -2710,6 +2733,7 @@ async fn ai_brief(
                     ("today", ai::format_todos(&today_todos)),
                 ],
             );
+            let prompt = format!("{prompt}{}", ai::date_anchor(&date, &date));
             Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report("brief", &date))
         }
     })
@@ -2783,6 +2807,7 @@ async fn ai_goodnight(
                     ("todos", ai::format_todos(&todos)),
                 ],
             );
+            let prompt = format!("{prompt}{}", ai::date_anchor(&date, &date));
             Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report("goodnight", &date))
         }
     })
@@ -2893,6 +2918,7 @@ async fn ai_review(
                     ),
                 ],
             );
+            let prompt = format!("{prompt}{}", ai::date_anchor(&date, &label));
             Ok(StreamPlan::model(vec![ChatMsg::user(prompt)]).with_report("review", &label))
         }
     })

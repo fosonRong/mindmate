@@ -966,6 +966,57 @@ pub fn render_template(tpl: &str, vars: &[(&str, String)]) -> String {
     out
 }
 
+
+
+/// 日期锚点（v1.5.6 用户反馈：月报标题年份幻觉成 2023）——追加到报告 prompt 末尾，
+/// 强制标题与正文周期与系统日期一致，无论模板怎么写。
+pub fn date_anchor(date: &str, label: &str) -> String {
+    format!(
+        "
+
+# 日期锚点（必须遵守）
+当前系统日期：{date}。本报告周期：{label}。
+报告标题与正文中的年份、月份必须与上述周期一致；严禁使用其他年份（即使上下文里出现历史日期）。"
+    )
+}
+
+/// 报告标题年份纠偏：首行（标题行）含报告类型词与 4 位年份、且年份与周期不符时，
+/// 把标题行的年份替换为周期年份（正文不动——正文可能合理引用历史日期）。
+pub fn fix_title_year(content: &str, expected_year: i64) -> String {
+    let Some(first_line_end) = content.find('\n') else {
+        return content.to_string();
+    };
+    let (first, rest) = content.split_at(first_line_end);
+    let is_title = first.trim_start().starts_with('#')
+        && ["月报", "周报", "日报", "简报", "总结", "复盘"]
+            .iter()
+            .any(|w| first.contains(w));
+    if !is_title {
+        return content.to_string();
+    }
+    let re_years: Vec<(String, String)> = ["19", "20"]
+        .iter()
+        .flat_map(|c| {
+            let mut out = Vec::new();
+            for y in 1900i64..2100 {
+                let s = format!("{y}");
+                if y != expected_year && first.contains(&s) {
+                    out.push((s.clone(), expected_year.to_string()));
+                }
+            }
+            out
+        })
+        .collect();
+    if re_years.is_empty() {
+        return content.to_string();
+    }
+    let mut fixed = first.to_string();
+    for (wrong, right) in &re_years {
+        fixed = fixed.replace(wrong.as_str(), right.as_str());
+    }
+    format!("{fixed}{rest}")
+}
+
 /// 输出语言指令：提示词正文保持中文（不改动既有输出结构），
 /// 但明确要求模型**用目标语言撰写全部内容**，从而让 AI 报告跟随界面语言。
 fn output_lang_directive(lang: crate::i18n::Lang) -> &'static str {
