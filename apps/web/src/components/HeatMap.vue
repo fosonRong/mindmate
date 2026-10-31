@@ -3,7 +3,7 @@
 // 数据来自 periodStats.days（nodeCount），点击格子跳到所在月份并打开日详情
 import { computed } from 'vue'
 import type { DayStat } from '@/api/types'
-import { fmtDate, parseDate, addDays, todayStr } from '@/stores/app'
+import { fmtDate, parseDate, addDays, todayStr, useAppStore } from '@/stores/app'
 import { t } from '@/i18n'
 
 const props = withDefaults(
@@ -17,7 +17,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{ (e: 'pick', date: string): void }>()
 
-const today = todayStr()
+const today = computed(() => useAppStore().currentDate)
 
 interface Cell {
   date: string
@@ -30,7 +30,7 @@ interface Cell {
 const cells = computed<Cell[]>(() => {
   const map: Record<string, DayStat> = {}
   props.days.forEach((d) => (map[d.date] = d))
-  const todayKey = todayStr()
+  const todayKey = todayStr() // 实时取，OK
   const today = parseDate(todayKey)
   // 本周起点对齐周一（周一=0）
   const weekStart = addDays(todayKey, -((today.getDay() + 6) % 7))

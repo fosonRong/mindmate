@@ -21,7 +21,8 @@ const editing = ref<Todo | null>(null)
 const periodStats = ref<PeriodStats | null>(null)
 const calAnchor = ref(todayStr())
 
-const today = todayStr()
+// v1.5.6：跟随 store 跨天自检（常量在应用跨天运行后会过期）
+const today = computed(() => app.currentDate)
 
 /** 生效归类（v1.5.3）：有效期窗口覆盖今天 → 今日（与后端 classify_window 一致）；
  * 其余沿用库里存的归类。修复窗口待办不进「今日待办」分组（用户反馈）。 */

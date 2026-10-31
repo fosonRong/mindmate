@@ -22,10 +22,22 @@ export interface ReminderItem {
 }
 
 let toastSeq = 0
+
+// ── 跨天自检（v1.5.6）：应用长期运行也要跟上真实日期 ──
+// 每分钟 + 窗口重新可见/获得焦点时各查一次（睡眠唤醒可能跳过分钟 tick）
+let dateTimerStarted = false
+function startDateWatch() {
+  if (dateTimerStarted || typeof window === 'undefined') return
+  dateTimerStarted = true
+  setInterval(() => { useAppStore().refreshDate() }, 60_000)
+  const onChange = () => { useAppStore().refreshDate() }
+  document.addEventListener('visibilitychange', onChange)
+  window.addEventListener('focus', onChange)
+}
 /** 事件订阅的停止函数（模块级，避免放入 Pinia state） */
 let stopEvents: (() => void) | null = null
 
-export const useAppStore = defineStore('app', {
+const _useAppStore = defineStore('app', {
   state: () => ({
     settings: {} as Record<string, string>,
     themeMode: 'system' as ThemeMode,
@@ -89,6 +101,15 @@ export const useAppStore = defineStore('app', {
     },
 
     /** 刷新「AI 是否已配置」状态（配置变更后调用，避免提示滞后） */
+    /** 跨天自检（v1.5.6 用户反馈：应用跨天运行后仍把昨天当今天）：
+     * currentDate 与真实日期不一致时更新；返回是否发生了跨天 */
+    refreshDate(): boolean {
+      const t = todayStr()
+      if (t === this.currentDate) return false
+      this.currentDate = t
+      return true
+    },
+
     async refreshAiReady() {
       try {
         const cfg = await api.aiConfig()
@@ -292,4 +313,10 @@ export function friendlyDate(s: string): string {
 export function monthTitle(s: string): string {
   const d = parseDate(s)
   return t('{a} 年 {b} 月', { a: d.getFullYear(), b: d.getMonth() + 1 })
+}
+
+// 包装：首次使用 store 时启动跨天自检（模块级定时器只启一次）
+export function useAppStore() {
+  startDateWatch()
+  return _useAppStore()
 }

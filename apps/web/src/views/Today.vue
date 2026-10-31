@@ -228,12 +228,24 @@ async function loadBadges() {
   }
 }
 
-const today = computed(() => todayStr())
+// v1.5.6 用户反馈：应用跨天运行后 computed(()=>todayStr()) 无响应式依赖被永久缓存，
+// 头部/列表一直停在启动那天的日期。改用 store 的 currentDate（跨天自检每分钟刷新）。
+const today = computed(() => app.currentDate)
 const dateLabel = computed(() => `${today.value} · ${weekdayLabel(today.value)}`)
 
 // ── 记录日期切换（用户需求）：今日记录列表可切换查看其他日期 ──
 const viewDate = ref(todayStr())
 const isToday = computed(() => viewDate.value === today.value)
+
+// 跨天自动跟随：today 变化时，若用户停留在旧"今天"或任意日期列表，刷新数据到新的一天
+watch(today, async (nv, ov) => {
+  if (!nv || nv === ov) return
+  // 用户正浏览的是旧"今天"（或同一天），跟随滚动；浏览别的日期则只刷新查看日数据
+  await nodes.load(viewDate.value)
+  loadBrief().catch(() => {})
+  app.refreshStats().catch(() => {})
+  loadBadges().catch(() => {})
+})
 const viewDateLabel = computed(() =>
   isToday.value ? t('今日记录') : `${friendlyDate(viewDate.value)} · ${t('记录')}`
 )
