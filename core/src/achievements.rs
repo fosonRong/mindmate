@@ -86,12 +86,18 @@ pub fn check_all(db: &Db, bus: &EventBus) -> Result<Vec<AchievementDef>> {
         .map(|v| v == "1")
         .unwrap_or(true);
     let over_goal_3 = if goal_enabled && goal > 0 {
-        // 最近 3 个有记录的连续日是否都超过目标（以今天为终点回溯）
+        // 最近 3 个连续日是否都超过目标（以今天为终点回溯）。
+        // v1.5.7 修复：回看窗口可跨月（如 11-02 回看到 10-31），不能用当月范围计数，
+        // 否则每月 1、2 号连续超额必然断签（用户实际踩中）。
+        let win_from = (chrono::Local::now().date_naive() - chrono::Duration::days(2))
+            .format("%Y-%m-%d")
+            .to_string();
+        let win_counts = db.node_counts_by_range(&win_from, &today)?;
         let mut d = chrono::Local::now().date_naive();
         let mut ok = true;
         for _ in 0..3 {
             let key = d.format("%Y-%m-%d").to_string();
-            if counts.get(&key).copied().unwrap_or(0) <= goal {
+            if win_counts.get(&key).copied().unwrap_or(0) <= goal {
                 ok = false;
                 break;
             }
