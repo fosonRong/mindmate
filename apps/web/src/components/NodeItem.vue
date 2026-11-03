@@ -89,7 +89,7 @@ function tagClass(t: string) {
 </script>
 
 <template>
-  <div class="tl-item" :class="{ backfill: node.isBackfill, done: progressLabel === '已完成' }">
+  <div class="tl-item" :class="{ backfill: node.isBackfill, done: progressLabel === '已完成' }" :data-node-id="node.id">
     <div class="tl-time mono">{{ timeOf(node.createdAt) }}</div>
     <div class="tl-rail">
       <div class="tl-dot"></div>

@@ -264,7 +264,29 @@ const SUGGESTIONS = ['本周完成了几件待办？', '我周三记了什么？
 
 onMounted(async () => {
   await Promise.all([loadSaved(), loadHistory(), loadReview(), loadChat(), loadCompare()])
+  // 命令面板定位（v1.5.7）：Ctrl+K 点选报告 → 切类型并展示该期
+  window.addEventListener('mindmate:open-report', onOpenReport)
 })
+
+// 切到报告 tab + 对应类型，并展示 period 那一期
+async function onOpenReport(e: Event) {
+  const d = (e as CustomEvent).detail || {}
+  const type = d.type as RType
+  const period = d.period as string
+  if (!type || !period) return
+  tab.value = 'report'
+  rtype.value = type
+  if (type === 'daily') reportDate.value = period
+  await Promise.all([loadSaved(), loadHistory()])
+  // weekly/monthly 的 loadSaved 取最新一条，这里强制展示目标 period
+  const list = await api.reports(type)
+  const found = list.find((r) => r.period === period)
+  if (found) {
+    reportContent.value = found.content
+    reportDegraded.value = !found.isAi
+    reportElapsed.value = found.createdAt
+  }
+}
 
 watch([rtype, reportDate], () => { loadCompare(); loadEvidence() })
 </script>

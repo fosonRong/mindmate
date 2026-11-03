@@ -83,9 +83,15 @@ const nodeRows = computed<Row[]>(() =>
     label: n.content.length > 60 ? `${n.content.slice(0, 60)}…` : n.content,
     hint: n.date === todayStr() ? t('今日') : friendlyDate(n.date),
     run: () => {
-      go('#/month')
-      // 月视图监听：切到该日所在月份并打开日详情抽屉
-      setTimeout(() => window.dispatchEvent(new CustomEvent('mindmate:open-day', { detail: { date: n.date } })), 350)
+      if (n.date === todayStr()) {
+        // 今天的记录留在今日页滚动定位（v1.5.7 用户反馈）
+        go('#/')
+        setTimeout(() => window.dispatchEvent(new CustomEvent('mindmate:locate-node', { detail: { id: n.id } })), 350)
+      } else {
+        go('#/month')
+        // 月视图监听：切到该日所在月份并打开日详情抽屉
+        setTimeout(() => window.dispatchEvent(new CustomEvent('mindmate:open-day', { detail: { date: n.date } })), 350)
+      }
     }
   }))
 )
@@ -96,7 +102,11 @@ const todoRows = computed<Row[]>(() =>
     icon: '✅',
     label: x.title,
     hint: `${x.dueDate}${x.status ? ' · ' + x.status : ''}`,
-    run: () => go('#/todos')
+    run: () => {
+      go('#/todos')
+      // 待办页监听：定位并打开该待办详情弹窗（用户反馈：点选后没定位到具体待办）
+      setTimeout(() => window.dispatchEvent(new CustomEvent('mindmate:open-todo', { detail: { id: x.id } })), 350)
+    }
   }))
 )
 
@@ -106,7 +116,11 @@ const reportRows = computed<Row[]>(() =>
     icon: '📄',
     label: r.snippet,
     hint: `${r.type === 'daily' ? t('日报') : r.type === 'weekly' ? t('周报') : r.type === 'monthly' ? t('月报') : r.type} · ${r.period}`,
-    run: () => go('#/companion')
+    run: () => {
+      go('#/companion')
+      // 智伴页监听：切到对应类型并展示该期报告（用户反馈：点选后没定位）
+      setTimeout(() => window.dispatchEvent(new CustomEvent('mindmate:open-report', { detail: { type: r.type, period: r.period } })), 350)
+    }
   }))
 )
 

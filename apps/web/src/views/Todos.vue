@@ -127,6 +127,20 @@ function openDetail(t: Todo) {
   detailTodo.value = t
 }
 
+// 命令面板定位（v1.5.7）：Ctrl+K 点选待办 → 打开该待办详情
+async function onOpenTodo(e: Event) {
+  const id = (e as CustomEvent).detail?.id as number
+  if (!id) return
+  if (!todos.todos.length) await loadAll()
+  const t = todos.todos.find((x) => x.id === id)
+  if (t) openDetail(t)
+}
+
+onMounted(() => {
+  window.addEventListener('mindmate:open-todo', onOpenTodo)
+})
+onUnmounted(() => window.removeEventListener('mindmate:open-todo', onOpenTodo))
+
 async function onDetailToggle(id: number) {
   await todos.toggle(id)
   detailTodo.value = null

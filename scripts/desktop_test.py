@@ -176,6 +176,13 @@ check("记录列表日期切换（◀▶/日期选择/回到今天 + 补录跟�
       "shiftViewDate" in read("apps", "web", "src", "views", "Today.vue")
       and "backToToday" in read("apps", "web", "src", "views", "Today.vue")
       and ':date="viewDate"' in read("apps", "web", "src", "views", "Today.vue"))
+# 用户反馈：Ctrl+K 搜索点选记录/待办没定位到具体条目
+check("命令面板定位：待办详情/今日记录滚动/月视图抽屉/报告展示",
+      "mindmate:open-todo" in read("apps", "web", "src", "components", "CommandPalette.vue")
+      and "onOpenTodo" in read("apps", "web", "src", "views", "Todos.vue")
+      and "mindmate:locate-node" in read("apps", "web", "src", "views", "Today.vue")
+      and "data-node-id" in read("apps", "web", "src", "components", "NodeItem.vue")
+      and "onOpenReport" in read("apps", "web", "src", "views", "Companion.vue"))
 # 用户需求：今日记录列表支持记录转待办（悬停操作，原记录挂为新待办子记录）
 check("记录转待办（NodeItem 操作 + Today 处理：首行标题/子记录关联）",
       "convertNode" in read("apps", "web", "src", "views", "Today.vue")

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useAppStore, todayStr, weekdayLabel, friendlyDate, addDays } from '@/stores/app'
 import { useNodesStore } from '@/stores/nodes'
 import { useTodosStore } from '@/stores/todos'
@@ -262,6 +262,18 @@ async function setViewDate(e: Event) {
   await nodes.load(v)
 }
 
+// 命令面板定位（v1.5.7）：Ctrl+K 点选今天的记录 → 滚动到该记录并闪烁高亮
+async function locateNode(e: Event) {
+  const id = (e as CustomEvent).detail?.id as number
+  if (!id) return
+  await nextTick()
+  const el = document.querySelector(`[data-node-id="${id}"]`)
+  if (!el) return
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' })
+  el.classList.add('locate-flash')
+  setTimeout(() => el.classList.remove('locate-flash'), 2400)
+}
+
 async function backToToday() {
   viewDate.value = today.value
   await nodes.load(today.value)
@@ -365,6 +377,7 @@ watch(
 
 onMounted(async () => {
   window.addEventListener('mindmate:event', onGlobalEvent)
+  window.addEventListener('mindmate:locate-node', locateNode)
   // 恢复上次的面板选择：只补数据与定时器，**不强制刷新**（用户反馈：从其他页面
   // 切过来不要重新抓取，直接展示缓存内容）；只有手动从简报切到热点才强刷。
   if (panel.value === 'news') {
@@ -389,6 +402,7 @@ onMounted(async () => {
 })
 onUnmounted(() => {
   window.removeEventListener('mindmate:event', onGlobalEvent)
+  window.removeEventListener('mindmate:locate-node', locateNode)
   if (newsAutoTimer) { clearInterval(newsAutoTimer); newsAutoTimer = null }
   abortBrief?.()
 })
@@ -757,5 +771,15 @@ async function completeTodo(id: number) {
   max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+</style>
+
+<style scoped>
+.locate-flash {
+  animation: node-flash 1.2s ease-in-out 2;
+}
+@keyframes node-flash {
+  0%, 100% { background: transparent; }
+  50% { background: var(--primary-soft, rgba(99, 102, 241, 0.18)); }
 }
 </style>
